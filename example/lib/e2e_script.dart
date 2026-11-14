@@ -2,57 +2,38 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import 'dart:async';
-import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter/foundation.dart';
 import 'package:mobilerun_flutter/mobilerun_flutter.dart';
-import 'package:path_provider/path_provider.dart';
 
 import 'debug_signalling.dart';
 
-/// Credentials of a scripted run, read at run time from a private file in the
-/// app's support directory (`e2e.json`). They are never compiled in.
-final class E2eConfig {
-  const E2eConfig({required this.url, required this.token});
-
-  final String url;
-  final String token;
-
-  /// The config file, or null when the app was started normally.
-  static Future<E2eConfig?> load() async {
-    try {
-      final dir = await getApplicationSupportDirectory();
-      final file = File('${dir.path}/e2e.json');
-      if (!file.existsSync()) return null;
-      final json = jsonDecode(await file.readAsString()) as Map;
-      return E2eConfig(
-        url: json['streamUrl']! as String,
-        token: json['streamToken']! as String,
-      );
-    } on Object {
-      return null;
-    }
-  }
-}
-
-/// Drives one session through the checks of the S2 slice and logs `E2E`
-/// lines for the host script. Device screenshots are written to the app's
-/// support directory, under `e2e-out/`.
+/// Drives one session through the checks of the connection slice and logs
+/// `E2E` lines for the host script. Device screenshots are written to
+/// [outDir]; the host script screenshots the emulator whenever [hostShot]
+/// prints its marker, and checks the pixels there.
 final class E2eScript {
   E2eScript({
     required this.session,
-    required this.signalling,
+    required this.debug,
+    required this.outDir,
     required this.hostShot,
   });
 
   final DeviceStreamSession session;
-  final DebugSignalling signalling;
+  final DebugTransports debug;
+  final Directory outDir;
 
   /// Asks the host to screenshot the emulator and waits for it.
   final Future<void> Function(String name) hostShot;
 
   void _log(String message) => debugPrint('E2E $message');
+
+  Never _fail(String message) => throw StateError(message);
+
+  Future<void> _sleep(int ms) =>
+      Future<void>.delayed(Duration(milliseconds: ms));
 
   Future<void> _until(
     bool Function() condition,
@@ -62,26 +43,24 @@ final class E2eScript {
     final deadline = DateTime.now().add(timeout);
     while (!condition()) {
       if (DateTime.now().isAfter(deadline)) {
-        throw TimeoutException('timed out waiting for $what');
+        _fail('timed out waiting for $what');
       }
-      await Future<void>.delayed(const Duration(milliseconds: 100));
+      await _sleep(100);
     }
   }
 
-  Future<void> _sleep(int ms) =>
-      Future<void>.delayed(Duration(milliseconds: ms));
+  bool get _connected => session.status.value is StreamConnected;
 
   Future<void> _deviceShot(String name) async {
     final bytes = await session.screenshot();
-    final dir = await getApplicationSupportDirectory();
-    final out = Directory('${dir.path}/e2e-out')..createSync(recursive: true);
-    File('${out.path}/$name.png').writeAsBytesSync(bytes);
+    outDir.createSync(recursive: true);
+    File('${outDir.path}/$name.png').writeAsBytesSync(bytes);
     _log('device-shot $name bytes=${bytes.length}');
   }
 
   // The Settings icon of the cloud phone's home screen, in a 488x1080 frame.
   Future<void> _tapSettings() async {
-    final size = session.videoSize.value!;
+    final size = session.videoSize.value ?? _fail('no video size');
     final x = 73 * size.width / 488;
     final y = 966 * size.height / 1080;
     Uint8List touch(int action) => encodeTouch(
@@ -97,9 +76,8 @@ final class E2eScript {
     final down = session.sendControl(touch(AndroidMotionEvent.actionDown));
     await _sleep(80);
     final up = session.sendControl(touch(AndroidMotionEvent.actionUp));
-    _log(
-      'tap sent down=$down up=$up at ${x.round()},${y.round()} of ${size.width}x${size.height}',
-    );
+    _log('tap sent down=$down up=$up at ${x.round()},${y.round()}');
+    if (!down || !up) _fail('tap was not sent');
   }
 
   Future<void> _home() async {
@@ -111,12 +89,48 @@ final class E2eScript {
     _log('home key sent');
   }
 
-  bool get _connected => session.status.value is StreamConnected;
-
   Future<void> _awaitVideo(String what) async {
     await _until(() => _connected, '$what: connected');
     await _until(() => session.videoSize.value != null, '$what: video size');
     _log('$what connected video=${session.videoSize.value}');
+  }
+
+  /// The credential refresh: a changed local ICE ufrag in the restart offer, an
+  /// answer to it, and frames flowing for 16 s without leaving connected.
+  Future<void> _checkRefresh() async {
+    final offersBefore = debug.offerUfrags.length;
+    final answersBefore = debug.received.where((t) => t == 'answer').length;
+    final framesBefore = await debug.framesDecoded() ?? 0;
+    if (!debug.injectRefresh()) _fail('no rtcConfiguration to replay');
+    await _until(
+      () => debug.offerUfrags.length > offersBefore,
+      'the ICE-restart offer',
+      timeout: const Duration(seconds: 10),
+    );
+    final ufrags = debug.offerUfrags;
+    _log(
+      'refresh ufrag ${ufrags[offersBefore - 1]} -> ${ufrags[offersBefore]}',
+    );
+    if (ufrags[offersBefore] == ufrags[offersBefore - 1]) {
+      _fail('the restart offer kept the ICE ufrag');
+    }
+    await _until(
+      () => debug.received.where((t) => t == 'answer').length > answersBefore,
+      'the answer to the restart offer',
+      timeout: const Duration(seconds: 10),
+    );
+    _log('refresh answer received');
+    for (var i = 0; i < 32; i++) {
+      await _sleep(500);
+      if (!_connected) {
+        _fail('left connected during the refresh: ${session.status.value}');
+      }
+    }
+    final framesAfter = await debug.framesDecoded() ?? 0;
+    _log('refresh frames $framesBefore -> $framesAfter over 16 s');
+    if (framesAfter - framesBefore < 160) {
+      _fail('frames did not continue after the refresh');
+    }
   }
 
   Future<void> run() async {
@@ -124,10 +138,10 @@ final class E2eScript {
     final stopwatch = Stopwatch()..start();
     session.start();
     await _awaitVideo('first');
-    _log('first frame after ${stopwatch.elapsedMilliseconds} ms');
+    _log('first connected after ${stopwatch.elapsedMilliseconds} ms');
     await _sleep(3000);
     final counts = <String, int>{};
-    for (final type in signalling.sentTypes) {
+    for (final type in debug.sent) {
       counts[type] = (counts[type] ?? 0) + 1;
     }
     _log('sent frames $counts');
@@ -144,10 +158,11 @@ final class E2eScript {
     await hostShot('03-after-tap');
 
     // Hover goes to its own channel; it must not disturb the control channel.
+    final size = session.videoSize.value ?? _fail('no video size');
     final hover = session.sendHover(
       encodeHover(
-        videoWidth: session.videoSize.value!.width,
-        videoHeight: session.videoSize.value!.height,
+        videoWidth: size.width,
+        videoHeight: size.height,
         x: 100,
         y: 100,
       ),
@@ -158,22 +173,14 @@ final class E2eScript {
     final statuses = <String>[];
     void onStatus() => statuses.add('${session.status.value}');
     session.status.addListener(onStatus);
-    final streamBefore = session.videoStream.value;
-    signalling.killSocket();
+    debug.killSocket();
     _log('socket killed');
     await _until(
       () => session.status.value is StreamReconnecting,
       'reconnecting',
     );
-    _log('status ${session.status.value}');
     await hostShot('04-reconnecting');
-    await _until(() => _connected, 'reconnected');
-    await _until(
-      () =>
-          session.videoStream.value != null &&
-          !identical(session.videoStream.value, streamBefore),
-      'new video stream',
-    );
+    await _awaitVideo('rebuilt');
     await _sleep(2500);
     session.status.removeListener(onStatus);
     _log('after kill statuses=${statuses.join(' > ')}');
@@ -188,19 +195,10 @@ final class E2eScript {
     await _deviceShot('07-reconnected-after-tap');
     await hostShot('06-reconnected-after-tap');
 
-    // Mid-session credential refresh: setConfiguration + ICE restart.
-    final offersBefore = signalling.sentTypes.where((t) => t == 'offer').length;
-    final injected = signalling.injectRefresh();
-    _log('refresh injected=$injected');
-    await _sleep(8000);
-    final offersAfter = signalling.sentTypes.where((t) => t == 'offer').length;
-    _log(
-      'refresh offers $offersBefore -> $offersAfter status=${session.status.value}',
-    );
+    await _checkRefresh();
     await _deviceShot('08-after-refresh');
     await hostShot('07-after-refresh');
 
     await session.close();
-    _log('DONE');
   }
 }

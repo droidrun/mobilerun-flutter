@@ -18,7 +18,7 @@ final session = DeviceStreamSession(
 session.status.addListener(() => print(session.status.value));
 session.start();
 
-// Render session.videoStream with RTCVideoView, then send raw control bytes:
+// Raw control bytes, built with the encoders of this package:
 session.sendControl(encodeKeycode(action: AndroidKeys.actionDown, keycode: AndroidKeys.keycodeHome));
 final png = await session.screenshot();
 
@@ -27,11 +27,14 @@ await session.close();
 
 - `status` is `StreamConnecting`, `StreamConnected`, `StreamReconnecting(attempt)`
   or `StreamUnavailable`; `retry()` starts a new cycle from unavailable.
-- `videoStream` is the stream for an `RTCVideoView`; `videoSize` is its size.
+- `videoSize` is the size of the decoded video. The video widget comes with the
+  next release; `example/lib/stream_view.dart` renders the stream meanwhile.
 - `sendControl` and `sendHover` return false and drop the message while their
   data channel is not open. Hover never goes over the control channel.
-- `StreamConfig` mutes the audio and enables zero playout delay by default.
-  The playout delay setting is process-wide: the first session decides it.
+- `StreamConfig` starts the audio muted (`setMuted` changes it) and asks for
+  zero playout delay. That setting is process-wide: call
+  `WebRTC.initialize(options: {'zeroPlayoutDelay': true})` in `main()` before
+  the first video renderer, see the example.
 - The signalling socket is the lifetime of the session on the server: a closed
   socket, like a failed peer connection, rebuilds both (exponential backoff,
   unavailable after six attempts).
@@ -42,10 +45,9 @@ Layout:
 
 - `lib/src/protocol/`: constants, the binary control message encoders and the
   typed signalling messages.
-- `lib/src/core/`: the session state machine and the reconnect controller. They
-  run on the `SignallingConnector` and `PeerTransportFactory` interfaces and an
-  injectable `Scheduler`, so they are tested with fake transports and a virtual
-  clock.
+- `lib/src/core/`: the session, one connect attempt and the reconnect
+  controller. They run on small transport interfaces and an injectable
+  `Scheduler`, so they are tested with fake transports and a virtual clock.
 - `lib/src/webrtc/`: the `web_socket_channel` and `flutter_webrtc`
   implementations of those interfaces.
 - `example/`: a sample app, plus `example/tool/e2e_android.sh`, a scripted

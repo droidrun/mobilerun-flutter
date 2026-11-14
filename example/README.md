@@ -1,17 +1,8 @@
-# mobilerun_flutter_example
+# Mobilerun stream example
 
-Example app for the Mobilerun Flutter SDK.
+Enter a stream URL and token and press Connect: the app opens a
+`DeviceStreamSession`, shows its status and renders the device video.
 
-## Getting Started
-
-This project is a starting point for a Flutter application.
-
-A few resources to get you started if this is your first Flutter project:
-
-- [Learn Flutter](https://docs.flutter.dev/get-started/learn-flutter)
-- [Write your first Flutter app](https://docs.flutter.dev/get-started/codelab)
-- [Flutter learning resources](https://docs.flutter.dev/reference/learning-resources)
-
-For help getting started with Flutter development, view the
-[online documentation](https://docs.flutter.dev/), which offers tutorials,
-samples, guidance on mobile development, and a full API reference.
+`tool/e2e_android.sh` drives the scripted entry point `lib/e2e_main.dart`
+(`flutter build apk --debug -t lib/e2e_main.dart`) on an Android emulator
+against a cloud device.

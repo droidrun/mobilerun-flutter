@@ -3,6 +3,7 @@
 
 import 'dart:async';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_webrtc/flutter_webrtc.dart';
 import 'package:mobilerun_flutter/mobilerun_flutter.dart';
@@ -37,11 +38,14 @@ class _StreamViewState extends State<StreamView> {
   Future<void> _init() async {
     await _renderer.initialize();
     if (!mounted) return;
-    _renderer
-      ..onFirstFrameRendered = () => widget.log?.call('renderer first frame')
-      ..onResize = () => widget.log?.call(
+    _renderer.onFirstFrameRendered = () {
+      widget.log?.call('renderer first frame');
+    };
+    _renderer.onResize = () {
+      widget.log?.call(
         'renderer size ${_renderer.videoWidth}x${_renderer.videoHeight}',
       );
+    };
     _stream.addListener(_sync);
     _sync();
     setState(() => _ready = true);
@@ -84,12 +88,19 @@ class _StreamViewState extends State<StreamView> {
         Expanded(
           child: ColoredBox(
             color: Colors.black,
-            child: _ready
-                ? RTCVideoView(
-                    _renderer,
-                    objectFit: RTCVideoViewObjectFit.RTCVideoViewObjectFitContain,
-                  )
-                : const SizedBox.shrink(),
+            // RTCVideoView builds its texture once per build and reads
+            // `renderVideo` then, so it has to be rebuilt whenever the renderer
+            // changes: attaching the stream and the first frame size.
+            child: ListenableBuilder(
+              listenable: _renderer,
+              builder: (context, _) => _ready
+                  ? RTCVideoView(
+                      _renderer,
+                      objectFit:
+                          RTCVideoViewObjectFit.RTCVideoViewObjectFitContain,
+                    )
+                  : const SizedBox.shrink(),
+            ),
           ),
         ),
       ],

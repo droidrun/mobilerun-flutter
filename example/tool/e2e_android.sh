@@ -13,8 +13,15 @@
 # again; it never touches argv, the APK or the repository.
 #
 # Needs ANDROID_HOME (cmdline-tools, emulator, platform-tools, an arm64
-# google_apis system image), a built debug APK (`flutter build apk --debug`
-# in example/) and python3. Set AVD to use an existing virtual device.
+# google_apis system image), a debug APK of the scripted entry point
+# (`flutter build apk --debug -t lib/e2e_main.dart` in example/) and python3.
+# Set AVD to use an existing virtual device.
+#
+# Proof of the picture is in pixels: every emulator screenshot of a live stream
+# must show the device picture in the video area (tool/png_check.py), and the
+# tap must change those pixels. The app itself fails the run when the credential
+# refresh does not change the ICE ufrag, is not answered, or frames stop for
+# 16 s.
 set -euo pipefail
 
 if [ "$#" -ne 2 ]; then
@@ -85,10 +92,25 @@ adb_ shell am start -n "$pkg/.MainActivity" >/dev/null
 # emulator then. "E2E DONE" or "E2E FAILED" ends the run (ten minutes at most).
 adb_ logcat -v brief -s flutter >"$out/logcat.raw" &
 logcat_pid=$!
+# Pixel checks of one emulator screenshot, see tool/png_check.py.
+check_shot() {
+  local png="$out/shots/host-$1.png" check="$here/tool/png_check.py"
+  case "$1" in
+    04-reconnecting) return 0 ;; # no video while rebuilding
+    03-after-tap)
+      python3 -I "$check" "$png" --lit 0.3 | tee -a "$out/pixels.log" || return 1
+      python3 -I "$check" "$png" --differs-from "$out/shots/host-02-before-tap.png" 0.05 |
+        tee -a "$out/pixels.log"
+      ;;
+    *) python3 -I "$check" "$png" --lit 0.3 | tee -a "$out/pixels.log" ;;
+  esac
+}
+
 status=timeout
 seen=0
 deadline=$((SECONDS + 600))
 : >"$out/e2e.log"
+: >"$out/pixels.log"
 while [ "$SECONDS" -lt "$deadline" ] && [ "$status" = timeout ]; do
   grep 'E2E ' "$out/logcat.raw" >"$out/e2e.tmp" || true
   total=$(wc -l <"$out/e2e.tmp" | tr -d ' ')
@@ -98,8 +120,12 @@ while [ "$SECONDS" -lt "$deadline" ] && [ "$status" = timeout ]; do
     msg="${line#*E2E }"
     echo "E2E $msg" | tee -a "$out/e2e.log"
     case "$msg" in
-      "SHOT "*) adb_ exec-out screencap -p >"$out/shots/host-${msg#SHOT }.png" ;;
-      DONE) status=done ;;
+      "SHOT "*)
+        name="${msg#SHOT }"
+        adb_ exec-out screencap -p >"$out/shots/host-$name.png"
+        if ! check_shot "$name"; then status=failed; fi
+        ;;
+      DONE) if [ "$status" = timeout ]; then status=done; fi ;;
       FAILED*) status=failed ;;
     esac
   done
