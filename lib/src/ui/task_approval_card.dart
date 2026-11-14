@@ -8,7 +8,7 @@ import 'package:flutter/semantics.dart';
 
 import '../approval/pending_approval.dart';
 import 'stream_button.dart';
-import 'stream_labels.dart';
+import 'task_approval_labels.dart';
 import 'stream_theme.dart';
 
 /// State passed to an approval actions slot.
@@ -17,7 +17,7 @@ final class ApprovalActionsState {
   const ApprovalActionsState({
     this.isPending = false,
     this.decision,
-    this.labels = const StreamLabels(),
+    this.labels = const TaskApprovalLabels(),
     required this.onDecide,
   });
 
@@ -28,7 +28,7 @@ final class ApprovalActionsState {
   final ApprovalDecision? decision;
 
   /// Overridable labels.
-  final StreamLabels labels;
+  final TaskApprovalLabels labels;
 
   /// Forwards a decision to the integrator.
   final ValueChanged<ApprovalDecision> onDecide;
@@ -83,7 +83,7 @@ class TaskApprovalCard extends StatefulWidget {
     this.decision,
     this.error,
     this.device,
-    this.labels = const StreamLabels(),
+    this.labels = const TaskApprovalLabels(),
     this.actionsBuilder = defaultApprovalActions,
   });
 
@@ -100,13 +100,13 @@ class TaskApprovalCard extends StatefulWidget {
   final ApprovalDecision? decision;
 
   /// Backend or integrator error, announced assertively.
-  final Object? error;
+  final String? error;
 
   /// Optional live device widget, kept mounted when hidden.
   final Widget? device;
 
   /// Overrides every built-in string.
-  final StreamLabels labels;
+  final TaskApprovalLabels labels;
 
   /// Replaces the two decision buttons.
   final ApprovalActionsBuilder actionsBuilder;
@@ -117,6 +117,7 @@ class TaskApprovalCard extends StatefulWidget {
 
 class _TaskApprovalCardState extends State<TaskApprovalCard> {
   bool _showDevice = false;
+  int _announcementEpoch = 0;
 
   @override
   void initState() {
@@ -130,17 +131,24 @@ class _TaskApprovalCardState extends State<TaskApprovalCard> {
     if (widget.approval?.approvalId != oldWidget.approval?.approvalId) {
       _showDevice = false;
     }
-    if (widget.error != oldWidget.error) _announce();
+    if (widget.error != oldWidget.error ||
+        (widget.approval == null) != (oldWidget.approval == null)) {
+      _announce();
+    }
   }
 
   void _announce() {
+    final epoch = ++_announcementEpoch;
     if (widget.error == null || widget.approval == null) return;
+    final text = widget.error!;
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted || widget.error == null) return;
+      if (!mounted || epoch != _announcementEpoch || widget.approval == null) {
+        return;
+      }
       // Keep the package's Flutter 3.32 minimum; sendAnnouncement is newer.
       // ignore: deprecated_member_use
       SemanticsService.announce(
-        widget.error.toString(),
+        text,
         Directionality.of(context),
         assertiveness: Assertiveness.assertive,
       );
@@ -154,12 +162,9 @@ class _TaskApprovalCardState extends State<TaskApprovalCard> {
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         if (widget.error != null) ...[
-          Semantics(
-            liveRegion: true,
-            child: Text(
-              widget.error.toString(),
-              style: t.typography.copyWith(color: t.destructive),
-            ),
+          Text(
+            widget.error!,
+            style: t.typography.copyWith(color: t.destructive),
           ),
           const SizedBox(height: 16),
         ],
@@ -195,164 +200,173 @@ class _TaskApprovalCardState extends State<TaskApprovalCard> {
           border: Border.all(color: t.border),
           borderRadius: BorderRadius.circular(t.radius * 2),
         ),
-        child: Padding(
-          padding: const EdgeInsets.all(16),
-          child: DefaultTextStyle(
-            style: t.typography.copyWith(color: t.cardForeground),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Text(
-                  title,
-                  style: t.typography.copyWith(
-                    color: t.cardForeground,
-                    fontSize: 16,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-                const SizedBox(height: 8),
-                _Countdown(expiresAt: approval.expiresAt, labels: labels),
-                const SizedBox(height: 16),
-                LayoutBuilder(
-                  builder: (context, constraints) {
-                    final wide = constraints.maxWidth + 32 >= 768;
-                    final hasDevice = widget.device != null;
-                    return Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Offstage(
-                          offstage: wide || !hasDevice,
-                          child: Padding(
-                            padding: const EdgeInsets.only(bottom: 16),
-                            child: Semantics(
-                              label: labels.viewSwitch,
-                              child: Row(
-                                children: [
-                                  Expanded(
-                                    child: Semantics(
-                                      selected: !_showDevice,
-                                      child: StreamButton(
-                                        label: labels.details,
-                                        icon: Icons.list_alt,
-                                        outline: _showDevice,
-                                        onPressed: () =>
-                                            setState(() => _showDevice = false),
-                                      ),
-                                    ),
-                                  ),
-                                  const SizedBox(width: 8),
-                                  Expanded(
-                                    child: Semantics(
-                                      selected: _showDevice,
-                                      child: StreamButton(
-                                        label: labels.device,
-                                        icon: Icons.smartphone,
-                                        outline: !_showDevice,
-                                        onPressed: () =>
-                                            setState(() => _showDevice = true),
-                                      ),
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
-                          ),
-                        ),
-                        Flex(
-                          direction: wide ? Axis.horizontal : Axis.vertical,
-                          crossAxisAlignment: CrossAxisAlignment.start,
+        child: LayoutBuilder(
+          builder: (context, constraints) {
+            final wide = constraints.maxWidth >= 768;
+            return Padding(
+              padding: const EdgeInsets.all(16),
+              child: DefaultTextStyle(
+                style: t.typography.copyWith(color: t.cardForeground),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      title,
+                      style: t.typography.copyWith(
+                        color: t.cardForeground,
+                        fontSize: 16,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    _Countdown(expiresAt: approval.expiresAt, labels: labels),
+                    const SizedBox(height: 16),
+                    Builder(
+                      builder: (context) {
+                        final hasDevice = widget.device != null;
+                        return Column(
                           mainAxisSize: MainAxisSize.min,
                           children: [
-                            Flexible(
-                              flex: wide ? 1 : 0,
-                              fit: FlexFit.loose,
-                              child: Column(
-                                mainAxisSize: MainAxisSize.min,
-                                crossAxisAlignment: CrossAxisAlignment.stretch,
-                                children: [
-                                  Offstage(
-                                    offstage: !wide && hasDevice && _showDevice,
-                                    child: card == null
-                                        ? const SizedBox.shrink()
-                                        : DecoratedBox(
-                                            decoration: BoxDecoration(
-                                              border: Border.all(
-                                                color: t.border,
-                                              ),
-                                              borderRadius:
-                                                  BorderRadius.circular(
-                                                    t.radius + 2,
-                                                  ),
-                                            ),
-                                            child: Column(
-                                              mainAxisSize: MainAxisSize.min,
-                                              children: [
-                                                _Fact(
-                                                  icon: Icons.credit_card,
-                                                  label: labels.card,
-                                                  value: card.card,
-                                                ),
-                                                Divider(
-                                                  height: 1,
-                                                  color: t.border,
-                                                ),
-                                                _Fact(
-                                                  icon: Icons.apps,
-                                                  label: labels.app,
-                                                  value: card.targetPackage,
-                                                ),
-                                                if (card.targetHost !=
-                                                    null) ...[
-                                                  Divider(
-                                                    height: 1,
-                                                    color: t.border,
-                                                  ),
-                                                  _Fact(
-                                                    icon: Icons.public,
-                                                    label: labels.domain,
-                                                    value: card.targetHost!,
-                                                  ),
-                                                ],
-                                              ],
+                            Offstage(
+                              offstage: wide || !hasDevice,
+                              child: Padding(
+                                padding: const EdgeInsets.only(bottom: 16),
+                                child: Semantics(
+                                  label: labels.viewSwitch,
+                                  child: Row(
+                                    children: [
+                                      Expanded(
+                                        child: Semantics(
+                                          selected: !_showDevice,
+                                          child: StreamButton(
+                                            label: labels.details,
+                                            icon: Icons.list_alt,
+                                            outline: _showDevice,
+                                            onPressed: () => setState(
+                                              () => _showDevice = false,
                                             ),
                                           ),
+                                        ),
+                                      ),
+                                      const SizedBox(width: 8),
+                                      Expanded(
+                                        child: Semantics(
+                                          selected: _showDevice,
+                                          child: StreamButton(
+                                            label: labels.device,
+                                            icon: Icons.smartphone,
+                                            outline: !_showDevice,
+                                            onPressed: () => setState(
+                                              () => _showDevice = true,
+                                            ),
+                                          ),
+                                        ),
+                                      ),
+                                    ],
                                   ),
+                                ),
+                              ),
+                            ),
+                            Flex(
+                              direction: wide ? Axis.horizontal : Axis.vertical,
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Flexible(
+                                  flex: wide ? 1 : 0,
+                                  fit: FlexFit.loose,
+                                  child: Column(
+                                    mainAxisSize: MainAxisSize.min,
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.stretch,
+                                    children: [
+                                      Offstage(
+                                        offstage:
+                                            !wide && hasDevice && _showDevice,
+                                        child: card == null
+                                            ? const SizedBox.shrink()
+                                            : DecoratedBox(
+                                                decoration: BoxDecoration(
+                                                  border: Border.all(
+                                                    color: t.border,
+                                                  ),
+                                                  borderRadius:
+                                                      BorderRadius.circular(
+                                                        t.radius + 2,
+                                                      ),
+                                                ),
+                                                child: Column(
+                                                  mainAxisSize:
+                                                      MainAxisSize.min,
+                                                  children: [
+                                                    _Fact(
+                                                      icon: Icons.credit_card,
+                                                      label: labels.card,
+                                                      value: card.card,
+                                                    ),
+                                                    Divider(
+                                                      height: 1,
+                                                      color: t.border,
+                                                    ),
+                                                    _Fact(
+                                                      icon: Icons.apps,
+                                                      label: labels.app,
+                                                      value: card.targetPackage,
+                                                    ),
+                                                    if (card.targetHost !=
+                                                        null) ...[
+                                                      Divider(
+                                                        height: 1,
+                                                        color: t.border,
+                                                      ),
+                                                      _Fact(
+                                                        icon: Icons.public,
+                                                        label: labels.domain,
+                                                        value: card.targetHost!,
+                                                      ),
+                                                    ],
+                                                  ],
+                                                ),
+                                              ),
+                                      ),
 
-                                  if (wide) ...[
-                                    const SizedBox(height: 16),
-                                    _actions(context),
-                                  ],
-                                ],
-                              ),
+                                      if (wide) ...[
+                                        const SizedBox(height: 16),
+                                        _actions(context),
+                                      ],
+                                    ],
+                                  ),
+                                ),
+                                SizedBox(width: wide && hasDevice ? 24 : 0),
+                                // Keep the same keyed slot across tabs and Flex directions.
+                                Offstage(
+                                  key: const ValueKey('approval-device'),
+                                  offstage:
+                                      !hasDevice || (!wide && !_showDevice),
+                                  child: SizedBox(
+                                    width: wide
+                                        ? 256
+                                        : constraints.maxWidth - 32,
+                                    height: wide ? 400 : 320,
+                                    child: widget.device,
+                                  ),
+                                ),
+                              ],
                             ),
-                            SizedBox(
-                              width: wide && hasDevice ? 24 : 0,
-                              height: !wide && hasDevice && _showDevice
-                                  ? 16
-                                  : 0,
-                            ),
-                            Offstage(
-                              offstage: !hasDevice || (!wide && !_showDevice),
-                              child: SizedBox(
-                                width: wide ? 256 : constraints.maxWidth,
-                                height: wide ? 400 : 320,
-                                child: widget.device,
-                              ),
-                            ),
+                            if (!wide) ...[
+                              const SizedBox(height: 16),
+                              _actions(context),
+                            ],
                           ],
-                        ),
-                        if (!wide) ...[
-                          const SizedBox(height: 16),
-                          _actions(context),
-                        ],
-                      ],
-                    );
-                  },
+                        );
+                      },
+                    ),
+                  ],
                 ),
-              ],
-            ),
-          ),
+              ),
+            );
+          },
         ),
       ),
     );
@@ -415,7 +429,7 @@ class _Fact extends StatelessWidget {
 class _Countdown extends StatefulWidget {
   const _Countdown({required this.expiresAt, required this.labels});
   final String expiresAt;
-  final StreamLabels labels;
+  final TaskApprovalLabels labels;
 
   @override
   State<_Countdown> createState() => _CountdownState();
@@ -462,39 +476,31 @@ class _CountdownState extends State<_Countdown> {
   @override
   Widget build(BuildContext context) {
     final t = StreamTheme.of(context);
-    return Semantics(
-      label: _remaining > 0
-          ? widget.labels.timeLeft.replaceAll(
-              '{time}',
-              formatRemaining(_remaining),
-            )
-          : widget.labels.expired,
-      child: DecoratedBox(
-        decoration: BoxDecoration(
-          color: t.muted,
-          borderRadius: BorderRadius.circular(999),
-        ),
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(Icons.schedule, size: 14, color: t.mutedForeground),
-              const SizedBox(width: 6),
-              Text(
-                _remaining > 0
-                    ? widget.labels.timeLeft.replaceAll(
-                        '{time}',
-                        formatRemaining(_remaining),
-                      )
-                    : widget.labels.expired,
-                style: t.typography.copyWith(
-                  fontSize: 12,
-                  color: t.mutedForeground,
-                ),
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: t.muted,
+        borderRadius: BorderRadius.circular(999),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(Icons.schedule, size: 14, color: t.mutedForeground),
+            const SizedBox(width: 6),
+            Text(
+              _remaining > 0
+                  ? widget.labels.timeLeft.replaceAll(
+                      '{time}',
+                      formatRemaining(_remaining),
+                    )
+                  : widget.labels.expired,
+              style: t.typography.copyWith(
+                fontSize: 12,
+                color: t.mutedForeground,
               ),
-            ],
-          ),
+            ),
+          ],
         ),
       ),
     );

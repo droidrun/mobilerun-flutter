@@ -31,6 +31,12 @@ class StreamButton extends StatelessWidget {
   Widget build(BuildContext context) {
     final t = StreamTheme.of(context);
     final foreground = outline || ghost ? t.foreground : t.primaryForeground;
+    bool highlighted(Set<WidgetState> states) =>
+        (outline || ghost) &&
+        states.any({WidgetState.hovered, WidgetState.focused}.contains);
+    final color = WidgetStateProperty.resolveWith<Color>(
+      (states) => highlighted(states) ? t.accentForeground : foreground,
+    );
     return Opacity(
       opacity: onPressed == null ? .5 : 1,
       child: TextButton(
@@ -41,21 +47,10 @@ class StreamButton extends StatelessWidget {
             EdgeInsets.symmetric(horizontal: ghost ? 8 : 16),
           ),
           tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-          foregroundColor: WidgetStateProperty.resolveWith(
-            (states) =>
-                (outline || ghost) &&
-                    states.any(
-                      {WidgetState.hovered, WidgetState.focused}.contains,
-                    )
-                ? t.accentForeground
-                : foreground,
-          ),
+          foregroundColor: color,
+          iconColor: color,
           backgroundColor: WidgetStateProperty.resolveWith(
-            (states) =>
-                (outline || ghost) &&
-                    states.any(
-                      {WidgetState.hovered, WidgetState.focused}.contains,
-                    )
+            (states) => highlighted(states)
                 ? t.accent
                 : ghost
                 ? Colors.transparent
@@ -78,9 +73,8 @@ class StreamButton extends StatelessWidget {
             ),
           ),
         ),
-        child: IconTheme(
-          data: IconThemeData(size: 16, color: foreground),
-          child: Row(
+        child: Builder(
+          builder: (context) => Row(
             mainAxisAlignment: MainAxisAlignment.center,
             mainAxisSize: MainAxisSize.min,
             children: [
@@ -90,11 +84,11 @@ class StreamButton extends StatelessWidget {
                   height: 14,
                   child: CircularProgressIndicator(
                     strokeWidth: 2,
-                    color: foreground,
+                    color: IconTheme.of(context).color,
                   ),
                 )
               else if (icon != null)
-                Icon(icon),
+                Icon(icon, size: 16, semanticLabel: ghost ? label : null),
               if (!ghost) ...[
                 if (pending || icon != null) const SizedBox(width: 8),
                 Flexible(child: Text(label)),

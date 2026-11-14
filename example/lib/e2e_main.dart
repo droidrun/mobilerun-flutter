@@ -90,7 +90,7 @@ class _E2eAppState extends State<E2eApp> {
           color: Colors.black,
           child: RotatedBox(
             quarterTurns: _rotated ? 1 : 0,
-            child: DeviceStream(
+            child: DeviceStreamView(
               key: _viewKey,
               session: _session,
               hasControl: true,

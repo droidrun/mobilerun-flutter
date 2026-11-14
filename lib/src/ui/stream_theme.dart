@@ -46,7 +46,10 @@ class StreamTheme extends StatelessWidget {
     return _Tokens(
       tokens: resolved,
       child: DefaultTextStyle(
-        style: resolved.typography.copyWith(color: resolved.foreground),
+        style: resolved.typography.copyWith(
+          inherit: false,
+          color: resolved.foreground,
+        ),
         child: IconTheme(
           data: IconThemeData(color: resolved.foreground, size: 16),
           child: child,

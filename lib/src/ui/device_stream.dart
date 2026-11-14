@@ -8,20 +8,19 @@ import 'package:flutter/material.dart';
 import '../core/device_stream_session.dart';
 import '../core/reconnect_policy.dart';
 import '../core/stream_status.dart';
-import '../widgets/device_stream.dart';
+import '../widgets/device_stream_view.dart';
 import 'stream_button.dart';
 import 'stream_labels.dart';
 import 'stream_lifecycle.dart';
 import 'stream_status_pill.dart';
 import 'stream_theme.dart';
 
-/// Scope passed to overlay slots, including their bounded container.
+/// State passed to overlay slots inside the bounded stream container.
 final class StreamOverlayState {
   /// Creates an overlay state.
   const StreamOverlayState({
     this.status = const StreamConnecting(),
     this.labels = const StreamLabels(),
-    this.constraints = const BoxConstraints(),
     required this.retry,
   });
 
@@ -31,24 +30,8 @@ final class StreamOverlayState {
   /// Localized strings.
   final StreamLabels labels;
 
-  /// Overlay container constraints.
-  final BoxConstraints constraints;
-
   /// Retry a session which exhausted its attempts.
   final VoidCallback retry;
-
-  /// Returns a copy with selected values replaced.
-  StreamOverlayState copyWith({
-    StreamStatus? status,
-    StreamLabels? labels,
-    BoxConstraints? constraints,
-    VoidCallback? retry,
-  }) => StreamOverlayState(
-    status: status ?? this.status,
-    labels: labels ?? this.labels,
-    constraints: constraints ?? this.constraints,
-    retry: retry ?? this.retry,
-  );
 
   /// Connecting or reconnecting text with attempt placeholders replaced.
   String get label => switch (status) {
@@ -82,17 +65,6 @@ final class StreamNavigationState {
 
   /// Sends an explicit Back, Home or Recent action.
   final ValueChanged<DeviceSystemKey> onAction;
-
-  /// Returns a copy with selected values replaced.
-  StreamNavigationState copyWith({
-    bool? canControl,
-    StreamLabels? labels,
-    ValueChanged<DeviceSystemKey>? onAction,
-  }) => StreamNavigationState(
-    canControl: canControl ?? this.canControl,
-    labels: labels ?? this.labels,
-    onAction: onAction ?? this.onAction,
-  );
 }
 
 /// Builds navigation under the video.
@@ -135,7 +107,11 @@ Widget defaultStreamUnavailable(
         const SizedBox(height: 12),
         Text(
           state.labels.unavailable,
-          style: t.typography.copyWith(fontSize: 12, color: t.mutedForeground),
+          style: t.typography.copyWith(
+            fontSize: 12,
+            fontWeight: FontWeight.w500,
+            color: t.mutedForeground,
+          ),
         ),
         const SizedBox(height: 12),
         StreamButton(
@@ -174,20 +150,13 @@ class StreamNavigationBar extends StatelessWidget {
               (DeviceSystemKey.recent, Icons.grid_view, state.labels.recent),
             ])
               Expanded(
-                child: Semantics(
+                child: StreamButton(
                   label: item.$3,
-                  button: true,
-                  child: Tooltip(
-                    message: item.$3,
-                    child: StreamButton(
-                      label: item.$3,
-                      icon: item.$2,
-                      ghost: true,
-                      onPressed: state.canControl
-                          ? () => state.onAction(item.$1)
-                          : null,
-                    ),
-                  ),
+                  icon: item.$2,
+                  ghost: true,
+                  onPressed: state.canControl
+                      ? () => state.onAction(item.$1)
+                      : null,
                 ),
               ),
           ],
@@ -197,15 +166,14 @@ class StreamNavigationBar extends StatelessWidget {
   }
 }
 
-/// The S3 video/input view with replaceable white-label default chrome.
+/// Device video/input with replaceable white-label default chrome.
 /// The embedding app owns session start and close.
-class DeviceStreamView extends StatefulWidget {
+class DeviceStream extends StatefulWidget {
   /// Creates a bounded stream composite. Every slot has explicit default content.
-  const DeviceStreamView({
+  const DeviceStream({
     super.key,
     required this.session,
     this.hasControl = true,
-    this.showNavigation = true,
     this.autofocus = false,
     this.labels = const StreamLabels(),
     this.controller,
@@ -213,7 +181,7 @@ class DeviceStreamView extends StatefulWidget {
     this.unavailableBuilder = defaultStreamUnavailable,
     this.navigationBuilder = defaultStreamNavigation,
     this.connectivity,
-    this.handleLifecycle = true,
+    this.observeLifecycle = true,
   });
 
   /// Session supplying video and state.
@@ -221,9 +189,6 @@ class DeviceStreamView extends StatefulWidget {
 
   /// Local input switch, never a backend permission decision.
   final bool hasControl;
-
-  /// Shows optional navigation below the stream.
-  final bool showNavigation;
 
   /// Requests hardware keyboard focus when mounted.
   final bool autofocus;
@@ -247,12 +212,12 @@ class DeviceStreamView extends StatefulWidget {
   final Stream<bool>? connectivity;
 
   /// Uses the lifecycle adapter by default; disable when the app already owns it.
-  final bool handleLifecycle;
+  final bool observeLifecycle;
   @override
-  State<DeviceStreamView> createState() => _DeviceStreamViewState();
+  State<DeviceStream> createState() => _DeviceStreamState();
 }
 
-class _DeviceStreamViewState extends State<DeviceStreamView> {
+class _DeviceStreamState extends State<DeviceStream> {
   final _controller = DeviceStreamController();
   StreamLifecycle? _lifecycle;
   @override
@@ -262,7 +227,7 @@ class _DeviceStreamViewState extends State<DeviceStreamView> {
   }
 
   void _attach() {
-    if (widget.handleLifecycle) {
+    if (widget.observeLifecycle) {
       _lifecycle = StreamLifecycle(
         session: widget.session,
         connectivity: widget.connectivity,
@@ -271,14 +236,15 @@ class _DeviceStreamViewState extends State<DeviceStreamView> {
   }
 
   @override
-  void didUpdateWidget(DeviceStreamView oldWidget) {
+  void didUpdateWidget(DeviceStream oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.session != widget.session ||
-        oldWidget.connectivity != widget.connectivity ||
-        oldWidget.handleLifecycle != widget.handleLifecycle) {
+        oldWidget.observeLifecycle != widget.observeLifecycle) {
       _lifecycle?.dispose();
       _lifecycle = null;
       _attach();
+    } else if (oldWidget.connectivity != widget.connectivity) {
+      _lifecycle?.updateConnectivity(widget.connectivity);
     }
   }
 
@@ -292,43 +258,39 @@ class _DeviceStreamViewState extends State<DeviceStreamView> {
   Widget build(BuildContext context) {
     final t = StreamTheme.of(context);
     final controller = widget.controller ?? _controller;
-    return ValueListenableBuilder<StreamStatus>(
-      valueListenable: widget.session.status,
-      builder: (context, status, _) {
-        final unavailable = status is StreamUnavailable;
-        final canControl = widget.hasControl && !unavailable;
-        return ColoredBox(
-          color: t.background,
-          child: Column(
-            children: [
-              Expanded(
-                child: LayoutBuilder(
-                  builder: (context, constraints) {
-                    final scope = StreamOverlayState(
-                      status: status,
-                      labels: widget.labels,
-                      constraints: constraints,
-                      retry: widget.session.retry,
-                    );
-                    return Stack(
-                      fit: StackFit.expand,
-                      children: [
-                        DeviceStream(
-                          session: widget.session,
-                          hasControl: canControl,
-                          autofocus: widget.autofocus,
-                          controller: controller,
-                        ),
-                        if (unavailable)
-                          widget.unavailableBuilder(context, scope)
-                        else if (status is! StreamConnected)
-                          widget.placeholderBuilder(context, scope),
-                      ],
-                    );
-                  },
+    return DefaultTextStyle(
+      style: t.typography.copyWith(inherit: false, color: t.foreground),
+      child: ValueListenableBuilder<StreamStatus>(
+        valueListenable: widget.session.status,
+        builder: (context, status, _) {
+          final unavailable = status is StreamUnavailable;
+          final canControl = widget.hasControl && !unavailable;
+          final scope = StreamOverlayState(
+            status: status,
+            labels: widget.labels,
+            retry: widget.session.retry,
+          );
+          return ColoredBox(
+            color: t.background,
+            child: Column(
+              children: [
+                Expanded(
+                  child: Stack(
+                    fit: StackFit.expand,
+                    children: [
+                      DeviceStreamView(
+                        session: widget.session,
+                        hasControl: canControl,
+                        autofocus: widget.autofocus,
+                        controller: controller,
+                      ),
+                      if (unavailable)
+                        widget.unavailableBuilder(context, scope)
+                      else if (status is! StreamConnected)
+                        widget.placeholderBuilder(context, scope),
+                    ],
+                  ),
                 ),
-              ),
-              if (widget.showNavigation)
                 widget.navigationBuilder(
                   context,
                   StreamNavigationState(
@@ -339,10 +301,11 @@ class _DeviceStreamViewState extends State<DeviceStreamView> {
                     },
                   ),
                 ),
-            ],
-          ),
-        );
-      },
+              ],
+            ),
+          );
+        },
+      ),
     );
   }
 }

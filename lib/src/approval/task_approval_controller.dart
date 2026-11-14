@@ -11,9 +11,9 @@ import 'pending_approval.dart';
 final class TaskApprovalRequest {
   /// Creates a request.
   const TaskApprovalRequest({
-    this.taskId = '',
-    this.approvalId = '',
-    this.decision = ApprovalDecision.deny,
+    required this.taskId,
+    required this.approvalId,
+    required this.decision,
   });
 
   /// Task being decided.
@@ -80,6 +80,19 @@ final class TaskApprovalState {
     decision: clearDecision ? null : decision ?? this.decision,
     error: clearError ? null : error ?? this.error,
   );
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is TaskApprovalState &&
+          other.approval == approval &&
+          other.isLoading == isLoading &&
+          other.isDeciding == isDeciding &&
+          other.decision == decision &&
+          other.error == error;
+
+  @override
+  int get hashCode =>
+      Object.hashAll([approval, isLoading, isDeciding, decision, error]);
 }
 
 /// Removes an integrator's push subscription.
@@ -101,7 +114,7 @@ typedef ApprovalSubscribe =
 final class TaskApprovalController extends ChangeNotifier {
   /// Creates and starts a controller for [taskId].
   TaskApprovalController({
-    required String taskId,
+    required String? taskId,
     required Future<PendingApproval?> Function(String taskId) fetchApproval,
     required Future<void> Function(TaskApprovalRequest request) decide,
     ApprovalSubscribe? subscribe,
@@ -120,7 +133,7 @@ final class TaskApprovalController extends ChangeNotifier {
   final Future<void> Function(TaskApprovalRequest) _sendDecision;
   final ApprovalSubscribe? _subscribe;
   final FutureOr<void> Function(Object)? _onError;
-  String _taskId;
+  String? _taskId;
   bool _enabled;
   bool _disposed = false;
   int _epoch = 0;
@@ -134,8 +147,10 @@ final class TaskApprovalController extends ChangeNotifier {
   /// Current immutable state.
   TaskApprovalState get state => _state;
 
-  /// Changes task or enabled state, invalidating all earlier results.
-  void update({required String taskId, bool enabled = true}) {
+  /// Changes task or enabled state, invalidating earlier results.
+  /// A null task disables fetching; omitted enabled preserves its current value.
+  void update({required String? taskId, bool? enabled}) {
+    enabled ??= _enabled;
     if (_disposed || (_taskId == taskId && _enabled == enabled)) return;
     _taskId = taskId;
     _enabled = enabled;
@@ -145,7 +160,7 @@ final class TaskApprovalController extends ChangeNotifier {
   bool _current(int epoch) => !_disposed && epoch == _epoch;
 
   void _emit(TaskApprovalState state) {
-    if (_disposed) return;
+    if (_disposed || _state == state) return;
     _state = state;
     notifyListeners();
   }
@@ -159,15 +174,11 @@ final class TaskApprovalController extends ChangeNotifier {
     }
   }
 
-  Future<void> _detach(ApprovalUnsubscribe? unsubscribe, int epoch) async {
+  Future<void> _detach(ApprovalUnsubscribe? unsubscribe) async {
     try {
       await unsubscribe?.call();
     } on Object catch (error) {
-      if (_current(epoch)) {
-        _fetchError = error;
-        _emit(_state.copyWith(error: _decideError ?? error));
-        unawaited(_report(error));
-      }
+      unawaited(_report(error));
     }
   }
 
@@ -178,22 +189,24 @@ final class TaskApprovalController extends ChangeNotifier {
     final unsubscribe = _unsubscribe;
     _unsubscribe = null;
     _fetchError = _decideError = null;
-    _emit(TaskApprovalState(isLoading: _enabled && _taskId.isNotEmpty));
-    unawaited(_detach(unsubscribe, epoch));
-    if (!_enabled || _taskId.isEmpty) return;
+    _emit(
+      TaskApprovalState(isLoading: _enabled && (_taskId?.isNotEmpty ?? false)),
+    );
+    unawaited(_detach(unsubscribe));
+    if (!_enabled || (_taskId?.isEmpty ?? true)) return;
     unawaited(refetch());
     if (_subscribe != null) unawaited(_attach(epoch));
   }
 
   Future<void> _attach(int epoch) async {
     try {
-      final unsubscribe = await _subscribe!(_taskId, () {
+      final unsubscribe = await _subscribe!(_taskId!, () {
         if (_current(epoch)) unawaited(refetch());
       });
       if (_current(epoch)) {
         _unsubscribe = unsubscribe;
       } else {
-        await _detach(unsubscribe, epoch);
+        await _detach(unsubscribe);
       }
     } on Object catch (error) {
       if (!_current(epoch)) return;
@@ -205,17 +218,18 @@ final class TaskApprovalController extends ChangeNotifier {
 
   /// Reloads without resubscribing. Only the newest fetch may publish a result.
   Future<void> refetch() async {
-    if (_disposed || !_enabled || _taskId.isEmpty) return;
+    if (_disposed || !_enabled || (_taskId?.isEmpty ?? true)) return;
     _poll?.cancel();
     final epoch = _epoch;
     final seq = ++_latest;
     bool current() => _current(epoch) && seq == _latest;
     try {
-      final next = await _fetch(_taskId);
+      final next = await _fetch(_taskId!);
       if (!current()) return;
       _fetchError = null;
       _emit(
         _state.copyWith(
+          isLoading: false,
           approval: next,
           clearApproval: next == null,
           error: _decideError,
@@ -225,14 +239,11 @@ final class TaskApprovalController extends ChangeNotifier {
     } on Object catch (error) {
       if (!current()) return;
       _fetchError = error;
-      _emit(_state.copyWith(error: _decideError ?? error));
+      _emit(_state.copyWith(isLoading: false, error: _decideError ?? error));
       unawaited(_report(error));
     } finally {
-      if (current()) {
-        _emit(_state.copyWith(isLoading: false));
-        if (current() && _subscribe == null) {
-          _poll = Timer(const Duration(seconds: 3), () => unawaited(refetch()));
-        }
+      if (current() && _subscribe == null) {
+        _poll = Timer(const Duration(seconds: 3), () => unawaited(refetch()));
       }
     }
   }
@@ -256,7 +267,7 @@ final class TaskApprovalController extends ChangeNotifier {
     try {
       await _sendDecision(
         TaskApprovalRequest(
-          taskId: taskId,
+          taskId: taskId!,
           approvalId: approval.approvalId,
           decision: decision,
         ),
@@ -285,7 +296,7 @@ final class TaskApprovalController extends ChangeNotifier {
     _disposed = true;
     _epoch++;
     _poll?.cancel();
-    unawaited(_detach(_unsubscribe, _epoch));
+    unawaited(_detach(_unsubscribe));
     _unsubscribe = null;
     super.dispose();
   }

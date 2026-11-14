@@ -1,11 +1,16 @@
 // Copyright 2026 Mobilerun
 // SPDX-License-Identifier: Apache-2.0
 
+// This offline gallery replaces signalling without opening a network socket.
+// ignore_for_file: invalid_use_of_internal_member, implementation_imports
+
 import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_webrtc/flutter_webrtc.dart';
 import 'package:mobilerun_flutter/mobilerun_flutter.dart';
+import 'package:mobilerun_flutter/src/core/stream_transports.dart';
+import 'package:mobilerun_flutter/src/webrtc/default_transports.dart';
 
 /// Offline default stream chrome demo. The provider never opens a real device.
 Future<void> main() async {
@@ -34,16 +39,14 @@ class _StreamGalleryState extends State<StreamGallery> {
   }
 
   DeviceStreamSession _createSession(bool fail) {
-    var calls = 0;
-    return DeviceStreamSession(
-      credentials: () async {
-        // Model a backend outage, then a booting device after manual retry.
-        // Use normal retry timing; no real credentials or network are involved.
-        if (fail && ++calls <= 7) {
-          throw StateError('Preview backend unavailable');
-        }
-        return null;
-      },
+    return DeviceStreamSession.withTransports(
+      credentials: () async => fail
+          ? const StreamCredentials(url: 'wss://preview.invalid', token: '')
+          : null,
+      transports: StreamTransports(
+        signalling: _PreviewConnector(),
+        peers: defaultStreamTransports().peers,
+      ),
     )..start();
   }
 
@@ -124,7 +127,7 @@ class _StreamGalleryState extends State<StreamGallery> {
               Expanded(
                 child: Padding(
                   padding: const EdgeInsets.all(16),
-                  child: DeviceStreamView(
+                  child: DeviceStream(
                     session: _session,
                     hasControl: _hasControl,
                     labels: labels,
@@ -193,3 +196,9 @@ Widget _navigation(BuildContext context, StreamNavigationState state) =>
         ],
       ),
     );
+
+class _PreviewConnector implements SignallingConnector {
+  @override
+  Future<SignallingConnection> connect(Uri uri) =>
+      Future.error(StateError('Preview backend unavailable'));
+}

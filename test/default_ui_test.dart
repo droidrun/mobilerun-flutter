@@ -2,6 +2,8 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import 'package:flutter/material.dart';
+import 'package:flutter/gestures.dart';
+import 'package:mobilerun_flutter/src/ui/stream_button.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mobilerun_flutter/mobilerun_flutter.dart';
@@ -125,10 +127,10 @@ void main() {
     );
     expect(light.radius, 6);
     expect(light.copyWith(primary: Colors.blue).foreground, light.foreground);
-    final labels = const StreamLabels().copyWith(approve: 'Freigeben');
+    final labels = const TaskApprovalLabels().copyWith(approve: 'Freigeben');
     expect(labels.approve, 'Freigeben');
     expect(labels.deny, 'Deny');
-    const defaults = StreamLabels();
+    const defaults = TaskApprovalLabels();
     expect(
       [
         defaults.paymentCardTitle,
@@ -166,6 +168,83 @@ void main() {
     expect(
       const TaskApprovalState().copyWith(isLoading: true).isLoading,
       isTrue,
+    );
+  });
+
+  test('tokens and split labels have value equality and hashes', () {
+    const tokens = StreamTokens();
+    expect(tokens.typography.fontFamily, isNull);
+    expect(tokens.copyWith(), tokens);
+    expect(tokens.copyWith().hashCode, tokens.hashCode);
+    expect(tokens.copyWith(radius: 7), isNot(tokens));
+    const stream = StreamLabels();
+    expect(stream.copyWith(), stream);
+    expect(stream.copyWith().hashCode, stream.hashCode);
+    expect(stream.copyWith(home: 'Start'), isNot(stream));
+    const approval = TaskApprovalLabels();
+    expect(approval.copyWith(), approval);
+    expect(approval.copyWith().hashCode, approval.hashCode);
+    expect(approval.copyWith(approve: 'Yes'), isNot(approval));
+  });
+
+  testWidgets('pill isolates host text styles without an explicit theme', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      const MaterialApp(
+        home: DefaultTextStyle(
+          style: TextStyle(
+            color: Colors.red,
+            decoration: TextDecoration.underline,
+            fontFamily: 'host-only',
+          ),
+          child: StreamStatusPill(label: 'Isolated'),
+        ),
+      ),
+    );
+    final element = tester.element(find.text('Isolated'));
+    final style = DefaultTextStyle.of(
+      element,
+    ).style.merge(tester.widget<Text>(find.text('Isolated')).style);
+    expect(style.color, const StreamTokens().mutedForeground);
+    expect(style.fontFamily, isNull);
+    expect(style.decoration, isNot(TextDecoration.underline));
+  });
+
+  testWidgets('button icon tracks hover and focus foreground', (tester) async {
+    const tokens = StreamTokens(
+      foreground: Colors.blue,
+      accentForeground: Colors.green,
+    );
+    await tester.pumpWidget(
+      host(
+        StreamButton(
+          label: 'Action',
+          icon: Icons.check,
+          outline: true,
+          onPressed: () {},
+        ),
+        tokens: tokens,
+      ),
+    );
+    Color? iconColor() =>
+        IconTheme.of(tester.element(find.byIcon(Icons.check))).color;
+    expect(iconColor(), Colors.blue);
+    final mouse = await tester.createGesture(kind: PointerDeviceKind.mouse);
+    await mouse.addPointer(location: const Offset(790, 590));
+    await mouse.moveTo(tester.getCenter(find.byType(TextButton)));
+    await tester.pumpAndSettle();
+    expect(iconColor(), Colors.green);
+    await mouse.removePointer();
+    await tester.pumpAndSettle();
+    final button = tester.widget<TextButton>(find.byType(TextButton));
+    expect(
+      button.style!.iconColor!.resolve({WidgetState.focused}),
+      Colors.green,
+    );
+    expect(
+      button.style!.foregroundColor!.resolve({WidgetState.focused}),
+      Colors.green,
     );
   });
 
@@ -214,7 +293,10 @@ void main() {
           TaskApprovalCard(
             approval: approval.copyWith(kind: 'future'),
             onDecide: decisions.add,
-            labels: const StreamLabels(approve: 'Allow', waiting: 'Confirm'),
+            labels: const TaskApprovalLabels(
+              approve: 'Allow',
+              waiting: 'Confirm',
+            ),
           ),
         ),
       );
@@ -371,5 +453,44 @@ void main() {
       ),
       isTrue,
     );
+    int count() => announcements
+        .whereType<Map>()
+        .where((a) => a['type'] == 'announce')
+        .length;
+    expect(count(), 1);
+    await tester.pumpWidget(
+      host(
+        TaskApprovalCard(
+          approval: approval.copyWith(),
+          onDecide: (_) {},
+          error: String.fromCharCodes('Rejected'.codeUnits),
+        ),
+      ),
+    );
+    await tester.pump(const Duration(seconds: 3));
+    expect(count(), 1);
+    await tester.pumpWidget(
+      host(
+        TaskApprovalCard(
+          approval: approval,
+          onDecide: (_) {},
+          error: 'Changed text',
+        ),
+      ),
+    );
+    expect(count(), 2);
+    expect(
+      tester
+          .widgetList<Semantics>(find.byType(Semantics))
+          .any((w) => w.properties.liveRegion == true),
+      isFalse,
+    );
+    final semantics = tester.ensureSemantics();
+    await tester.pump();
+    final tree = tester
+        .getSemantics(find.text('Approval expired'))
+        .toStringDeep();
+    expect('Approval expired'.allMatches(tree), hasLength(1));
+    semantics.dispose();
   });
 }

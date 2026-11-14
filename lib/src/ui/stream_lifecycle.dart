@@ -11,7 +11,8 @@ import '../core/device_stream_session.dart';
 ///
 /// Uses Flutter app lifecycle and optionally the host's existing connectivity
 /// stream. Initial foreground/online snapshots never wake the session. The
-/// embedding UI owns this adapter's lifetime alongside its session.
+/// embedding UI creates this adapter once alongside its session and disposes it
+/// with that session. Change connectivity sources with [updateConnectivity].
 final class StreamLifecycle {
   /// Attaches app lifecycle and an optional online/offline source.
   StreamLifecycle({required this.session, Stream<bool>? connectivity}) {
@@ -22,7 +23,7 @@ final class StreamLifecycle {
         initial != AppLifecycleState.paused &&
         initial != AppLifecycleState.detached;
     session.setVisible(_foreground);
-    _network = connectivity?.listen(_onNetwork, onError: (Object _) {});
+    updateConnectivity(connectivity);
   }
 
   /// Session whose keepAlive and reconnects are adapted.
@@ -42,6 +43,14 @@ final class StreamLifecycle {
     if (foreground == _foreground) return;
     _foreground = foreground;
     session.setVisible(foreground);
+  }
+
+  /// Replaces only the subscription, retaining the last known online state.
+  /// A new source reporting online after a known offline state wakes the session.
+  void updateConnectivity(Stream<bool>? connectivity) {
+    if (_disposed) return;
+    unawaited(_network?.cancel().catchError((Object _) {}));
+    _network = connectivity?.listen(_onNetwork, onError: (Object _) {});
   }
 
   void _onNetwork(bool online) {

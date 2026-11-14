@@ -12,6 +12,51 @@ import 'support/fake_scheduler.dart';
 import 'support/fake_transports.dart';
 
 void main() {
+  testWidgets('connectivity source replacement retains offline state', (
+    tester,
+  ) async {
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+    final scheduler = FakeScheduler();
+    final connector = FakeConnector(scheduler)
+      ..failWith = StateError('offline');
+    final session = DeviceStreamSession.withTransports(
+      credentials: () async =>
+          const StreamCredentials(url: 'wss://example.test/s', token: 'test'),
+      transports: StreamTransports(
+        signalling: connector,
+        peers: FakePeerFactory('offer'),
+      ),
+      scheduler: scheduler,
+    );
+    session.start();
+    await tester.pump();
+    final first = StreamController<bool>.broadcast(sync: true);
+    final second = StreamController<bool>.broadcast(sync: true);
+    final adapter = StreamLifecycle(
+      session: session,
+      connectivity: first.stream,
+    );
+    first.add(false);
+    final before = connector.uris.length;
+    adapter.updateConnectivity(second.stream);
+    first.add(true); // Detached source must not wake.
+    await tester.pump();
+    expect(connector.uris.length, before);
+    second.add(
+      true,
+    ); // Known offline -> online, even across source replacement.
+    await tester.pump();
+    expect(connector.uris.length, before + 1);
+    second.add(true);
+    await tester.pump();
+    expect(connector.uris.length, before + 1);
+    adapter.dispose();
+    await session.close();
+    await first.close();
+    await second.close();
+    expect(scheduler.pendingTimers, 0);
+  });
+
   testWidgets(
     'initial foreground/online and repeated snapshots do not wake; real transitions do',
     (tester) async {

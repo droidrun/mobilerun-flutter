@@ -26,7 +26,7 @@ await session.close();
   or `StreamUnavailable`; `retry()` starts a new cycle from unavailable.
 - `videoSize` is the decoded frame size; the view uses the renderer
   dimensions and rotation for displayed video coordinates.
-- Raw channel sends are internal; use `DeviceStream` for input mapping.
+- Raw channel sends are internal; use `DeviceStreamView` for input mapping.
   Hover never goes over the control channel.
 - `StreamConfig` starts the audio muted (`setMuted` changes it) and asks for
   zero playout delay. That setting is process-wide: call
@@ -44,7 +44,7 @@ await session.close();
 final view = DeviceStreamController();
 
 // Place in a bounded area, such as an Expanded in a Column.
-DeviceStream(session: session, hasControl: true, controller: view);
+DeviceStreamView(session: session, hasControl: true, controller: view);
 
 view.showKeyboard();
 view.hideKeyboard();
@@ -81,7 +81,7 @@ PopScope(
   onPopInvokedWithResult: (didPop, result) {
     if (!didPop) view.sendSystemKey(DeviceSystemKey.back);
   },
-  child: DeviceStream(session: session, hasControl: true, controller: view),
+  child: DeviceStreamView(session: session, hasControl: true, controller: view),
 );
 ```
 
@@ -125,29 +125,25 @@ The first command replaces `conformance/fixtures` with the copy at the given
 release tag. The second regenerates `lib/src/protocol/constants.dart` from
 `constants.json`. Always pin a tag, never a branch.
 
-## License
-
-Apache-2.0, see `LICENSE`.
-
 ## Default UI and approvals
 
-`DeviceStreamView`, `StreamNavigationBar`, `TaskApprovalCard`,
-`StreamStatusPill`, `StreamTheme`, and `StreamLabels` are
+`DeviceStream`, `StreamNavigationBar`, `TaskApprovalCard`,
+`StreamStatusPill`, `StreamTheme`, `StreamLabels`, and `TaskApprovalLabels` are
 optional white-label widgets. They display no logo or product name. The
 headless session and approval controller also work with your own UI.
 
 ### Stream with default chrome
 
-Use `DeviceStreamView` in a bounded area to compose the existing `DeviceStream`
+Use `DeviceStream` in a bounded area to compose the existing `DeviceStreamView`
 video/input widget with status overlays and Back/Home/Recent navigation:
 
 ```dart
-DeviceStreamView(
+DeviceStream(
   session: session,
   hasControl: true,
   controller: view,
   labels: const StreamLabels(connecting: 'Starting device'),
-  // showNavigation: false,
+  // navigationBuilder: (_, _) => const SizedBox.shrink(),
   // connectivity: existingOnlineStream,
 );
 ```
@@ -160,7 +156,7 @@ Display-only mode keeps video visible. Navigation sends explicit Back/Home/Recen
 DOWN/UP pairs (4/3/187); it never handles host back implicitly.
 
 The app still owns `session.start()` and `session.close()`. By default the view
-attaches `StreamLifecycle`; set `handleLifecycle: false` if your app already
+attaches `StreamLifecycle`; set `observeLifecycle: false` if your app already
 owns one. Initial online/foreground snapshots and visible focus changes do not
 wake reconnects. App background pauses keepAlive; foreground/network return
 wakes pending reconnects.
@@ -168,8 +164,8 @@ wakes pending reconnects.
 Every slot has its default builder as an explicit default value:
 
 - `placeholderBuilder(context, StreamOverlayState)` replaces the connecting
-  overlay. The scope supplies status, localized label, bounded container
-  constraints and `retry`.
+  overlay. Its state supplies status, localized labels and `retry`. The returned
+  widget is placed inside the bounded stream container.
 - `unavailableBuilder(context, StreamOverlayState)` replaces the unavailable
   overlay and can call `state.retry()`.
 - `navigationBuilder(context, StreamNavigationState)` replaces navigation,
@@ -177,7 +173,7 @@ Every slot has its default builder as an explicit default value:
 
 You can call `defaultStreamPlaceholder`, `defaultStreamUnavailable`, or
 `defaultStreamNavigation` inside your builder to wrap the defaults. The bare
-`DeviceStream` remains available for fully custom UI.
+`DeviceStreamView` remains available for fully custom UI.
 
 ### Task approvals
 
@@ -208,15 +204,16 @@ ListenableBuilder(
       onDecide: approvals.decide,
       isPending: state.isDeciding,
       decision: state.decision,
-      error: state.error,
-      labels: const StreamLabels(approve: 'Allow', deny: 'Decline'),
+      error: state.error?.toString(), // Or map the raw error to localized text.
+      labels: const TaskApprovalLabels(approve: 'Allow', deny: 'Decline'),
       // device: yourDeviceWidget,
     );
   },
 );
 
 // Changing tasks invalidates every old fetch and decision result.
-approvals.update(taskId: nextTaskId);
+approvals.update(taskId: nextTaskId); // null disables fetching.
+// An omitted enabled argument preserves the previous enabled state.
 // Detach the push subscription and cancel polling when the owner goes away.
 approvals.dispose();
 ```
@@ -273,15 +270,20 @@ chroma; the dark border retains 10% white alpha. Examples: light background
 `#ffffff`, foreground `#0a0a0a`, primary `#171717`, destructive `#e7000b`;
 dark background `#0a0a0a`, primary `#fafafa`, destructive `#ff6467`.
 
-`StreamLabels` provides all React approval label keys (`paymentCardTitle`,
+`TaskApprovalLabels` provides React's approval label keys (`paymentCardTitle`,
 `waiting`, `card`, `app`, `domain`, `timeLeft`, `expired`, `approve`, `deny`,
-`viewSwitch`, `details`, `device`) plus stream and navigation labels
-(`connecting`, `reconnecting`, `reconnectingAttempt`, `unavailable`, `retry`,
-`back`, `home`, `recent`). `{time}` is replaced in `timeLeft`;
-`{attempt}` and `{max}` are the reconnect template fields. Backend-provided
-values and error messages are rendered as supplied; localize those in your
-backend or integrator callbacks. Public value types use named defaults and
-`copyWith`, allowing individual overrides without rebuilding every field.
+`viewSwitch`, `details`, `device`). `StreamLabels` provides stream/navigation
+labels (`connecting`, `reconnecting`, `reconnectingAttempt`, `unavailable`,
+`retry`, `back`, `home`, `recent`). `{time}` is replaced in `timeLeft`;
+`{attempt}` and `{max}` are reconnect template fields. Backend values are
+rendered as supplied; the card accepts a `String?` error so the app can map
+and localize the controller's raw error. Changed error text is announced once,
+assertively. Identical poll results do not notify listeners.
+
+Tokens, labels, approval models and controller snapshots use value equality.
+Their named constructors require identity fields, with optional defaults for
+extensions and `copyWith` for overrides. SDK-produced slot state objects are
+read-only snapshots passed to builders.
 
 ### Credentials and app lifecycle
 
@@ -297,16 +299,21 @@ final session = DeviceStreamSession(
 )..start();
 ```
 
-The session is the only credential-poll owner: null means not ready and polls
-again after 3,000 ms without consuming reconnect attempts. Healing refetches
-credentials through that same provider. Closing cancels polling and ignores
-late provider results.
+The session owns credentials discovery. Before the first target, null, throwing
+and timed-out provider calls poll again after 3,000 ms without consuming the
+reconnect budget. Each call is bounded by `ReconnectPolicy.connectTimeout`;
+wake/retry can supersede a pending initial call. After discovery, remounts reuse
+the cached target while a heal refreshes credentials in the background. A null
+or failed refresh retains that target, so connection failures still exhaust
+the retry budget and show Unavailable + Retry. Closing cancels timers and
+ignores late provider results.
 
-For a custom UI, attach a `StreamLifecycle(session: session)` once and dispose
+For a custom UI, create a `StreamLifecycle(session: session)` once and dispose
 it with the UI. It uses `AppLifecycleListener` to pause keepAlive while hidden
 and wake pending reconnects on foreground transitions. Optionally pass your
 app's existing `Stream<bool>` as `connectivity`; only lost → available wakes,
-never the initial online snapshot. No connectivity dependency is required.
+never the initial online snapshot. Use `updateConnectivity` to replace the
+source while retaining its last online state. No connectivity dependency is required.
 You can instead call `session.setVisible(false/true)` and `session.wake()`
 from your existing lifecycle/network integration. The app owns session
 `start()` and `close()`.
@@ -319,7 +326,12 @@ cd example
 flutter run -t lib/ui_gallery_main.dart
 ```
 
-The stream chrome gallery uses a local credentials provider to exercise
+The stream chrome gallery uses initial null discovery and an offline failing
+signalling transport to exercise
 connecting, reconnecting, unavailable/retry, custom slots and themes without
 opening a cloud device: `flutter run -t lib/ui_stream_gallery_main.dart` from
 `example/`. It does not simulate connected video.
+
+## License
+
+Apache-2.0, see `LICENSE`.

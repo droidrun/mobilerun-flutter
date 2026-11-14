@@ -10,8 +10,8 @@ library;
 import 'src/core/device_stream_session.dart';
 
 export 'src/core/device_stream_session.dart' show DeviceStreamSession;
-export 'src/widgets/device_stream.dart'
-    show DeviceStream, DeviceStreamController, DeviceSystemKey;
+export 'src/widgets/device_stream_view.dart'
+    show DeviceStreamView, DeviceStreamController, DeviceSystemKey;
 export 'src/core/reconnect_controller.dart'
     show ReconnectController, ReconnectSnapshot, ReconnectStatus;
 export 'src/core/reconnect_policy.dart' show ReconnectPolicy;
@@ -51,13 +51,7 @@ export 'src/protocol/signalling.dart'
 export 'src/protocol/stream_spec.dart' show DataChannelSpec, StreamDataChannels;
 export 'src/protocol/stream_timing.dart' show SignallingTiming;
 export 'src/approval/pending_approval.dart'
-    show
-        PendingApproval,
-        PaymentCardDetails,
-        ApprovalDecision,
-        parsePaymentCardDetails,
-        remainingMs,
-        formatRemaining;
+    show PendingApproval, ApprovalDecision;
 export 'src/approval/task_approval_controller.dart'
     show
         TaskApprovalController,
@@ -66,6 +60,7 @@ export 'src/approval/task_approval_controller.dart'
         ApprovalSubscribe,
         ApprovalUnsubscribe;
 export 'src/ui/stream_labels.dart' show StreamLabels;
+export 'src/ui/task_approval_labels.dart' show TaskApprovalLabels;
 export 'src/ui/stream_tokens.dart' show StreamTokens;
 export 'src/ui/stream_theme.dart' show StreamTheme;
 export 'src/ui/stream_status_pill.dart' show StreamStatusPill;
@@ -77,9 +72,9 @@ export 'src/ui/task_approval_card.dart'
         ApprovalActionsBuilder,
         defaultApprovalActions;
 
-export 'src/ui/device_stream_view.dart'
+export 'src/ui/device_stream.dart'
     show
-        DeviceStreamView,
+        DeviceStream,
         StreamNavigationBar,
         StreamOverlayState,
         StreamOverlayBuilder,

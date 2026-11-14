@@ -101,7 +101,7 @@ class _StreamPageState extends State<StreamPage> {
             if (session != null)
               Expanded(
                 key: ObjectKey(session),
-                child: DeviceStreamView(
+                child: DeviceStream(
                   session: session,
                   controller: _view,
                   autofocus: true,

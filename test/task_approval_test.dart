@@ -19,6 +19,137 @@ const approval = PendingApproval(
 );
 
 void main() {
+  test('approval and state have structural equality and consistent hashes', () {
+    final copy = PendingApproval(
+      approvalId: approval.approvalId,
+      kind: approval.kind,
+      expiresAt: approval.expiresAt,
+      details: Map.of(approval.details),
+    );
+    expect(copy, approval);
+    expect(copy.hashCode, approval.hashCode);
+    final nested = approval.copyWith(
+      details: {
+        'items': [
+          1,
+          {'a': 2, 'b': 3},
+        ],
+      },
+    );
+    final reordered = approval.copyWith(
+      details: {
+        'items': [
+          1,
+          {'b': 3, 'a': 2},
+        ],
+      },
+    );
+    expect(nested, reordered);
+    expect(nested.hashCode, reordered.hashCode);
+    expect(
+      nested,
+      isNot(
+        nested.copyWith(
+          details: {
+            'items': [2],
+          },
+        ),
+      ),
+    );
+    final state = TaskApprovalState(
+      approval: approval,
+      decision: ApprovalDecision.approve,
+    );
+    final same = TaskApprovalState(
+      approval: copy,
+      decision: ApprovalDecision.approve,
+    );
+    expect(state, same);
+    expect(state.hashCode, same.hashCode);
+    expect(state, isNot(state.copyWith(isLoading: true)));
+  });
+
+  testWidgets(
+    'one changed poll notifies once; identical snapshots never notify',
+    (tester) async {
+      var next = approval;
+      final controller = TaskApprovalController(
+        taskId: 'task',
+        fetchApproval: (_) async =>
+            next.copyWith(details: Map.of(next.details)),
+        decide: (_) async {},
+      );
+      var notifications = 0;
+      controller.addListener(() => notifications++);
+      await tester.pump();
+      expect(notifications, 1);
+      await tester.pump(const Duration(seconds: 3));
+      expect(notifications, 1);
+      next = next.copyWith(approvalId: 'new');
+      await tester.pump(const Duration(seconds: 3));
+      expect(notifications, 2);
+      await controller.refetch();
+      expect(notifications, 2);
+      controller.dispose();
+    },
+  );
+
+  testWidgets(
+    'null task disables; updating a task preserves explicit disabled state',
+    (tester) async {
+      var calls = 0;
+      final controller = TaskApprovalController(
+        taskId: null,
+        fetchApproval: (_) async {
+          calls++;
+          return approval;
+        },
+        decide: (_) async {},
+      );
+      await tester.pump();
+      expect(calls, 0);
+      controller.update(taskId: 'first');
+      await tester.pump();
+      expect(calls, 1);
+      controller.update(taskId: null);
+      await tester.pump(const Duration(seconds: 6));
+      expect(controller.state.approval, isNull);
+      expect(calls, 1);
+      controller.update(taskId: 'disabled', enabled: false);
+      controller.update(taskId: 'still-disabled');
+      await tester.pump();
+      expect(calls, 1);
+      controller.update(taskId: 'enabled', enabled: true);
+      await tester.pump();
+      expect(calls, 2);
+      controller.dispose();
+    },
+  );
+
+  testWidgets(
+    'old unsubscribe failure reports without changing new task state',
+    (tester) async {
+      final detach = Completer<void>();
+      final errors = <Object>[];
+      final controller = TaskApprovalController(
+        taskId: 'old',
+        fetchApproval: (_) async => approval,
+        decide: (_) async {},
+        subscribe: (id, _) => id == 'old' ? () => detach.future : () {},
+        onError: errors.add,
+      );
+      await tester.pump();
+      controller.update(taskId: 'new');
+      await tester.pump();
+      final state = controller.state;
+      detach.completeError(TimeoutException('old unsubscribe'));
+      await tester.pump();
+      expect(errors.single, isA<TimeoutException>());
+      expect(controller.state, same(state));
+      controller.dispose();
+    },
+  );
+
   group('React payment details cases', () {
     test('accepts label, package and host', () {
       final card = parsePaymentCardDetails(approval.details)!;
@@ -161,7 +292,7 @@ void main() {
       await tester.pump();
       expect(controller.state.approval, isNull);
       expect(controller.state.isLoading, isFalse);
-      controller.update(taskId: 'last');
+      controller.update(taskId: 'last', enabled: true);
       controller.dispose();
       pending[3].completeError(TimeoutException('late'));
       await tester.pump();
@@ -256,18 +387,21 @@ void main() {
     await tester.pump();
     expect(controller.state.error, isA<TimeoutException>());
     controller.dispose();
+    final detachErrors = <Object>[];
     final detached = TaskApprovalController(
       taskId: 'task',
       fetchApproval: (_) async => approval,
       decide: (_) async {},
+      onError: detachErrors.add,
       subscribe: (_, _) => () async {
         throw TimeoutException('unsubscribe');
       },
     );
     await tester.pump();
-    detached.update(taskId: '', enabled: false);
+    detached.update(taskId: null);
     await tester.pump();
-    expect(detached.state.error, isA<TimeoutException>());
+    expect(detached.state.error, isNull);
+    expect(detachErrors.single, isA<TimeoutException>());
     detached.dispose();
     await tester.pump();
   });

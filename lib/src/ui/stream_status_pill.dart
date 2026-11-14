@@ -16,47 +16,50 @@ class StreamStatusPill extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final t = StreamTheme.of(context);
-    return IgnorePointer(
-      child: Semantics(
-        liveRegion: true,
-        child: DecoratedBox(
-          decoration: BoxDecoration(
-            color: t.card.withValues(alpha: .8),
-            border: Border.all(color: t.border),
-            borderRadius: BorderRadius.circular(999),
-            boxShadow: const [
-              BoxShadow(
-                color: Color(0x22000000),
-                blurRadius: 8,
-                offset: Offset(0, 3),
-              ),
-            ],
-          ),
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                SizedBox(
-                  width: 14,
-                  height: 14,
-                  child: CircularProgressIndicator(
-                    strokeWidth: 2,
-                    color: t.mutedForeground,
-                  ),
+    return DefaultTextStyle(
+      style: t.typography.copyWith(inherit: false, color: t.foreground),
+      child: IgnorePointer(
+        child: Semantics(
+          liveRegion: true,
+          child: DecoratedBox(
+            decoration: BoxDecoration(
+              color: t.card.withValues(alpha: .8),
+              border: Border.all(color: t.border),
+              borderRadius: BorderRadius.circular(999),
+              boxShadow: const [
+                BoxShadow(
+                  color: Color(0x22000000),
+                  blurRadius: 8,
+                  offset: Offset(0, 3),
                 ),
-                const SizedBox(width: 10),
-                Flexible(
-                  child: Text(
-                    label,
-                    style: t.typography.copyWith(
-                      fontSize: 12,
-                      fontWeight: FontWeight.w500,
+              ],
+            ),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  SizedBox(
+                    width: 14,
+                    height: 14,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2,
                       color: t.mutedForeground,
                     ),
                   ),
-                ),
-              ],
+                  const SizedBox(width: 10),
+                  Flexible(
+                    child: Text(
+                      label,
+                      style: t.typography.copyWith(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w500,
+                        color: t.mutedForeground,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
             ),
           ),
         ),

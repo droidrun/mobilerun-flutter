@@ -1,6 +1,8 @@
 // Copyright 2026 Mobilerun
 // SPDX-License-Identifier: Apache-2.0
 
+import 'dart:async';
+
 import 'package:mobilerun_flutter/mobilerun_flutter.dart';
 import 'package:mobilerun_flutter/src/core/stream_transports.dart';
 
@@ -26,7 +28,7 @@ const sessionId = 'sess_0123456789abcdef';
 final class Harness {
   Harness({
     StreamConfig config = const StreamConfig(),
-    StreamCredentials? Function(int call)? credentials,
+    FutureOr<StreamCredentials?> Function(int call)? credentials,
   }) {
     connector = FakeConnector(scheduler);
     final offer = example('client-offer.json')['sdp']! as String;

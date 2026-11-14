@@ -88,7 +88,7 @@ class _UiGalleryState extends State<UiGallery> {
           )
         : const StreamTokens();
     final labels = _scenario == 'custom'
-        ? const StreamLabels(
+        ? const TaskApprovalLabels(
             approve: 'Freigeben',
             deny: 'Ablehnen',
             paymentCardTitle: 'Zahlung freigeben',
@@ -97,7 +97,7 @@ class _UiGalleryState extends State<UiGallery> {
             app: 'App',
             domain: 'Domain',
           )
-        : const StreamLabels();
+        : const TaskApprovalLabels();
     return StreamTheme(
       tokens: tokens,
       child: Scaffold(
@@ -140,7 +140,7 @@ class _UiGalleryState extends State<UiGallery> {
                               unawaited(_approval.decide(decision)),
                           isPending: state.isDeciding,
                           decision: state.decision,
-                          error: state.error,
+                          error: state.error?.toString(),
                           labels: labels,
                         ),
                         if (state.approval == null && !state.isLoading)

@@ -5,10 +5,10 @@
 final class PendingApproval {
   /// Creates an approval. Unknown kinds are intentionally accepted.
   const PendingApproval({
-    this.approvalId = '',
-    this.kind = '',
+    required this.approvalId,
+    required this.kind,
     this.details = const {},
-    this.expiresAt = '',
+    required this.expiresAt,
     this.deviceId,
   });
 
@@ -42,6 +42,19 @@ final class PendingApproval {
     expiresAt: expiresAt ?? this.expiresAt,
     deviceId: clearDeviceId ? null : deviceId ?? this.deviceId,
   );
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is PendingApproval &&
+          approvalId == other.approvalId &&
+          kind == other.kind &&
+          expiresAt == other.expiresAt &&
+          deviceId == other.deviceId &&
+          _detailsEqual(details, other.details);
+
+  @override
+  int get hashCode =>
+      Object.hash(approvalId, kind, expiresAt, deviceId, _detailsHash(details));
 }
 
 /// The decision forwarded to the backend. Expiry never gates it locally.
@@ -57,8 +70,8 @@ enum ApprovalDecision {
 final class PaymentCardDetails {
   /// Creates display values.
   const PaymentCardDetails({
-    this.card = '',
-    this.targetPackage = '',
+    required this.card,
+    required this.targetPackage,
     this.targetHost,
   });
 
@@ -116,3 +129,31 @@ String formatRemaining(num milliseconds) {
       ? '${m}m ${s}s'
       : '${s}s';
 }
+
+// Approval details are JSON-shaped; nested maps ignore insertion order.
+bool _detailsEqual(Object? a, Object? b) {
+  if (a is Map && b is Map) {
+    return a.length == b.length &&
+        a.keys.every(
+          (key) => b.containsKey(key) && _detailsEqual(a[key], b[key]),
+        );
+  }
+  if (a is List && b is List) {
+    if (a.length != b.length) return false;
+    for (var i = 0; i < a.length; i++) {
+      if (!_detailsEqual(a[i], b[i])) return false;
+    }
+    return true;
+  }
+  return a == b;
+}
+
+int _detailsHash(Object? value) => switch (value) {
+  Map() => Object.hashAllUnordered(
+    value.entries.map(
+      (entry) => Object.hash(entry.key, _detailsHash(entry.value)),
+    ),
+  ),
+  List() => Object.hashAll(value.map(_detailsHash)),
+  _ => value.hashCode,
+};

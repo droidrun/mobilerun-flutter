@@ -22,7 +22,7 @@ final class StreamTokens {
     this.accentForeground = const Color(0xFF171717),
     this.destructive = const Color(0xFFE7000B),
     this.radius = 6,
-    this.typography = const TextStyle(fontSize: 14, fontFamily: 'sans-serif'),
+    this.typography = const TextStyle(fontSize: 14),
   });
 
   /// background semantic color.
@@ -121,4 +121,42 @@ final class StreamTokens {
     radius: radius ?? this.radius,
     typography: typography ?? this.typography,
   );
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is StreamTokens &&
+          other.background == background &&
+          other.foreground == foreground &&
+          other.card == card &&
+          other.cardForeground == cardForeground &&
+          other.muted == muted &&
+          other.mutedForeground == mutedForeground &&
+          other.border == border &&
+          other.ring == ring &&
+          other.primary == primary &&
+          other.primaryForeground == primaryForeground &&
+          other.accent == accent &&
+          other.accentForeground == accentForeground &&
+          other.destructive == destructive &&
+          other.radius == radius &&
+          other.typography == typography;
+
+  @override
+  int get hashCode => Object.hashAll([
+    background,
+    foreground,
+    card,
+    cardForeground,
+    muted,
+    mutedForeground,
+    border,
+    ring,
+    primary,
+    primaryForeground,
+    accent,
+    accentForeground,
+    destructive,
+    radius,
+    typography,
+  ]);
 }
