@@ -50,3 +50,29 @@ export 'src/protocol/signalling.dart'
         decodeServerMessage;
 export 'src/protocol/stream_spec.dart' show DataChannelSpec, StreamDataChannels;
 export 'src/protocol/stream_timing.dart' show SignallingTiming;
+export 'src/approval/pending_approval.dart'
+    show
+        PendingApproval,
+        PaymentCardDetails,
+        ApprovalDecision,
+        parsePaymentCardDetails,
+        remainingMs,
+        formatRemaining;
+export 'src/approval/task_approval_controller.dart'
+    show
+        TaskApprovalController,
+        TaskApprovalState,
+        TaskApprovalRequest,
+        ApprovalSubscribe,
+        ApprovalUnsubscribe;
+export 'src/ui/stream_labels.dart' show StreamLabels;
+export 'src/ui/stream_tokens.dart' show StreamTokens;
+export 'src/ui/stream_theme.dart' show StreamTheme;
+export 'src/ui/stream_status_pill.dart' show StreamStatusPill;
+export 'src/ui/stream_lifecycle.dart' show StreamLifecycle;
+export 'src/ui/task_approval_card.dart'
+    show
+        TaskApprovalCard,
+        ApprovalActionsState,
+        ApprovalActionsBuilder,
+        defaultApprovalActions;

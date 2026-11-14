@@ -404,24 +404,30 @@ void main() {
       expect(h.credentialCalls, 2);
     });
 
-    test('null credentials count as a failure and are retried', () async {
-      final h = Harness(
-        credentials: (call) => call < 3
-            ? null
-            : const StreamCredentials(
-                url: 'wss://stream.example.test/s',
-                token: 't',
-              ),
-      );
-      h.session.start();
-      await pump();
-      expect(h.connector.connections, isEmpty);
-      expect(h.session.status.value, const StreamReconnecting(1));
-      await h.advance(1000);
-      expect(h.session.status.value, const StreamReconnecting(2));
-      await h.advance(2000);
-      expect(h.connector.connections, hasLength(1));
-    });
+    test(
+      'null credentials poll every three seconds without failures',
+      () async {
+        final h = Harness(
+          credentials: (call) => call < 3
+              ? null
+              : const StreamCredentials(
+                  url: 'wss://stream.example.test/s',
+                  token: 't',
+                ),
+        );
+        h.session.start();
+        await pump();
+        expect(h.connector.connections, isEmpty);
+        expect(h.session.status.value, const StreamConnecting());
+        await h.advance(2999);
+        expect(h.credentialCalls, 1);
+        await h.advance(1);
+        expect(h.credentialCalls, 2);
+        expect(h.session.status.value, const StreamConnecting());
+        await h.advance(3000);
+        expect(h.connector.connections, hasLength(1));
+      },
+    );
 
     test('a throwing credentials provider counts as a failure', () async {
       final h = Harness(credentials: (_) => throw StateError('offline'));

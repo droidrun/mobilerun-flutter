@@ -98,6 +98,7 @@ final class StreamAttempt {
   ScheduledTask? _sizePoll;
   ScheduledTask? _graceTimer;
   bool _requestedFrames = false;
+  bool _visible = true;
 
   // The first rtcConfiguration reply ends the awaiting phase; later ones are
   // credential refreshes.
@@ -122,8 +123,17 @@ final class StreamAttempt {
 
   /// Arms the keepAlive timer (at mount, like the web client) and connects.
   void start() {
-    _scheduleKeepAlive();
+    if (_visible) _scheduleKeepAlive();
     unawaited(_run());
+  }
+
+  /// Mirrors tab visibility: hidden apps stop sending keepAlive messages.
+  void setVisible(bool visible) {
+    if (_visible == visible || !live) return;
+    _visible = visible;
+    _keepAlive?.cancel();
+    _keepAlive = null;
+    if (visible) _scheduleKeepAlive();
   }
 
   // ---- requests -----------------------------------------------------------
@@ -198,7 +208,7 @@ final class StreamAttempt {
 
   void _scheduleKeepAlive() {
     _keepAlive = scheduler.schedule(SignallingTiming.keepAliveInterval, () {
-      if (!live) return;
+      if (!live || !_visible) return;
       _send(KeepAliveMessage(sessionId: sessionId));
       _scheduleKeepAlive();
     });

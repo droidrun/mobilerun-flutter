@@ -128,3 +128,149 @@ release tag. The second regenerates `lib/src/protocol/constants.dart` from
 ## License
 
 Apache-2.0, see `LICENSE`.
+
+## Default UI and approvals
+
+`TaskApprovalCard`, `StreamStatusPill`, `StreamTheme`, and `StreamLabels` are
+optional white-label widgets. They display no logo or product name. The
+headless session and approval controller also work with your own UI.
+
+### Task approvals
+
+The backend owns approval state and permissions. Your app provides callbacks
+to your own authenticated backend; the SDK never handles an account API key.
+**An API key must never ship in a Flutter app**, including build-time defines.
+Your backend checks task ownership before fetching or deciding an approval.
+
+```dart
+final approvals = TaskApprovalController(
+  taskId: taskId,
+  fetchApproval: (id) => backend.fetchApproval(id),
+  decide: (request) => backend.decideApproval(
+    request.taskId,
+    request.approvalId,
+    request.decision.name, // "approve" or "deny"
+  ),
+  // Optional: change events are hints to fetch again, never authoritative data.
+  // subscribe: (id, onChange) => backend.subscribe(id, onChange),
+);
+
+ListenableBuilder(
+  listenable: approvals,
+  builder: (context, _) {
+    final state = approvals.state;
+    return TaskApprovalCard(
+      approval: state.approval,
+      onDecide: approvals.decide,
+      isPending: state.isDeciding,
+      decision: state.decision,
+      error: state.error,
+      labels: const StreamLabels(approve: 'Allow', deny: 'Decline'),
+      // device: yourDeviceWidget,
+    );
+  },
+);
+
+// Changing tasks invalidates every old fetch and decision result.
+approvals.update(taskId: nextTaskId);
+// Detach the push subscription and cancel polling when the owner goes away.
+approvals.dispose();
+```
+
+The controller fetches immediately, then three seconds after each completed
+fetch when no subscription is supplied. With a subscription it only fetches on
+change hints, explicit `refetch()`, and after decisions. Newer overlapping
+fetches win; task changes, disabling and disposal invalidate older results.
+Both decision buttons are disabled only while deciding. The backend decides
+whether an approval has expired; the isolated countdown is display-only and
+stops ticking at expiry. Any decision failure (including HTTP 404/409 and an
+integrator timeout/cancellation) shows an error and refetches. A successful
+fetch clears fetch errors; a decision error remains until the next decision or
+task change. Subscription and error-observer exceptions are guarded.
+
+`PendingApproval` accepts unknown kinds. Valid `payment_card` details display
+`label` (falling back to `credentialName`), `targetPackage`, and optional
+`targetHost`. Other kinds and invalid details show the generic waiting title
+with the same buttons. A null approval renders nothing. An optional `device`
+slot stays mounted across the Details/Device switch and the 768-pixel wide
+breakpoint. The app owns any surrounding sheet or dialog.
+
+`actionsBuilder` receives one `ApprovalActionsState` with labels, deciding
+state, and `onDecide`. Its default is `defaultApprovalActions`; a custom builder
+can call that function to retain or wrap the defaults.
+
+### Styling and labels
+
+All SDK components use React's neutral light defaults, independently of the
+host's Material theme. Dark mode is opt-in:
+
+```dart
+StreamTheme(
+  tokens: const StreamTokens().copyWith(
+    primary: const Color(0xff005b50),
+    radius: 10,
+  ),
+  // followSystem: true, // explicitly opt into the system's light/dark choice
+  // tokens: StreamTokens.dark, // or always use dark
+  child: yourSdkWidgets,
+);
+```
+
+Every token is individually overridable: `background`, `foreground`, `card`,
+`cardForeground`, `muted`, `mutedForeground`, `border`, `ring`, `primary`,
+`primaryForeground`, `accent`, `accentForeground`, `destructive`, `radius`,
+and `typography`. Default button radius is 6 logical pixels. Disabled buttons
+dim as a whole. `StreamTokens.dark` mirrors React's `.dark` palette.
+
+Colors are converted once from React's OKLCH tokens: OKLCH → OKLab → linear
+sRGB (the standard D65 OKLab matrix), clamp to the sRGB gamut, apply the sRGB
+transfer function, then round each channel to 8 bits. Neutral colors have zero
+chroma; the dark border retains 10% white alpha. Examples: light background
+`#ffffff`, foreground `#0a0a0a`, primary `#171717`, destructive `#e7000b`;
+dark background `#0a0a0a`, primary `#fafafa`, destructive `#ff6467`.
+
+`StreamLabels` provides all React approval label keys (`paymentCardTitle`,
+`waiting`, `card`, `app`, `domain`, `timeLeft`, `expired`, `approve`, `deny`,
+`viewSwitch`, `details`, `device`) plus stream and navigation labels
+(`connecting`, `reconnecting`, `reconnectingAttempt`, `unavailable`, `retry`,
+`back`, `home`, `recent`). `{time}` is replaced in `timeLeft`;
+`{attempt}` and `{max}` are the reconnect template fields. Backend-provided
+values and error messages are rendered as supplied; localize those in your
+backend or integrator callbacks. Public value types use named defaults and
+`copyWith`, allowing individual overrides without rebuilding every field.
+
+### Credentials and app lifecycle
+
+Pass your existing backend call directly as the session's provider:
+
+```dart
+final session = DeviceStreamSession(
+  credentials: () async {
+    final device = await backend.fetchDevice();
+    if (device.streamUrl == null) return null;
+    return StreamCredentials(url: device.streamUrl!, token: device.streamToken);
+  },
+)..start();
+```
+
+The session is the only credential-poll owner: null means not ready and polls
+again after 3,000 ms without consuming reconnect attempts. Healing refetches
+credentials through that same provider. Closing cancels polling and ignores
+late provider results.
+
+For a custom UI, attach a `StreamLifecycle(session: session)` once and dispose
+it with the UI. It uses `AppLifecycleListener` to pause keepAlive while hidden
+and wake pending reconnects on foreground transitions. Optionally pass your
+app's existing `Stream<bool>` as `connectivity`; only lost → available wakes,
+never the initial online snapshot. No connectivity dependency is required.
+You can instead call `session.setVisible(false/true)` and `session.wake()`
+from your existing lifecycle/network integration. The app owns session
+`start()` and `close()`.
+
+The offline gallery demonstrates themes, label overrides, countdowns and a
+fake approval backend, including approve/deny → refetch and decision errors:
+
+```sh
+cd example
+flutter run -t lib/ui_gallery_main.dart
+```

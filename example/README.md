@@ -11,3 +11,10 @@ packets, rotated-view mapping, IME input, navigation, hover, scroll, reconnectio
 Hardware focus dispatch is covered by widget tests; a one-off hardware check
 can use `adb input keyevent` against the running example.
 Credentials are supplied as a private runtime file; they are never bundled.
+
+## Offline approval gallery
+
+Run `flutter run -t lib/ui_gallery_main.dart` to exercise the default approval
+card without a cloud device. The mode chips select light, dark, custom labels
+and tokens, an unknown approval kind, backend errors and expiry. Approve or
+Deny calls the fake backend and refetches; select a mode again to reset it.

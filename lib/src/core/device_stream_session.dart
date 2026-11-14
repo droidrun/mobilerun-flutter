@@ -87,6 +87,9 @@ final class DeviceStreamSession {
   StreamCredentials? _lastCredentials;
   bool _credentialsStale = true;
   StreamAttempt? _attempt;
+  int _attemptEpoch = 0;
+  ScheduledTask? _credentialsPoll;
+  bool _visible = true;
 
   /// The connection status. Starts as [StreamConnecting].
   ValueListenable<StreamStatus> get status => _status;
@@ -113,11 +116,29 @@ final class DeviceStreamSession {
     _controller.retry();
   }
 
+  /// Wakes a pending reconnect wait or restarts an unavailable session.
+  /// Call this when the app's existing connectivity source comes back online.
+  void wake() {
+    if (_closed || !_started) return;
+    _controller.handleWake();
+  }
+
+  /// Pauses keepAlive while hidden; a real foreground transition also wakes
+  /// reconnects. Registration with an already-visible app is a no-op.
+  void setVisible(bool visible) {
+    if (_closed || _visible == visible) return;
+    _visible = visible;
+    _attempt?.setVisible(visible);
+    if (visible) wake();
+  }
+
   /// Closes the session and releases the peer connection, streams, channels,
   /// socket and timers. The session cannot be used again.
   Future<void> close() async {
     if (_closed) return;
     _closed = true;
+    _attemptEpoch++;
+    _credentialsPoll?.cancel();
     _controller.dispose();
     final attempt = _attempt;
     _attempt = null;
@@ -181,11 +202,12 @@ final class DeviceStreamSession {
     }
   }
 
-  Future<StreamCredentials?> _resolveCredentials() async {
+  Future<StreamCredentials?> _resolveCredentials(int epoch) async {
     if (_lastCredentials == null || _credentialsStale) {
-      _credentialsStale = false;
-      _lastCredentials = await _credentials();
-      if (_lastCredentials == null) _credentialsStale = true;
+      final next = await _credentials();
+      if (_closed || epoch != _attemptEpoch) return null;
+      _lastCredentials = next;
+      _credentialsStale = next == null;
     }
     return _lastCredentials;
   }
@@ -194,8 +216,36 @@ final class DeviceStreamSession {
   /// one starts and the connect watchdog is armed.
   void _beginAttempt() {
     if (_closed) return;
+    final epoch = ++_attemptEpoch;
+    _credentialsPoll?.cancel();
+    _credentialsPoll = null;
     unawaited(_attempt?.dispose());
+    _attempt = null;
     _clearVideo();
+    unawaited(_prepareAttempt(epoch));
+  }
+
+  Future<void> _prepareAttempt(int epoch) async {
+    final StreamCredentials? resolved;
+    try {
+      resolved = await _resolveCredentials(epoch);
+    } on Object {
+      if (_closed || epoch != _attemptEpoch) return;
+      _credentialsStale = true;
+      _controller.attemptMounted();
+      _controller.handleFailure();
+      return;
+    }
+    if (_closed || epoch != _attemptEpoch) return;
+    if (resolved == null) {
+      // Waiting for a device to become ready is not a stream failure. One
+      // owner polls indefinitely without consuming the reconnect budget.
+      _credentialsPoll = _scheduler.schedule(const Duration(seconds: 3), () {
+        _credentialsPoll = null;
+        unawaited(_prepareAttempt(epoch));
+      });
+      return;
+    }
     _controller.attemptMounted();
     _attempt = StreamAttempt(
       sessionId: _sessionId,
@@ -203,7 +253,7 @@ final class DeviceStreamSession {
       scheduler: _scheduler,
       config: _config,
       muted: _muted,
-      credentials: _resolveCredentials,
+      credentials: () async => resolved,
       events: StreamAttemptEvents(
         connected: _controller.handleConnected,
         disconnected: _controller.handleDisconnected,
@@ -215,7 +265,8 @@ final class DeviceStreamSession {
         videoSize: (size) => _videoSize.value = size,
         credentialsRejected: () => _credentialsStale = true,
       ),
-    )..start();
+    )..setVisible(_visible);
+    _attempt!.start();
   }
 
   static String _randomUuid() {
