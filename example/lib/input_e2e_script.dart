@@ -116,8 +116,9 @@ final class InputE2eScript {
     await wait(1500);
   }
 
-  Future<void> swipe() async {
-    final start = point(.5, .78), end = point(.5, .25);
+  Future<void> swipe({bool towardTop = false}) async {
+    final start = point(.5, towardTop ? .25 : .78);
+    final end = point(.5, towardTop ? .78 : .25);
     final begin = sent.length;
     pointer(PointerDownEvent(pointer: 42, position: start, buttons: 1));
     for (var i = 1; i <= 20; i++) {
@@ -176,6 +177,11 @@ final class InputE2eScript {
     await wait(1800);
     await shot('02-before-tap');
     await tap(73 / 488, 966 / 1080);
+    // The list also retains its scroll position across launches. Return to
+    // its top before taking the baseline for the upward swipe assertion.
+    for (var i = 0; i < 3; i++) {
+      await swipe(towardTop: true);
+    }
     await shot('03-after-tap');
     log('tap through widget');
     await shot('08-before-swipe');
