@@ -54,9 +54,9 @@ final class DeviceStreamSession {
          transports: defaultStreamTransports(),
        );
 
-  /// Creates a session on custom [transports] and clock, for tests and for
-  /// embedders that bring their own WebRTC stack.
-  @visibleForTesting
+  /// Creates a session on custom [transports] and clock, for tests, debug
+  /// tooling that wraps the default transports and embedders that bring their
+  /// own WebRTC stack.
   DeviceStreamSession.withTransports({
     required StreamCredentialsProvider credentials,
     required StreamTransports transports,

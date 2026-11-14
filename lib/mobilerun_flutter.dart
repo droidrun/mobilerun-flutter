@@ -41,6 +41,9 @@ export 'src/core/stream_transports.dart'
         SignallingRejectedException,
         StreamTransports;
 export 'src/core/video_codecs.dart' show videoCodecOrder;
+export 'src/webrtc/default_transports.dart' show defaultStreamTransports;
+export 'src/webrtc/web_socket_signalling.dart'
+    show WebSocketSignallingConnector;
 export 'src/protocol/constants.dart'
     show AndroidKeys, AndroidMotionEvent, keyboardCodeMap;
 export 'src/protocol/control_messages.dart'

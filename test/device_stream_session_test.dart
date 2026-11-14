@@ -28,10 +28,7 @@ const sessionId = 'sess_0123456789abcdef';
 
 /// A session on fake transports and a virtual clock, with a status log.
 final class Harness {
-  Harness({
-    this.credentialCount = 1,
-    StreamCredentials? Function(int call)? credentials,
-  }) {
+  Harness({StreamCredentials? Function(int call)? credentials}) {
     connector = FakeConnector(scheduler);
     final offer = example('client-offer.json')['sdp']! as String;
     peers = FakePeerFactory(scheduler, offer);
@@ -53,7 +50,6 @@ final class Harness {
     session.status.addListener(() => statuses.add(session.status.value));
   }
 
-  final int credentialCount;
   final FakeScheduler scheduler = FakeScheduler();
   late final FakeConnector connector;
   late final FakePeerFactory peers;

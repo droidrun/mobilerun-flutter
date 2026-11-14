@@ -5,3 +5,4 @@ pubspec.lock
 .idea/
 *.iml
 .DS_Store
+!example/pubspec.lock

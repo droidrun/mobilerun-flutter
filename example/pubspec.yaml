@@ -1,0 +1,29 @@
+name: mobilerun_flutter_example
+description: Example app for the Mobilerun Flutter SDK.
+publish_to: none
+version: 1.0.0+1
+
+environment:
+  sdk: ^3.8.0
+  flutter: ">=3.32.0"
+
+dependencies:
+  flutter:
+    sdk: flutter
+  flutter_webrtc: ^1.6.0
+  mobilerun_flutter:
+    path: ..
+  path_provider: ^2.1.5
+
+dev_dependencies:
+  flutter_lints: ^6.0.0
+  flutter_test:
+    sdk: flutter
+
+flutter:
+  uses-material-design: true
+
+# Dependencies are only taken from releases at least 7 days old. The newest
+# synchronized (3.6.1+1) is younger, so the one before it is pinned.
+dependency_overrides:
+  synchronized: 3.6.1
