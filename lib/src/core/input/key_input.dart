@@ -28,6 +28,8 @@ KeyRoute routeKey({
   bool meta = false,
   bool capsLock = false,
 }) {
+  final keycode = keyboardCodeMap[code];
+  if (keycode == null) return KeyRoute.ignored;
   final shortcut = control || meta;
   // Physical key identity still works when a platform omits the character on
   // shortcut events (notably macOS).
@@ -45,13 +47,13 @@ KeyRoute routeKey({
     pressKey(AndroidKeys.menu, send);
     return KeyRoute.sent;
   }
-  final keycode = keyboardCodeMap[code];
   final isControl =
       shortcut ||
       const {
         'Backspace',
         'Delete',
         'Enter',
+        'NumpadEnter',
         'Tab',
         'Escape',
         'Home',
@@ -63,11 +65,15 @@ KeyRoute routeKey({
       code?.startsWith('Arrow') == true ||
       RegExp(r'^F\d{1,2}$').hasMatch(code ?? '') ||
       RegExp(r'^(Shift|Control|Alt|Meta)').hasMatch(code ?? '');
-  if (!isControl && down && text != null && text.runes.length == 1) {
+  if (!isControl &&
+      down &&
+      text != null &&
+      text.runes.length == 1 &&
+      text.runes.single >= 0x20 &&
+      !(text.runes.single >= 0x7f && text.runes.single <= 0x9f)) {
     send(encodeText(text));
     return KeyRoute.sent;
   }
-  if (keycode == null) return KeyRoute.ignored;
   if (isControl || down) {
     final letter = RegExp(r'^Key[A-Z]$').hasMatch(code ?? '');
     final effectiveShift = letter ? shift != capsLock : shift;

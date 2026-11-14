@@ -46,8 +46,9 @@ final class DeviceStreamController {
   /// Focuses the view and opens the platform keyboard.
   void showKeyboard() => _state?._showKeyboard();
 
-  /// Closes the platform keyboard and discards uncommitted composition.
-  void hideKeyboard() => _state?._textInput.close();
+  /// Finalizes composition and closes the keyboard when this view owns input.
+  /// A host editor's keyboard is left alone.
+  void hideKeyboard() => _state?._hideKeyboard();
 
   /// Sends one DOWN/UP pair for an explicit navigation action.
   void sendSystemKey(DeviceSystemKey key) {
@@ -206,6 +207,11 @@ class _DeviceStreamState extends State<DeviceStream> {
     if (_focus.hasFocus) _textInput.attach(show: true);
   }
 
+  void _hideKeyboard() {
+    _keyboardRequested = false;
+    _textInput.hide();
+  }
+
   void _down(PointerDownEvent event) {
     if (!widget.hasControl || _geometry == null) return;
     final mouse =
@@ -232,7 +238,7 @@ class _DeviceStreamState extends State<DeviceStream> {
   }
 
   void _hover(PointerHoverEvent event) {
-    if (!widget.hasControl || event.buttons != 0) return;
+    if (!widget.hasControl) return;
     final geometry = _geometry;
     final point = geometry?.map(event.localPosition);
     if (point == null) return;

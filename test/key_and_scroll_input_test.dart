@@ -61,6 +61,7 @@ void main() {
     'Backspace',
     'Delete',
     'Enter',
+    'NumpadEnter',
     'Tab',
     'Escape',
     'Home',
@@ -116,6 +117,53 @@ void main() {
       encodeKeycode(action: 0, keycode: 29, metaState: 4096 | 1),
     );
   });
+  for (final code in [
+    null,
+    'AudioVolumeUp',
+    'MediaPlayPause',
+    'Camera',
+    'GamepadA',
+    'F13',
+    'F123',
+  ]) {
+    test(
+      'unmapped $code is neither consumed nor sent, even with text/modifiers',
+      () {
+        final sent = <Uint8List>[];
+        for (final down in [true, false]) {
+          expect(
+            routeKey(
+              code: code,
+              text: 'v',
+              down: down,
+              control: true,
+              send: sent.add,
+            ),
+            KeyRoute.ignored,
+          );
+        }
+        expect(sent, isEmpty);
+      },
+    );
+  }
+  for (final text in [
+    '\u0000',
+    '\b',
+    '\t',
+    '\n',
+    '\u001b',
+    '\u007f',
+    '\u0085',
+  ]) {
+    test(
+      'hardware control character ${text.codeUnitAt(0)} never becomes text',
+      () {
+        final sent = <Uint8List>[];
+        routeKey(code: 'KeyA', text: text, down: true, send: sent.add);
+        expect(sent, [encodeKeycode(action: 0, keycode: 29)]);
+      },
+    );
+  }
   test('unknown keys ignored, mapped dead keys use keydown fallback', () {
     final sent = <Uint8List>[];
     expect(

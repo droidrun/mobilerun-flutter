@@ -95,6 +95,58 @@ void main() {
       encodeText('two'),
     ]);
   });
+  test(
+    'ordinary characters commit immediately and implicit composition finalization commits once',
+    () {
+      final sent = <Uint8List>[];
+      final input = StreamTextInput(active: () => true, send: sent.add);
+      input.updateEditingValue(const TextEditingValue(text: '\u200ba'));
+      expect(sent, [encodeText('a')]);
+      input.updateEditingValue(const TextEditingValue(text: '\u200bb'));
+      expect(sent, [encodeText('a'), encodeText('b')]);
+      input.updateEditingValue(
+        const TextEditingValue(
+          text: '\u200b日本',
+          composing: TextRange(start: 1, end: 3),
+        ),
+      );
+      input.connectionClosed();
+      input.connectionClosed();
+      expect(sent, [encodeText('a'), encodeText('b'), encodeText('日本')]);
+      expect(input.currentTextEditingValue.text, '\u200b');
+    },
+  );
+  test('editor action finalizes marked text before ENTER', () {
+    final sent = <Uint8List>[];
+    final input = StreamTextInput(active: () => true, send: sent.add);
+    input.updateEditingValue(
+      const TextEditingValue(
+        text: '\u200bé',
+        composing: TextRange(start: 1, end: 2),
+      ),
+    );
+    input.performAction(TextInputAction.done);
+    expect(sent, [
+      encodeText('é'),
+      encodeKeycode(action: 0, keycode: 66),
+      encodeKeycode(action: 1, keycode: 66),
+    ]);
+  });
+  test('IME control characters use key pairs or are discarded, never text', () {
+    final sent = <Uint8List>[];
+    final input = StreamTextInput(active: () => true, send: sent.add);
+    input.updateEditingValue(
+      const TextEditingValue(text: '\u200ba\tb\u0000\u007f\n'),
+    );
+    expect(sent, [
+      encodeText('a'),
+      encodeKeycode(action: 0, keycode: 61),
+      encodeKeycode(action: 1, keycode: 61),
+      encodeText('b'),
+      encodeKeycode(action: 0, keycode: 66),
+      encodeKeycode(action: 1, keycode: 66),
+    ]);
+  });
   test('no input after control or focus is lost', () {
     final sent = <Uint8List>[];
     final input = StreamTextInput(active: () => false, send: sent.add);

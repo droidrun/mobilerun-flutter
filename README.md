@@ -17,8 +17,6 @@ final session = DeviceStreamSession(
 session.status.addListener(() => print(session.status.value));
 session.start();
 
-// Raw control bytes, built with the encoders of this package:
-session.sendControl(encodeKeycode(action: AndroidKeys.actionDown, keycode: AndroidKeys.keycodeHome));
 final png = await session.screenshot();
 
 await session.close();
@@ -28,8 +26,8 @@ await session.close();
   or `StreamUnavailable`; `retry()` starts a new cycle from unavailable.
 - `videoSize` is the decoded frame size; the view uses the renderer
   dimensions and rotation for displayed video coordinates.
-- `sendControl` and `sendHover` return false and drop the message while their
-  data channel is not open. Hover never goes over the control channel.
+- Raw channel sends are internal; use `DeviceStream` for input mapping.
+  Hover never goes over the control channel.
 - `StreamConfig` starts the audio muted (`setMuted` changes it) and asks for
   zero playout delay. That setting is process-wide: call
   `WebRTC.initialize(options: {'zeroPlayoutDelay': true})` in `main()` before
@@ -65,7 +63,9 @@ Click or tap the picture to focus hardware input. Printable keys send text;
 control/navigation keys send Android keycodes. Cmd/Ctrl+V pastes the local
 clipboard through SET_CLIPBOARD; Cmd/Ctrl+M sends MENU. The optional controller
 opens a soft keyboard: marked IME text stays local until committed; deletion
-and enter send DEL and ENTER pairs. Hiding the keyboard discards composition.
+and enter send DEL and ENTER pairs. Ordinary soft-keyboard characters commit immediately with suggestions disabled.
+Hiding the keyboard finalizes composition only when the view owns the input;
+a host editor’s keyboard is left alone.
 The view does not keep a copy of the remote editor's contents or selection.
 
 `hasControl: false` renders the picture and sends no input. This switch controls

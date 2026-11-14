@@ -5,6 +5,7 @@ import 'dart:async';
 import 'dart:io';
 import 'dart:typed_data' show Endian;
 
+import 'package:flutter/foundation.dart' show listEquals;
 import 'package:flutter/gestures.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
@@ -40,6 +41,36 @@ final class InputE2eScript {
     if (!condition) throw StateError(message);
   }
 
+  List<Uint8List> press(int code) => [
+    encodeKeycode(action: 0, keycode: code),
+    encodeKeycode(action: 1, keycode: code),
+  ];
+
+  void expectFrames(int begin, List<Uint8List> expected, String what) {
+    final actual = sent.skip(begin).toList();
+    check(
+      actual.length == expected.length &&
+          actual.indexed.every(
+            (entry) => listEquals(entry.$2, expected[entry.$1]),
+          ),
+      '$what: exact bytes',
+    );
+  }
+
+  void system(DeviceSystemKey key) {
+    final begin = sent.length;
+    controller.sendSystemKey(key);
+    expectFrames(
+      begin,
+      press(switch (key) {
+        DeviceSystemKey.back => 4,
+        DeviceSystemKey.home => 3,
+        DeviceSystemKey.recent => 187,
+      }),
+      'system ${key.name}',
+    );
+  }
+
   Future<void> until(bool Function() condition, String what) async {
     final deadline = DateTime.now().add(const Duration(seconds: 60));
     while (!condition()) {
@@ -69,14 +100,25 @@ final class InputE2eScript {
       GestureBinding.instance.handlePointerEvent(event);
   Future<void> tap(double x, double y, {int id = 41}) async {
     final p = point(x, y);
+    final begin = sent.length;
     pointer(PointerDownEvent(pointer: id, position: p, buttons: 1));
     await wait(80);
     pointer(PointerUpEvent(pointer: id, position: p));
+    final touches = sent.skip(begin).where((b) => b[0] == 2).toList();
+    check(
+      touches.length == 2 &&
+          touches[0][1] == 0 &&
+          touches[1][1] == 1 &&
+          ByteData.sublistView(touches[0]).getInt64(2) == 0 &&
+          ByteData.sublistView(touches[1]).getInt64(2) == 0,
+      'tap DOWN/UP slot 0',
+    );
     await wait(1500);
   }
 
   Future<void> swipe() async {
     final start = point(.5, .78), end = point(.5, .25);
+    final begin = sent.length;
     pointer(PointerDownEvent(pointer: 42, position: start, buttons: 1));
     for (var i = 1; i <= 20; i++) {
       pointer(
@@ -89,6 +131,15 @@ final class InputE2eScript {
       await wait(20);
     }
     pointer(PointerUpEvent(pointer: 42, position: end));
+    final touches = sent.skip(begin).where((b) => b[0] == 2).toList();
+    check(
+      touches.length > 2 &&
+          touches.first[1] == 0 &&
+          touches.last[1] == 1 &&
+          touches.skip(1).take(touches.length - 2).every((b) => b[1] == 2) &&
+          touches.every((b) => ByteData.sublistView(b).getInt64(2) == 0),
+      'swipe slot 0',
+    );
     await wait(1800);
   }
 
@@ -135,7 +186,7 @@ final class InputE2eScript {
     );
     await wait(3000);
     await shot('01-first-frame');
-    controller.sendSystemKey(DeviceSystemKey.home);
+    system(DeviceSystemKey.home);
     await wait(1800);
     await shot('02-before-tap');
     await tap(73 / 488, 966 / 1080);
@@ -180,6 +231,8 @@ final class InputE2eScript {
         .toSet();
     check(
       slots.length == 2 &&
+          slots.contains(0) &&
+          slots.contains(1) &&
           touches.where((b) => b[1] == 0).length == 2 &&
           touches.where((b) => b[1] == 1).length == 2 &&
           touches.every((b) => b[1] <= 3),
@@ -190,18 +243,20 @@ final class InputE2eScript {
 
     // Rotate the local surface, preserve the cloud orientation, and tap the
     // same known target through a fresh letterboxed geometry.
-    controller.sendSystemKey(DeviceSystemKey.home);
+    system(DeviceSystemKey.home);
     await wait(1800);
     await rotateView(true);
     await wait(800);
+    check(controller.renderedVideoRect != null, 'rotated geometry');
+    await shot('11-rotated-home');
     await tap(73 / 488, 966 / 1080);
     await shot('11-rotated-tap');
     await rotateView(false);
     await wait(700);
-    controller.sendSystemKey(DeviceSystemKey.back);
-    controller.sendSystemKey(DeviceSystemKey.recent);
+    system(DeviceSystemKey.back);
+    system(DeviceSystemKey.recent);
     await shot('12-recent');
-    controller.sendSystemKey(DeviceSystemKey.home);
+    system(DeviceSystemKey.home);
     await wait(1500);
     await tap(73 / 488, 966 / 1080);
     // Settings search field (tap search icon, then the editor).
@@ -212,13 +267,26 @@ final class InputE2eScript {
     final beforeText = sent.length;
     // Exercise the TextInputClient path with a committed value. The host
     // also taps the visible platform keyboard during this checkpoint.
-    TextInput.updateEditingValue(const TextEditingValue(text: '\u200bdisplay'));
+    for (final character in 'display'.split('')) {
+      final begin = sent.length;
+      TextInput.updateEditingValue(TextEditingValue(text: '\u200b$character'));
+      expectFrames(begin, [encodeText(character)], 'immediate IME character');
+    }
     await shot('13-soft-keyboard');
+    final beforeHost = sent.length;
     log('HOST-TYPE');
     await wait(7000);
     check(sent.skip(beforeText).any((b) => b[0] == 1), 'IME text was not sent');
+    check(
+      sent.skip(beforeHost).any((b) => b[0] == 1),
+      'platform keyboard did not commit text',
+    );
+    final beforeDelete = sent.length;
+    TextInput.updateEditingValue(TextEditingValue.empty);
+    expectFrames(beforeDelete, press(67), 'IME empty-buffer DEL');
     controller.hideKeyboard();
     await wait(700);
+    final beforeHardware = sent.length;
     await key(
       PhysicalKeyboardKey.keyA,
       LogicalKeyboardKey.keyA,
@@ -226,6 +294,11 @@ final class InputE2eScript {
     );
     await key(PhysicalKeyboardKey.backspace, LogicalKeyboardKey.backspace);
     await key(PhysicalKeyboardKey.enter, LogicalKeyboardKey.enter);
+    expectFrames(beforeHardware, [
+      encodeText('a'),
+      ...press(67),
+      ...press(66),
+    ], 'hardware text/DEL/ENTER');
     await shot('14-hardware-text');
     check(
       sent.any(
@@ -256,7 +329,7 @@ final class InputE2eScript {
       'hover/scroll routing',
     );
     log('hover channel only; pixel scroll sent');
-    controller.sendSystemKey(DeviceSystemKey.home);
+    system(DeviceSystemKey.home);
     await shot('15-final-home');
     await session.close();
   }

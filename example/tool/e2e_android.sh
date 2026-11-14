@@ -94,10 +94,21 @@ logcat_pid=$!
 check_shot() {
   local png="$out/shots/host-$1.png" check="$here/tool/png_check.py"
   case "$1" in
-    11-rotated-tap) python3 -I "$check" "$png" --lit 0.08 | tee -a "$out/pixels.log" ;;
+    11-rotated-home) python3 -I "$check" "$png" --lit 0.08 | tee -a "$out/pixels.log" ;;
     03-after-tap)
       python3 -I "$check" "$png" --lit 0.3 | tee -a "$out/pixels.log" || return 1
       python3 -I "$check" "$png" --differs-from "$out/shots/host-02-before-tap.png" 0.05 |
+        tee -a "$out/pixels.log"
+      ;;
+    09-after-swipe|11-rotated-tap|12-recent|15-final-home)
+      case "$1" in
+        09-after-swipe) before=08-before-swipe; min_lit=0.3 ;;
+        11-rotated-tap) before=11-rotated-home; min_lit=0.08 ;;
+        12-recent) before=03-after-tap; min_lit=0.3 ;;
+        15-final-home) before=14-hardware-text; min_lit=0.3 ;;
+      esac
+      python3 -I "$check" "$png" --lit "$min_lit" | tee -a "$out/pixels.log" || return 1
+      python3 -I "$check" "$png" --differs-from "$out/shots/host-$before.png" 0.05 |
         tee -a "$out/pixels.log"
       ;;
     *) python3 -I "$check" "$png" --lit 0.3 | tee -a "$out/pixels.log" ;;
