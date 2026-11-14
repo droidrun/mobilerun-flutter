@@ -173,6 +173,10 @@ final class InputE2eScript {
     await wait(1800);
     await shot('02-before-tap');
     await tap(73 / 488, 966 / 1080);
+    // Settings can restore its search activity when relaunched. Its known
+    // toolbar back target returns to the scrollable root; on the root this
+    // location is only the title and has no action.
+    await tap(.09, .065);
     await shot('03-after-tap');
     log('tap through widget');
     await shot('08-before-swipe');
