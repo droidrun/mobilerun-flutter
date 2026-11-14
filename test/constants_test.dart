@@ -3,6 +3,8 @@
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mobilerun_flutter/mobilerun_flutter.dart';
+import 'package:mobilerun_flutter/src/protocol/constants.dart'
+    show ControlMessageType;
 
 import 'support/fixtures.dart';
 

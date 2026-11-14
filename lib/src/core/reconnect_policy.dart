@@ -4,6 +4,7 @@
 import 'dart:math' as math;
 
 import '../protocol/js_math.dart';
+import '../protocol/stream_timing.dart';
 
 /// Constants of the reconnect policy, shared by every Mobilerun stream SDK.
 abstract final class ReconnectPolicy {
@@ -13,15 +14,10 @@ abstract final class ReconnectPolicy {
   /// unavailable.
   static const int maxAttempts = 6;
 
-  /// How long the signalling WebSocket may take to open.
-  static const Duration wsOpenTimeout = Duration(seconds: 15);
-
-  /// How long the `rtcConfiguration` reply may take after the socket opened.
-  static const Duration rtcConfigTimeout = Duration(seconds: 15);
-
-  /// Watchdog for a whole connect attempt. It must exceed [wsOpenTimeout] plus
-  /// [rtcConfigTimeout], or it would preempt handshakes the connection layer
-  /// still considers on budget.
+  /// Watchdog for a whole connect attempt. It must exceed
+  /// [SignallingTiming.wsOpenTimeout] plus [SignallingTiming.rtcConfigTimeout],
+  /// or it would preempt handshakes the connection layer still considers on
+  /// budget.
   static const Duration connectTimeout = Duration(seconds: 45);
 
   /// How long a connection must hold to refill the retry budget.

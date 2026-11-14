@@ -3,26 +3,24 @@
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mobilerun_flutter/mobilerun_flutter.dart';
+import 'package:mobilerun_flutter/src/core/reconnect_policy.dart'
+    show reconnectDelay;
 
 import 'support/fixtures.dart';
 
 void main() {
   final policy = readFixtureObject('reconnect/policy.json');
-  final counter = CaseCounter();
-  final delayCases = (policy['delay_cases']! as List)
-      .cast<Map>()
-      .map((c) => c.cast<String, Object?>())
-      .toList();
+  final delayCases = readObjects('reconnect/policy.json', 'delay_cases');
 
   test('policy constants equal policy.json', () {
-    final backoff = (policy['backoff']! as Map).cast<String, Object?>();
+    final backoff = asObject(policy['backoff']);
     expect(ReconnectPolicy.maxAttempts, policy['max_attempts']);
     expect(
-      ReconnectPolicy.wsOpenTimeout.inMilliseconds,
+      SignallingTiming.wsOpenTimeout.inMilliseconds,
       policy['ws_open_timeout_ms'],
     );
     expect(
-      ReconnectPolicy.rtcConfigTimeout.inMilliseconds,
+      SignallingTiming.rtcConfigTimeout.inMilliseconds,
       policy['rtc_config_timeout_ms'],
     );
     expect(
@@ -44,13 +42,14 @@ void main() {
       expect(
         ReconnectPolicy.connectTimeout,
         greaterThan(
-          ReconnectPolicy.wsOpenTimeout + ReconnectPolicy.rtcConfigTimeout,
+          SignallingTiming.wsOpenTimeout + SignallingTiming.rtcConfigTimeout,
         ),
       );
     },
   );
 
   group('delay_cases', () {
+    test('has fixture cases', () => expect(delayCases, isNotEmpty));
     for (final c in delayCases) {
       test('attempt ${c['attempt']} random ${c['random']}', () {
         final random = (c['random']! as num).toDouble();
@@ -61,20 +60,13 @@ void main() {
           ).inMilliseconds,
           c['delay_ms'],
         );
-        counter.hit();
       });
     }
   });
 
-  test('every delay case was exercised', () {
-    expect(delayCases, isNotEmpty);
-    expect(counter.executed, delayCases.length);
-  });
-
   test('default random stays within the jitter band', () {
     for (var i = 0; i < 50; i++) {
-      final ms = reconnectDelay(2).inMilliseconds;
-      expect(ms, inInclusiveRange(1500, 2500));
+      expect(reconnectDelay(2).inMilliseconds, inInclusiveRange(1500, 2500));
     }
   });
 }

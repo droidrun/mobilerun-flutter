@@ -71,33 +71,32 @@ final class ReconnectSnapshot {
 final class ReconnectController {
   /// Creates a controller.
   ///
-  /// [onRemount] asks the host to remount the stream, [onSnapshot] reports a
-  /// changed status or attempt count and [onHeal] asks the host to refetch
-  /// stream credentials. [random] feeds the backoff jitter and defaults to a
-  /// `dart:math` generator.
+  /// [onRemount] asks the host to remount the stream (start a new attempt),
+  /// [onSnapshot] reports a changed status or attempt count and [onHeal] asks
+  /// the host to refetch stream credentials; it is called once per recovery
+  /// cycle, not per attempt, so a shared outage does not turn into a request
+  /// storm. [scheduler] runs the timers and defaults to [TimerScheduler];
+  /// [random] feeds the backoff jitter and defaults to a `dart:math`
+  /// generator.
   ReconnectController({
-    required this.onRemount,
-    required this.onSnapshot,
-    required this.onHeal,
-    required Scheduler scheduler,
+    required void Function() onRemount,
+    required void Function(ReconnectSnapshot snapshot) onSnapshot,
+    required void Function() onHeal,
+    Scheduler scheduler = const TimerScheduler(),
     double Function()? random,
-  }) : _scheduler = scheduler,
+  }) : _onRemount = onRemount,
+       _onSnapshot = onSnapshot,
+       _onHeal = onHeal,
+       _scheduler = scheduler,
        _random = random;
 
-  /// Asks the host to start a new attempt (remount the stream).
-  final void Function() onRemount;
-
-  /// Reports that the status or the attempt count changed.
-  final void Function(ReconnectSnapshot snapshot) onSnapshot;
-
-  /// Asks the host to refetch stream credentials. Called once per recovery
-  /// cycle, not per attempt, so a shared outage does not turn into a request
-  /// storm.
-  final void Function() onHeal;
-
+  final void Function() _onRemount;
+  final void Function(ReconnectSnapshot snapshot) _onSnapshot;
+  final void Function() _onHeal;
   final Scheduler _scheduler;
   final double Function()? _random;
 
+  bool _disposed = false;
   bool _enabled = false;
   ReconnectStatus _status = ReconnectStatus.connecting;
   int _attempt = 0;
@@ -124,7 +123,11 @@ final class ReconnectController {
   ReconnectSnapshot get snapshot =>
       ReconnectSnapshot(status: _status, attempt: _attempt);
 
-  void _emit() => onSnapshot(snapshot);
+  // A backoff wait is pending, or all attempts failed.
+  bool get _waitingOrUnavailable =>
+      _backoffTimer != null || _status == ReconnectStatus.unavailable;
+
+  void _emit() => _onSnapshot(snapshot);
 
   static ScheduledTask? _clear(ScheduledTask? task) {
     task?.cancel();
@@ -137,14 +140,10 @@ final class ReconnectController {
     _stabilityTimer = _clear(_stabilityTimer);
   }
 
-  void _startAttempt() => onRemount();
-
   void _countFailure() {
     // A wait is already scheduled, or we already gave up (for example a stale
     // watchdog from a double mount). Never stack timers.
-    if (_backoffTimer != null || _status == ReconnectStatus.unavailable) {
-      return;
-    }
+    if (_waitingOrUnavailable) return;
     _failureLatched = true;
     _watchdogTimer = _clear(_watchdogTimer);
     _stabilityTimer = _clear(_stabilityTimer);
@@ -158,13 +157,13 @@ final class ReconnectController {
     _emit();
     if (!_healedThisCycle) {
       _healedThisCycle = true;
-      onHeal();
+      _onHeal();
     }
     _backoffTimer = _scheduler.schedule(
       reconnectDelay(_attempt, random: _random),
       () {
         _backoffTimer = null;
-        _startAttempt();
+        _onRemount();
       },
     );
   }
@@ -178,18 +177,17 @@ final class ReconnectController {
     _healedThisCycle = true;
     _status = ReconnectStatus.reconnecting;
     _emit();
-    onHeal();
-    _startAttempt();
+    _onHeal();
+    _onRemount();
   }
 
   /// The stream (re)mounted: arms the connect watchdog.
   void attemptMounted() {
+    if (_disposed) return;
     _enabled = true;
     // A mount during a wait is stale: the scheduled attempt owns the next
     // watchdog.
-    if (_backoffTimer != null || _status == ReconnectStatus.unavailable) {
-      return;
-    }
+    if (_waitingOrUnavailable) return;
     _watchdogTimer = _clear(_watchdogTimer);
     _everConnectedThisEpoch = false;
     _failureLatched = false;
@@ -208,6 +206,7 @@ final class ReconnectController {
 
   /// There is no stream target anymore: stops all timers and resets counters.
   void setDisabled() {
+    if (_disposed) return;
     _enabled = false;
     _clearAllTimers();
     _everConnectedThisEpoch = false;
@@ -267,8 +266,7 @@ final class ReconnectController {
   /// True while waiting out a backoff (an immediate switch would bypass the
   /// wait; the scheduled attempt picks up the fresh target itself) and while
   /// unavailable. Everywhere else the new target applies immediately.
-  bool shouldDeferTargetChange() =>
-      _backoffTimer != null || _status == ReconnectStatus.unavailable;
+  bool shouldDeferTargetChange() => _waitingOrUnavailable;
 
   /// The app became visible or the network came back.
   void handleWake() {
@@ -281,7 +279,7 @@ final class ReconnectController {
       // Don't sit out a possibly throttled background wait now that the user
       // is looking.
       _backoffTimer = _clear(_backoffTimer);
-      _startAttempt();
+      _onRemount();
     }
   }
 
@@ -291,8 +289,9 @@ final class ReconnectController {
     if (_status == ReconnectStatus.unavailable) _freshCycle();
   }
 
-  /// Stops all timers. The controller must not be used afterwards.
+  /// Stops all timers. Every method is a no-op afterwards.
   void dispose() {
+    _disposed = true;
     _enabled = false;
     _clearAllTimers();
   }

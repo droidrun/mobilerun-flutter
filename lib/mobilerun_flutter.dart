@@ -8,10 +8,10 @@ library;
 
 export 'src/core/reconnect_controller.dart'
     show ReconnectController, ReconnectSnapshot, ReconnectStatus;
-export 'src/core/reconnect_policy.dart' show ReconnectPolicy, reconnectDelay;
+export 'src/core/reconnect_policy.dart' show ReconnectPolicy;
 export 'src/core/scheduler.dart' show ScheduledTask, Scheduler, TimerScheduler;
 export 'src/protocol/constants.dart'
-    show AndroidKeys, AndroidMotionEvent, ControlMessageType, keyboardCodeMap;
+    show AndroidKeys, AndroidMotionEvent, keyboardCodeMap;
 export 'src/protocol/control_messages.dart'
     show
         encodeHover,
@@ -20,5 +20,25 @@ export 'src/protocol/control_messages.dart'
         encodeSetClipboard,
         encodeText,
         encodeTouch;
-export 'src/protocol/signalling.dart';
-export 'src/protocol/stream_timing.dart';
+export 'src/protocol/signalling.dart'
+    show
+        AnswerMessage,
+        ClientCandidateMessage,
+        ClientMessage,
+        IceServer,
+        KeepAliveMessage,
+        OfferMessage,
+        OpenUrlMessage,
+        RequestFrameMessage,
+        RequestRtcConfigurationMessage,
+        RtcConfigurationMessage,
+        ScreenshotErrorMessage,
+        ScreenshotMessage,
+        ScreenshotRequestMessage,
+        ServerCandidateMessage,
+        ServerMessage,
+        SignallingPhase,
+        SignallingStartupException,
+        decodeServerMessage;
+export 'src/protocol/stream_spec.dart' show DataChannelSpec, StreamDataChannels;
+export 'src/protocol/stream_timing.dart' show SignallingTiming;

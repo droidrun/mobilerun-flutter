@@ -5,6 +5,10 @@ import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
 
+/// Casts a decoded JSON value to an object.
+Map<String, Object?> asObject(Object? value) =>
+    (value! as Map).cast<String, Object?>();
+
 /// Reads a JSON file below `conformance/fixtures` (tests run from the package
 /// root).
 Object? readFixture(String relativePath) =>
@@ -12,25 +16,13 @@ Object? readFixture(String relativePath) =>
 
 /// Reads a fixture file that is a JSON object.
 Map<String, Object?> readFixtureObject(String relativePath) =>
-    (readFixture(relativePath)! as Map).cast<String, Object?>();
+    asObject(readFixture(relativePath));
 
-/// The `cases` of a control fixture file.
-List<Map<String, Object?>> readCases(String relativePath) =>
-    (readFixtureObject(relativePath)['cases']! as List)
-        .cast<Map>()
-        .map((c) => c.cast<String, Object?>())
-        .toList();
+/// The objects of the list stored under [key] in a fixture file, for example
+/// `readObjects('control/touch.json', 'cases')`.
+List<Map<String, Object?>> readObjects(String relativePath, String key) =>
+    (readFixtureObject(relativePath)[key]! as List).map(asObject).toList();
 
 /// Lowercase hex of [bytes].
 String toHex(Uint8List bytes) =>
     bytes.map((b) => b.toRadixString(16).padLeft(2, '0')).join();
-
-/// Counts how many fixture cases a test file executed, so that a final test
-/// can prove that every case in the fixture files was exercised.
-final class CaseCounter {
-  /// Number of cases run so far.
-  int executed = 0;
-
-  /// Records one executed case.
-  void hit() => executed += 1;
-}

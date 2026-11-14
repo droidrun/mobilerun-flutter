@@ -7,13 +7,9 @@ import 'package:mobilerun_flutter/mobilerun_flutter.dart';
 import 'support/fake_scheduler.dart';
 import 'support/fixtures.dart';
 
-Map<String, Object?> _asObject(Object? value) =>
-    (value! as Map).cast<String, Object?>();
-
 void main() {
   final fixture = readFixtureObject('reconnect/scenarios.json');
-  final scenarios = (fixture['scenarios']! as List).map(_asObject).toList();
-  final counter = CaseCounter();
+  final scenarios = readObjects('reconnect/scenarios.json', 'scenarios');
 
   test('event vocabulary is the one the replay maps', () {
     expect(fixture['events'], [
@@ -42,10 +38,8 @@ void main() {
         onSnapshot: (_) {},
       );
 
-      final steps = (scenario['steps']! as List).map(_asObject).toList();
-      final expectations = (scenario['expect']! as List)
-          .map(_asObject)
-          .toList();
+      final steps = (scenario['steps']! as List).map(asObject).toList();
+      final expectations = (scenario['expect']! as List).map(asObject).toList();
 
       void apply(String event) {
         switch (event) {
@@ -120,14 +114,10 @@ void main() {
         expectations.length,
         reason: 'all expectations replayed',
       );
-      counter.hit();
     });
   }
 
-  test('every reconnect scenario was exercised', () {
-    expect(scenarios, isNotEmpty);
-    expect(counter.executed, scenarios.length);
-  });
+  test('has fixture scenarios', () => expect(scenarios, isNotEmpty));
 
   test('snapshot callback reports status changes', () {
     final scheduler = FakeScheduler();
@@ -145,4 +135,28 @@ void main() {
       const ReconnectSnapshot(status: ReconnectStatus.connected, attempt: 0),
     ]);
   });
+
+  test(
+    'attemptMounted after dispose leaves pendingTimers at 0 and emits nothing',
+    () {
+      final scheduler = FakeScheduler();
+      final seen = <ReconnectSnapshot>[];
+      final controller = ReconnectController(
+        scheduler: scheduler,
+        random: () => 0.5,
+        onHeal: () {},
+        onRemount: () {},
+        onSnapshot: seen.add,
+      )..dispose();
+      controller
+        ..attemptMounted()
+        ..setDisabled()
+        ..handleConnected()
+        ..handleFailure()
+        ..handleWake()
+        ..retry();
+      expect(scheduler.pendingTimers, 0);
+      expect(seen, isEmpty);
+    },
+  );
 }

@@ -45,6 +45,29 @@ void _setInt64Big(ByteData data, int offset, int value) {
     ..setUint32(offset + 4, low, Endian.big);
 }
 
+/// Writes the position block shared by touch, scroll and hover messages at
+/// [offset]: `i32 x`, `i32 y`, `u16 videoWidth`, `u16 videoHeight`, all
+/// little-endian, with [x] and [y] rounded like JavaScript's `Math.round`.
+///
+/// Throws a [RangeError] when [videoWidth] or [videoHeight] do not fit in 16
+/// bits.
+void _writePosition(
+  ByteData data,
+  int offset, {
+  required num x,
+  required num y,
+  required int videoWidth,
+  required int videoHeight,
+}) {
+  _checkU16('videoWidth', videoWidth);
+  _checkU16('videoHeight', videoHeight);
+  data
+    ..setInt32(offset, jsRound(x).toSigned(32), Endian.little)
+    ..setInt32(offset + 4, jsRound(y).toSigned(32), Endian.little)
+    ..setUint16(offset + 8, videoWidth, Endian.little)
+    ..setUint16(offset + 10, videoHeight, Endian.little);
+}
+
 /// Encodes a touch event (control message type 2, 32 bytes).
 ///
 /// [x] and [y] are rounded half toward positive infinity. [pressure] is
@@ -64,13 +87,11 @@ Uint8List encodeTouch({
   required int videoHeight,
   required num x,
   required num y,
-  double pressure = 1.0,
+  num pressure = 1,
   int actionButton = 0,
   int buttons = 0,
 }) {
   _checkU8('action', action);
-  _checkU16('videoWidth', videoWidth);
-  _checkU16('videoHeight', videoHeight);
   RangeError.checkValueInInterval(
     pointerId,
     -_maxPointerIdMagnitude,
@@ -81,11 +102,15 @@ Uint8List encodeTouch({
     ..setUint8(0, ControlMessageType.injectTouchEvent)
     ..setUint8(1, action);
   _setInt64Big(data, 2, pointerId);
+  _writePosition(
+    data,
+    10,
+    x: x,
+    y: y,
+    videoWidth: videoWidth,
+    videoHeight: videoHeight,
+  );
   data
-    ..setInt32(10, jsRound(x).toSigned(32), Endian.little)
-    ..setInt32(14, jsRound(y).toSigned(32), Endian.little)
-    ..setUint16(18, videoWidth, Endian.little)
-    ..setUint16(20, videoHeight, Endian.little)
     ..setUint16(22, jsRound(pressure * 0xffff).toUnsigned(16), Endian.little)
     ..setInt32(24, actionButton.toSigned(32), Endian.little)
     ..setInt32(28, buttons.toSigned(32), Endian.little);
@@ -120,14 +145,17 @@ Uint8List encodeScroll({
   required num vscrollTicks,
   int buttons = 0,
 }) {
-  _checkU16('videoWidth', videoWidth);
-  _checkU16('videoHeight', videoHeight);
   final data = ByteData(_scrollSize)
-    ..setUint8(0, ControlMessageType.injectScrollEvent)
-    ..setInt32(1, jsRound(x).toSigned(32), Endian.little)
-    ..setInt32(5, jsRound(y).toSigned(32), Endian.little)
-    ..setUint16(9, videoWidth, Endian.little)
-    ..setUint16(11, videoHeight, Endian.little)
+    ..setUint8(0, ControlMessageType.injectScrollEvent);
+  _writePosition(
+    data,
+    1,
+    x: x,
+    y: y,
+    videoWidth: videoWidth,
+    videoHeight: videoHeight,
+  );
+  data
     ..setInt16(13, _floatToI16FixedPoint(hscrollTicks / 16), Endian.little)
     ..setInt16(15, _floatToI16FixedPoint(vscrollTicks / 16), Endian.little)
     ..setInt32(17, buttons.toSigned(32), Endian.little);
@@ -146,15 +174,17 @@ Uint8List encodeHover({
   required num y,
   int buttons = 0,
 }) {
-  _checkU16('videoWidth', videoWidth);
-  _checkU16('videoHeight', videoHeight);
   final data = ByteData(_hoverSize)
-    ..setUint8(0, ControlMessageType.injectMouseHoverEvent)
-    ..setInt32(1, jsRound(x).toSigned(32), Endian.little)
-    ..setInt32(5, jsRound(y).toSigned(32), Endian.little)
-    ..setUint16(9, videoWidth, Endian.little)
-    ..setUint16(11, videoHeight, Endian.little)
-    ..setInt32(13, buttons.toSigned(32), Endian.little);
+    ..setUint8(0, ControlMessageType.injectMouseHoverEvent);
+  _writePosition(
+    data,
+    1,
+    x: x,
+    y: y,
+    videoWidth: videoWidth,
+    videoHeight: videoHeight,
+  );
+  data.setInt32(13, buttons.toSigned(32), Endian.little);
   return data.buffer.asUint8List();
 }
 
@@ -184,7 +214,7 @@ Uint8List encodeKeycode({
 /// Encodes a text injection (control message type 1, `5 + n` bytes): the
 /// UTF-8 bytes of [text] behind a little-endian 32-bit length. The text is
 /// encoded as is, without normalisation.
-Uint8List encodeText({required String text}) {
+Uint8List encodeText(String text) {
   final bytes = utf8.encode(text);
   final data = ByteData(5 + bytes.length)
     ..setUint8(0, ControlMessageType.injectText)

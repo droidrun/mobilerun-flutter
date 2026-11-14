@@ -21,54 +21,27 @@ int? _optionalInt(Map<String, Object?> json, String key) {
   throw FormatException('"$key" must be an integer or null', json);
 }
 
-String _typeOf(Map<String, Object?> json) {
-  final type = json['type'];
-  if (type is String) return type;
-  throw FormatException('"type" must be a string', json);
+/// Parses an ICE server entry whose `urls` is a string or a list of strings.
+IceServer _parseIceServer(Map<String, Object?> json) {
+  final urls = json['urls'];
+  final List<String> parsed;
+  if (urls is String) {
+    parsed = [urls];
+  } else if (urls is List && urls.every((url) => url is String)) {
+    parsed = urls.cast<String>();
+  } else {
+    throw FormatException('"urls" must be a string or list of strings', json);
+  }
+  return IceServer._(
+    urls: parsed,
+    username: _optionalString(json, 'username'),
+    credential: _optionalString(json, 'credential'),
+  );
 }
 
 /// A signalling message the client sends to the server as a JSON text frame.
 sealed class ClientMessage {
   const ClientMessage();
-
-  /// Parses a client message from its decoded JSON object.
-  ///
-  /// Throws a [FormatException] when `type` is unknown or a field is missing
-  /// or has the wrong type.
-  factory ClientMessage.fromJson(Map<String, Object?> json) {
-    switch (_typeOf(json)) {
-      case RequestRtcConfigurationMessage.messageType:
-        return RequestRtcConfigurationMessage(
-          sessionId: _requireString(json, 'sessionId'),
-        );
-      case OfferMessage.messageType:
-        return OfferMessage(
-          sdp: _requireString(json, 'sdp'),
-          sessionId: _requireString(json, 'sessionId'),
-        );
-      case ClientCandidateMessage.messageType:
-        return ClientCandidateMessage(
-          candidate: _requireString(json, 'candidate'),
-          sdpMid: _optionalString(json, 'sdpMid'),
-          sdpMLineIndex: _optionalInt(json, 'sdpMLineIndex'),
-          sessionId: _requireString(json, 'sessionId'),
-        );
-      case KeepAliveMessage.messageType:
-        return KeepAliveMessage(sessionId: _requireString(json, 'sessionId'));
-      case RequestFrameMessage.messageType:
-        return RequestFrameMessage(
-          sessionId: _requireString(json, 'sessionId'),
-        );
-      case OpenUrlMessage.messageType:
-        return OpenUrlMessage(
-          url: _requireString(json, 'url'),
-          sessionId: _requireString(json, 'sessionId'),
-        );
-      case ScreenshotRequestMessage.messageType:
-        return ScreenshotRequestMessage(id: _requireString(json, 'id'));
-    }
-    throw FormatException('unknown client message type', json);
-  }
 
   /// The wire `type` of this message.
   String get type;
@@ -214,8 +187,7 @@ final class RequestFrameMessage extends ClientMessage {
 /// Asks the device to open a URL; sent once when the control data channel
 /// opens, only if the embedding app supplied one.
 final class OpenUrlMessage extends ClientMessage {
-  /// Creates a message carrying the already decoded [url].
-  const OpenUrlMessage({required this.url, required this.sessionId});
+  const OpenUrlMessage._({required this.url, required this.sessionId});
 
   /// Creates a message from the URL as supplied by the embedding app.
   ///
@@ -233,7 +205,7 @@ final class OpenUrlMessage extends ClientMessage {
     } on FormatException {
       url = input;
     }
-    return OpenUrlMessage(url: url, sessionId: sessionId);
+    return OpenUrlMessage._(url: url, sessionId: sessionId);
   }
 
   /// Wire `type` value.
@@ -286,11 +258,11 @@ sealed class ServerMessage {
   /// or has the wrong type. Use [decodeServerMessage] to apply the
   /// phase-dependent ignore rules to a received text frame.
   factory ServerMessage.fromJson(Map<String, Object?> json) {
-    switch (_typeOf(json)) {
+    switch (_requireString(json, 'type')) {
       case AnswerMessage.messageType:
-        return AnswerMessage(sdp: _requireString(json, 'sdp'));
+        return AnswerMessage._(sdp: _requireString(json, 'sdp'));
       case ServerCandidateMessage.messageType:
-        return ServerCandidateMessage(
+        return ServerCandidateMessage._(
           candidate: _requireString(json, 'candidate'),
           sdpMid: _optionalString(json, 'sdpMid'),
           sdpMLineIndex: _optionalInt(json, 'sdpMLineIndex'),
@@ -300,16 +272,16 @@ sealed class ServerMessage {
         if (configuration is! Map) {
           throw FormatException('"rtcConfiguration" must be an object', json);
         }
-        return RtcConfigurationMessage(
+        return RtcConfigurationMessage._(
           rtcConfiguration: configuration.cast<String, Object?>(),
         );
       case ScreenshotMessage.messageType:
-        return ScreenshotMessage(
+        return ScreenshotMessage._(
           id: _requireString(json, 'id'),
           dataUri: _requireString(json, 'dataUri'),
         );
       case ScreenshotErrorMessage.messageType:
-        return ScreenshotErrorMessage(
+        return ScreenshotErrorMessage._(
           id: _requireString(json, 'id'),
           message: _requireString(json, 'message'),
         );
@@ -319,18 +291,11 @@ sealed class ServerMessage {
 
   /// The wire `type` of this message.
   String get type;
-
-  /// The JSON object as received on the wire.
-  Map<String, Object?> toJson();
-
-  /// The JSON text frame as received on the wire.
-  String encode() => jsonEncode(toJson());
 }
 
 /// SDP answer to the latest offer, initial or ICE restart.
 final class AnswerMessage extends ServerMessage {
-  /// Creates an answer carrying [sdp].
-  const AnswerMessage({required this.sdp});
+  const AnswerMessage._({required this.sdp});
 
   /// Wire `type` value.
   static const String messageType = 'answer';
@@ -340,15 +305,11 @@ final class AnswerMessage extends ServerMessage {
 
   @override
   String get type => messageType;
-
-  @override
-  Map<String, Object?> toJson() => {'type': messageType, 'sdp': sdp};
 }
 
 /// A remote ICE candidate, buffered until the remote description is set.
 final class ServerCandidateMessage extends ServerMessage {
-  /// Creates a candidate message.
-  const ServerCandidateMessage({
+  const ServerCandidateMessage._({
     required this.candidate,
     required this.sdpMid,
     required this.sdpMLineIndex,
@@ -368,40 +329,11 @@ final class ServerCandidateMessage extends ServerMessage {
 
   @override
   String get type => messageType;
-
-  @override
-  Map<String, Object?> toJson() => {
-    'type': messageType,
-    'candidate': candidate,
-    'sdpMid': sdpMid,
-    'sdpMLineIndex': sdpMLineIndex,
-  };
 }
 
 /// An ICE server entry of an [RtcConfigurationMessage].
 final class IceServer {
-  /// Creates an ICE server entry.
-  const IceServer({required this.urls, this.username, this.credential});
-
-  /// Parses an entry whose `urls` is a string or a list of strings.
-  ///
-  /// Throws a [FormatException] for any other shape.
-  factory IceServer.fromJson(Map<String, Object?> json) {
-    final urls = json['urls'];
-    final List<String> parsed;
-    if (urls is String) {
-      parsed = [urls];
-    } else if (urls is List && urls.every((url) => url is String)) {
-      parsed = urls.cast<String>();
-    } else {
-      throw FormatException('"urls" must be a string or list of strings', json);
-    }
-    return IceServer(
-      urls: parsed,
-      username: _optionalString(json, 'username'),
-      credential: _optionalString(json, 'credential'),
-    );
-  }
+  const IceServer._({required this.urls, this.username, this.credential});
 
   /// STUN and TURN URLs of this server.
   final List<String> urls;
@@ -418,8 +350,7 @@ final class IceServer {
 /// refreshes. Which of the two it is depends on the connection phase, not on
 /// the content.
 final class RtcConfigurationMessage extends ServerMessage {
-  /// Creates a message around the raw [rtcConfiguration] object.
-  const RtcConfigurationMessage({required this.rtcConfiguration});
+  const RtcConfigurationMessage._({required this.rtcConfiguration});
 
   /// Wire `type` value.
   static const String messageType = 'rtcConfiguration';
@@ -441,7 +372,7 @@ final class RtcConfigurationMessage extends ServerMessage {
     return [
       for (final server in servers)
         if (server is Map)
-          IceServer.fromJson(server.cast<String, Object?>())
+          _parseIceServer(server.cast<String, Object?>())
         else
           throw FormatException('"iceServers" entries must be objects', server),
     ];
@@ -449,18 +380,11 @@ final class RtcConfigurationMessage extends ServerMessage {
 
   @override
   String get type => messageType;
-
-  @override
-  Map<String, Object?> toJson() => {
-    'type': messageType,
-    'rtcConfiguration': rtcConfiguration,
-  };
 }
 
 /// Successful screenshot reply.
 final class ScreenshotMessage extends ServerMessage {
-  /// Creates a reply for request [id].
-  const ScreenshotMessage({required this.id, required this.dataUri});
+  const ScreenshotMessage._({required this.id, required this.dataUri});
 
   /// Wire `type` value.
   static const String messageType = 'screenshot';
@@ -473,19 +397,11 @@ final class ScreenshotMessage extends ServerMessage {
 
   @override
   String get type => messageType;
-
-  @override
-  Map<String, Object?> toJson() => {
-    'type': messageType,
-    'id': id,
-    'dataUri': dataUri,
-  };
 }
 
 /// Failed screenshot reply.
 final class ScreenshotErrorMessage extends ServerMessage {
-  /// Creates a failure reply for request [id].
-  const ScreenshotErrorMessage({required this.id, required this.message});
+  const ScreenshotErrorMessage._({required this.id, required this.message});
 
   /// Wire `type` value.
   static const String messageType = 'screenshotError';
@@ -498,13 +414,6 @@ final class ScreenshotErrorMessage extends ServerMessage {
 
   @override
   String get type => messageType;
-
-  @override
-  Map<String, Object?> toJson() => {
-    'type': messageType,
-    'id': id,
-    'message': message,
-  };
 }
 
 /// The connection phase that decides how an unusable server frame is treated.

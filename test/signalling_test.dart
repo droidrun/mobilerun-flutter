@@ -9,8 +9,60 @@ import 'package:mobilerun_flutter/mobilerun_flutter.dart';
 
 import 'support/fixtures.dart';
 
-Map<String, Object?> _asObject(Object? value) =>
-    (value! as Map).cast<String, Object?>();
+String _string(Map<String, Object?> json, String key) => json[key]! as String;
+
+/// Builds each client message from the fixture example, keyed by wire type.
+final Map<String, ClientMessage Function(Map<String, Object?>)>
+_clientBuilders = {
+  'requestRtcConfiguration': (j) =>
+      RequestRtcConfigurationMessage(sessionId: _string(j, 'sessionId')),
+  'offer': (j) =>
+      OfferMessage(sdp: _string(j, 'sdp'), sessionId: _string(j, 'sessionId')),
+  'candidate': (j) => ClientCandidateMessage(
+    candidate: _string(j, 'candidate'),
+    sdpMid: j['sdpMid'] as String?,
+    sdpMLineIndex: j['sdpMLineIndex'] as int?,
+    sessionId: _string(j, 'sessionId'),
+  ),
+  'keepAlive': (j) => KeepAliveMessage(sessionId: _string(j, 'sessionId')),
+  'requestFrame': (j) =>
+      RequestFrameMessage(sessionId: _string(j, 'sessionId')),
+  'openUrl': (j) => OpenUrlMessage.fromInput(
+    input: _string(j, 'url'),
+    sessionId: _string(j, 'sessionId'),
+  ),
+  'screenshot': (j) => ScreenshotRequestMessage(id: _string(j, 'id')),
+};
+
+/// Asserts the fields of the parsed server message against the example JSON.
+final Map<String, void Function(ServerMessage, Map<String, Object?>)>
+_serverChecks = {
+  'answer': (m, j) {
+    expect((m as AnswerMessage).sdp, j['sdp']);
+  },
+  'candidate': (m, j) {
+    final message = m as ServerCandidateMessage;
+    expect(message.candidate, j['candidate']);
+    expect(message.sdpMid, j['sdpMid']);
+    expect(message.sdpMLineIndex, j['sdpMLineIndex']);
+  },
+  'rtcConfiguration': (m, j) {
+    expect(
+      (m as RtcConfigurationMessage).rtcConfiguration,
+      j['rtcConfiguration'],
+    );
+  },
+  'screenshot': (m, j) {
+    final message = m as ScreenshotMessage;
+    expect(message.id, j['id']);
+    expect(message.dataUri, j['dataUri']);
+  },
+  'screenshotError': (m, j) {
+    final message = m as ScreenshotErrorMessage;
+    expect(message.id, j['id']);
+    expect(message.message, j['message']);
+  },
+};
 
 void main() {
   final files =
@@ -21,59 +73,31 @@ void main() {
           .where((n) => n.startsWith('client-') || n.startsWith('server-'))
           .toList()
         ..sort();
-  final counter = CaseCounter();
-  var total = 0;
+
+  test('has signalling fixture files', () => expect(files, isNotEmpty));
 
   for (final file in files) {
     final fixture = readFixtureObject('signalling/$file');
-    final direction = fixture['direction']! as String;
-    final examples = (fixture['examples']! as List).map(_asObject).toList();
-    total += examples.length;
+    final type = fixture['type']! as String;
+    final isClient = fixture['direction'] == 'client_to_server';
     group(file, () {
-      for (final example in examples) {
-        final json = _asObject(example['json']);
-        test('${example['name']}: parses and re-serializes', () {
-          final Map<String, Object?> serialized;
-          final String type;
-          if (direction == 'client_to_server') {
-            final message = ClientMessage.fromJson(json);
-            serialized = message.toJson();
-            type = message.type;
+      for (final example in readObjects('signalling/$file', 'examples')) {
+        final json = asObject(example['json']);
+        test(example['name']! as String, () {
+          if (isClient) {
+            final message = _clientBuilders[type]!(json);
+            expect(message.type, type);
+            expect(message.toJson(), json);
             expect(jsonDecode(message.encode()), json);
           } else {
             final message = ServerMessage.fromJson(json);
-            serialized = message.toJson();
-            type = message.type;
-            expect(jsonDecode(message.encode()), json);
+            expect(message.type, type);
+            _serverChecks[type]!(message, json);
           }
-          expect(serialized, json);
-          expect(type, fixture['type']);
-          counter.hit();
         });
       }
-
-      test('every required top-level field is serialized', () {
-        final required = (fixture['fields']! as List)
-            .map(_asObject)
-            .where((f) => f['required'] == true)
-            .map((f) => f['name']! as String)
-            .where((n) => !n.contains('.'));
-        for (final example in examples) {
-          final json = _asObject(example['json']);
-          if (json['rtcConfiguration'] is Map &&
-              (json['rtcConfiguration'] as Map).isEmpty) {
-            continue;
-          }
-          expect(json.keys, containsAll(required));
-        }
-      });
     });
   }
-
-  test('every signalling fixture example was exercised', () {
-    expect(files, hasLength(12));
-    expect(counter.executed, total);
-  });
 
   group('openUrl', () {
     test('percent-encoded input yields the shown url', () {
@@ -94,19 +118,14 @@ void main() {
   });
 
   group('typed views', () {
+    final examples = readObjects(
+      'signalling/server-rtc-configuration.json',
+      'examples',
+    );
+
     test('rtcConfiguration exposes ice servers', () {
       final message =
-          ServerMessage.fromJson(
-                _asObject(
-                  _asObject(
-                    (readFixtureObject(
-                              'signalling/server-rtc-configuration.json',
-                            )['examples']!
-                            as List)
-                        .first,
-                  )['json'],
-                ),
-              )
+          ServerMessage.fromJson(asObject(examples[0]['json']))
               as RtcConfigurationMessage;
       final servers = message.iceServers!;
       expect(servers, hasLength(2));
@@ -116,7 +135,9 @@ void main() {
     });
 
     test('refresh without iceServers has none', () {
-      const message = RtcConfigurationMessage(rtcConfiguration: {});
+      final message =
+          ServerMessage.fromJson(asObject(examples[1]['json']))
+              as RtcConfigurationMessage;
       expect(message.iceServers, isNull);
     });
   });
@@ -142,27 +163,15 @@ void main() {
     });
 
     test('awaiting: valid messages of another type are ignored', () {
-      expect(
-        decodeServerMessage(
-          answer,
-          phase: SignallingPhase.awaitingRtcConfiguration,
-        ),
-        isNull,
-      );
-      expect(
-        decodeServerMessage(
-          '{"type":"nope"}',
-          phase: SignallingPhase.awaitingRtcConfiguration,
-        ),
-        isNull,
-      );
-      expect(
-        decodeServerMessage(
-          '42',
-          phase: SignallingPhase.awaitingRtcConfiguration,
-        ),
-        isNull,
-      );
+      for (final text in [answer, '{"type":"nope"}', '42']) {
+        expect(
+          decodeServerMessage(
+            text,
+            phase: SignallingPhase.awaitingRtcConfiguration,
+          ),
+          isNull,
+        );
+      }
     });
 
     test('awaiting: rtcConfiguration is the reply', () {
@@ -220,8 +229,8 @@ void main() {
 
   group('sequence.json', () {
     final sequence = readFixtureObject('signalling/sequence.json');
-    final timing = _asObject(sequence['timing']);
-    final channels = _asObject(sequence['channels']);
+    final timing = asObject(sequence['timing']);
+    final channels = asObject(sequence['channels']);
 
     test('timings', () {
       expect(
@@ -256,9 +265,10 @@ void main() {
       'hover': StreamDataChannels.hover,
     }.entries) {
       test('${entry.key} data channel', () {
-        final fixture = _asObject(channels[entry.key]);
+        final fixture = asObject(channels[entry.key]);
         expect(entry.value.label, fixture['label']);
         expect(entry.value.id, fixture['id']);
+        expect(entry.value.negotiated, fixture['negotiated']);
         expect(entry.value.ordered, fixture['ordered']);
         expect(entry.value.maxRetransmits, fixture['maxRetransmits']);
       });

@@ -21,7 +21,7 @@ final Map<String, _Encoder> _encoders = {
     videoHeight: _int(a, 'videoHeight'),
     x: _num(a, 'x'),
     y: _num(a, 'y'),
-    pressure: _num(a, 'pressure').toDouble(),
+    pressure: _num(a, 'pressure'),
     actionButton: _int(a, 'actionButton'),
     buttons: _int(a, 'buttons'),
   ),
@@ -47,7 +47,7 @@ final Map<String, _Encoder> _encoders = {
     repeat: _int(a, 'repeat'),
     metaState: _int(a, 'metaState'),
   ),
-  'text': (a) => encodeText(text: a['text']! as String),
+  'text': (a) => encodeText(a['text']! as String),
   'set-clipboard': (a) => encodeSetClipboard(
     text: a['text']! as String,
     paste: a['paste']! as bool,
@@ -55,26 +55,42 @@ final Map<String, _Encoder> _encoders = {
 };
 
 void main() {
-  final counter = CaseCounter();
-  var total = 0;
-
   for (final entry in _encoders.entries) {
-    final cases = readCases('control/${entry.key}.json');
-    total += cases.length;
+    final cases = readObjects('control/${entry.key}.json', 'cases');
     group('control/${entry.key}', () {
+      test('has fixture cases', () => expect(cases, isNotEmpty));
       for (final fixtureCase in cases) {
         test(fixtureCase['name']! as String, () {
-          final args = (fixtureCase['args']! as Map).cast<String, Object?>();
+          final args = asObject(fixtureCase['args']);
           expect(toHex(entry.value(args)), fixtureCase['hex']);
-          counter.hit();
         });
       }
     });
   }
 
-  test('every control fixture case was exercised', () {
-    expect(total, greaterThan(0));
-    expect(counter.executed, total);
+  group('unpaired UTF-16 surrogates encode as U+FFFD', () {
+    const replacement = 'efbfbd';
+    const cases = {
+      'lone high surrogate': ('\uD83D', replacement),
+      'lone low surrogate between ascii': ('a\uDC00b', '61${replacement}62'),
+      'trailing high surrogate': ('ok\uD83D', '6f6b$replacement'),
+    };
+    for (final entry in cases.entries) {
+      final (text, bytesHex) = entry.value;
+      final lengthHex = (bytesHex.length ~/ 2)
+          .toRadixString(16)
+          .padLeft(2, '0');
+      test('text: ${entry.key}', () {
+        expect(toHex(encodeText(text)), '01${lengthHex}000000$bytesHex');
+      });
+      test('set-clipboard: ${entry.key}', () {
+        expect(
+          toHex(encodeSetClipboard(text: text)),
+          '090000000000000000010000'
+          '00$lengthHex$bytesHex',
+        );
+      });
+    }
   });
 
   group('argument validation', () {
