@@ -489,4 +489,3 @@ static Widget defaultStreamNavigation(BuildContext context, StreamNavigationStat
 static Widget defaultStreamPlaceholder(BuildContext context, StreamOverlayState state)
 
 static Widget defaultStreamUnavailable(BuildContext context, StreamOverlayState state)
-

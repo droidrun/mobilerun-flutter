@@ -71,9 +71,10 @@ Future<void> main(List<String> arguments) async {
       }
       output.writeln();
     }
+    final contents = '${output.toString().trimRight()}\n';
     final baseline = File('$root/api/mobilerun_flutter.api.txt');
     if (arguments.contains('--check')) {
-      if (!baseline.existsSync() || baseline.readAsStringSync() != '$output') {
+      if (!baseline.existsSync() || baseline.readAsStringSync() != contents) {
         stderr.writeln(
           'Public API changed. Run dart run tool/api_dump.dart and review the diff.',
         );
@@ -83,7 +84,7 @@ Future<void> main(List<String> arguments) async {
       }
     } else {
       baseline.parent.createSync(recursive: true);
-      baseline.writeAsStringSync('$output');
+      baseline.writeAsStringSync(contents);
       stdout.writeln('Updated api/mobilerun_flutter.api.txt');
     }
   } finally {
