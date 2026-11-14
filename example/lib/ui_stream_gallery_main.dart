@@ -9,6 +9,8 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_webrtc/flutter_webrtc.dart';
 import 'package:mobilerun_flutter/mobilerun_flutter.dart';
+import 'package:mobilerun_flutter/src/core/device_stream_session.dart'
+    show createDeviceStreamSessionWithTransports;
 import 'package:mobilerun_flutter/src/core/stream_transports.dart';
 import 'package:mobilerun_flutter/src/webrtc/default_transports.dart';
 
@@ -39,7 +41,7 @@ class _StreamGalleryState extends State<StreamGallery> {
   }
 
   DeviceStreamSession _createSession(bool fail) {
-    return DeviceStreamSession.withTransports(
+    return createDeviceStreamSessionWithTransports(
       credentials: () async => fail
           ? const StreamCredentials(url: 'wss://preview.invalid', token: '')
           : null,

@@ -1,6 +1,6 @@
 ## 0.1.0
 
-Initial release (not yet published).
+Initial release.
 
 - Device streaming sessions with WebRTC video, credential discovery and reconnection.
 - Touch, mouse, hardware keyboard and IME input through `DeviceStreamView`.

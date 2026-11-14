@@ -8,7 +8,14 @@ permissions:
   contents: read
 
 jobs:
+  verify:
+    permissions:
+      contents: read
+    uses: ./.github/workflows/ci.yml
+
   publish:
+    needs: verify
+    environment: pub-dev
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -18,7 +25,11 @@ jobs:
         with:
           fetch-depth: 0
       - name: Verify release commit is on main
-        run: git merge-base --is-ancestor "$GITHUB_SHA" origin/main
+        run: |
+          if ! git merge-base --is-ancestor "$GITHUB_SHA" origin/main; then
+            echo '::error::Release tags must point to a commit on main.'
+            exit 1
+          fi
       - name: Verify tag matches release version
         shell: bash
         run: |
@@ -31,26 +42,16 @@ jobs:
             echo '::error::Release tag must match the pubspec version.'
             exit 1
           fi
-      # Configures pub.dev OIDC authentication; no stored publishing token.
-      - uses: dart-lang/setup-dart@v1
-        with:
-          sdk: 3.13.7
       - uses: subosito/flutter-action@v2
         with:
           flutter-version: 3.47.9
           channel: stable
-          cache: true
+          cache: false
       - name: Install dependencies
-        run: |
-          flutter pub get
-          flutter pub get --directory example
-      - name: Analyze
-        run: flutter analyze
-      - name: Check public API
-        run: dart run tool/api_dump.dart --check
-      - name: Test
-        run: flutter test
-      - name: Package dry run
-        run: flutter pub publish --dry-run
+        run: flutter pub get
+      # Mint OIDC credentials only after verification and dependency setup.
+      - uses: dart-lang/setup-dart@v1
+        with:
+          sdk: 3.13.7 # Dart bundled with Flutter 3.47.9
       - name: Publish
         run: flutter pub publish --force

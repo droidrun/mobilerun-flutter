@@ -4,15 +4,7 @@ Flutter package for embedding Mobilerun device streaming and events.
 
 ## Installation (after first release)
 
-The package is not available on pub.dev yet. After the first release:
-
-```yaml
-dependencies:
-  mobilerun_flutter: ^0.1.0
-```
-
-Import `package:mobilerun_flutter/mobilerun_flutter.dart`. See `example/` for
-a complete Flutter app and [RELEASING.md](RELEASING.md) for release setup.
+After the first release, add `mobilerun_flutter: ^0.1.0` to your dependencies.
 
 ## Status: pre-release
 
@@ -114,6 +106,9 @@ Behaviour is checked against the shared conformance fixtures vendored in
 `conformance/fixtures` (the pinned tag is in `conformance/VERSION`).
 
 ## Development
+
+Use Flutter 3.47.9 (including its bundled Dart SDK).
+See [RELEASING.md](RELEASING.md) for publisher setup and release steps.
 
 ```sh
 flutter pub get

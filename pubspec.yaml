@@ -1,7 +1,6 @@
 name: mobilerun_flutter
 description: Flutter package for embedding Mobilerun device streaming and events.
 version: 0.1.0
-homepage: https://github.com/droidrun/mobilerun-flutter
 repository: https://github.com/droidrun/mobilerun-flutter
 issue_tracker: https://github.com/droidrun/mobilerun-flutter/issues
 topics:
@@ -21,6 +20,7 @@ dependencies:
   web_socket_channel: ^3.0.3
 
 dev_dependencies:
+  # Pin the element model used by the public API baseline.
   analyzer: 10.1.0
   flutter_lints: ^6.0.0
   flutter_test:

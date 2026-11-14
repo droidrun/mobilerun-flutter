@@ -2,24 +2,23 @@
 // Public exports and declared public member signatures.
 
 final class AnswerMessage extends ServerMessage
-  String get type
-  abstract String get type
-  final String sdp
   static const String messageType
+  final String sdp
+  String get type
 
 typedef ApprovalActionsBuilder = Widget Function(BuildContext, ApprovalActionsState)
 
 final class ApprovalActionsState
-  const ApprovalActionsState({bool isPending = false, ApprovalDecision? decision, TaskApprovalLabels labels = const TaskApprovalLabels(), required ValueChanged<ApprovalDecision> onDecide})
   final ApprovalDecision? decision
-  final TaskApprovalLabels labels
-  final ValueChanged<ApprovalDecision> onDecide
   final bool isPending
+  final TaskApprovalLabels labels
+  const ApprovalActionsState({bool isPending = false, ApprovalDecision? decision, TaskApprovalLabels labels = const TaskApprovalLabels(), required ValueChanged<ApprovalDecision> onDecide})
+  final ValueChanged<ApprovalDecision> onDecide
 
 enum ApprovalDecision
-  const ApprovalDecision()
   static const ApprovalDecision approve
   static const ApprovalDecision deny
+  const ApprovalDecision()
   static const List<ApprovalDecision> values
 
 typedef ApprovalSubscribe = FutureOr<ApprovalUnsubscribe> Function(String, VoidCallback)
@@ -27,282 +26,253 @@ typedef ApprovalSubscribe = FutureOr<ApprovalUnsubscribe> Function(String, VoidC
 typedef ApprovalUnsubscribe = FutureOr<void> Function()
 
 final class ClientCandidateMessage extends ClientMessage
-  Map<String, Object?> toJson()
-  String encode()
-  String get type
-  abstract Map<String, Object?> toJson()
-  abstract String get type
-  const ClientCandidateMessage({required String candidate, required String? sdpMid, required int? sdpMLineIndex, required String sessionId})
   final String candidate
-  final String sessionId
-  final String? sdpMid
-  final int? sdpMLineIndex
   static const String messageType
+  const ClientCandidateMessage({required String candidate, required String? sdpMid, required int? sdpMLineIndex, required String sessionId})
+  final int? sdpMLineIndex
+  final String? sdpMid
+  final String sessionId
+  Map<String, Object?> toJson()
+  String get type
 
 sealed class ClientMessage
   String encode()
+  const ClientMessage()
   abstract Map<String, Object?> toJson()
   abstract String get type
-  const ClientMessage()
 
 final class DataChannelSpec
-  const DataChannelSpec({required String label, required int id, required bool ordered, int? maxRetransmits})
-  final String label
-  final bool negotiated
-  final bool ordered
   final int id
+  final String label
   final int? maxRetransmits
+  final bool negotiated
+  const DataChannelSpec({required String label, required int id, required bool ordered, int? maxRetransmits})
+  final bool ordered
 
 class DeviceStream extends StatefulWidget
-  State<DeviceStream> createState()
-  const DeviceStream({Key? key, required DeviceStreamSession session, bool hasControl = true, bool autofocus = false, StreamLabels labels = const StreamLabels(), DeviceStreamController? controller, StreamOverlayBuilder placeholderBuilder = defaultStreamPlaceholder, StreamOverlayBuilder unavailableBuilder = defaultStreamUnavailable, StreamNavigationBuilder navigationBuilder = defaultStreamNavigation, Stream<bool>? connectivity, bool observeLifecycle = true})
-  final DeviceStreamController? controller
-  final DeviceStreamSession session
+  final bool autofocus
   final Stream<bool>? connectivity
+  final DeviceStreamController? controller
+  State<DeviceStream> createState()
+  final bool hasControl
   final StreamLabels labels
   final StreamNavigationBuilder navigationBuilder
-  final StreamOverlayBuilder placeholderBuilder
-  final StreamOverlayBuilder unavailableBuilder
-  final bool autofocus
-  final bool hasControl
+  const DeviceStream({Key? key, required DeviceStreamSession session, bool hasControl = true, bool autofocus = false, StreamLabels labels = const StreamLabels(), DeviceStreamController? controller, StreamOverlayBuilder placeholderBuilder = defaultStreamPlaceholder, StreamOverlayBuilder unavailableBuilder = defaultStreamUnavailable, StreamNavigationBuilder navigationBuilder = defaultStreamNavigation, Stream<bool>? connectivity, bool observeLifecycle = true})
   final bool observeLifecycle
+  final StreamOverlayBuilder placeholderBuilder
+  final DeviceStreamSession session
+  final StreamOverlayBuilder unavailableBuilder
 
 final class DeviceStreamController
-  DeviceStreamController()
   void hideKeyboard()
+  DeviceStreamController()
   void sendSystemKey(DeviceSystemKey key)
   void showKeyboard()
 
 final class DeviceStreamSession
-  DeviceStreamSession({required StreamCredentialsProvider credentials, StreamConfig config = const StreamConfig()})
-  DeviceStreamSession.withTransports({required StreamCredentialsProvider credentials, required StreamTransports transports, StreamConfig config = const StreamConfig(), Scheduler scheduler = const TimerScheduler(), double Function()? random, String Function()? sessionId})
-  Future<Uint8List> screenshot({Duration timeout = SignallingTiming.screenshotTimeout})
   Future<void> close()
-  ValueListenable<MediaStream?> get videoStream
-  ValueListenable<StreamStatus> get status
-  ValueListenable<VideoSize?> get videoSize
+  DeviceStreamSession({required StreamCredentialsProvider credentials, StreamConfig config = const StreamConfig()})
   bool openUrl(String url)
-  bool sendControl(Uint8List data)
-  bool sendHover(Uint8List data)
   void retry()
+  Future<Uint8List> screenshot({Duration timeout = SignallingTiming.screenshotTimeout})
   void setMuted(bool muted)
   void setVisible(bool visible)
   void start()
+  ValueListenable<StreamStatus> get status
+  ValueListenable<VideoSize?> get videoSize
   void wake()
 
 class DeviceStreamView extends StatefulWidget
-  State<DeviceStreamView> createState()
-  const DeviceStreamView({Key? key, required DeviceStreamSession session, required bool hasControl, DeviceStreamController? controller, bool autofocus = false})
-  final DeviceStreamController? controller
-  final DeviceStreamSession session
   final bool autofocus
+  final DeviceStreamController? controller
+  State<DeviceStreamView> createState()
   final bool hasControl
+  const DeviceStreamView({Key? key, required DeviceStreamSession session, required bool hasControl, DeviceStreamController? controller, bool autofocus = false})
+  final DeviceStreamSession session
 
 enum DeviceSystemKey
-  const DeviceSystemKey(int _keycode)
   static const DeviceSystemKey back
   static const DeviceSystemKey home
+  const DeviceSystemKey(int _keycode)
   static const DeviceSystemKey recent
   static const List<DeviceSystemKey> values
 
 final class IceServer
-  final List<String> urls
   final String? credential
+  final List<String> urls
   final String? username
 
 final class KeepAliveMessage extends ClientMessage
-  Map<String, Object?> toJson()
-  String encode()
-  String get type
-  abstract Map<String, Object?> toJson()
-  abstract String get type
+  static const String messageType
   const KeepAliveMessage({required String sessionId})
   final String sessionId
-  static const String messageType
+  Map<String, Object?> toJson()
+  String get type
 
 final class OfferMessage extends ClientMessage
-  Map<String, Object?> toJson()
-  String encode()
-  String get type
-  abstract Map<String, Object?> toJson()
-  abstract String get type
+  static const String messageType
   const OfferMessage({required String sdp, required String sessionId})
   final String sdp
   final String sessionId
-  static const String messageType
+  Map<String, Object?> toJson()
+  String get type
 
 final class OpenUrlMessage extends ClientMessage
-  Map<String, Object?> toJson()
-  String encode()
-  String get type
-  abstract Map<String, Object?> toJson()
-  abstract String get type
   factory OpenUrlMessage.fromInput({required String input, required String sessionId})
-  final String sessionId
-  final String url
   static const String messageType
+  final String sessionId
+  Map<String, Object?> toJson()
+  String get type
+  final String url
 
 final class PendingApproval
-  PendingApproval copyWith({String? approvalId, String? kind, Map<String, Object?>? details, String? expiresAt, String? deviceId, bool clearDeviceId = false})
   bool ==(Object other)
-  const PendingApproval({required String approvalId, required String kind, Map<String, Object?> details = const {}, required String expiresAt, String? deviceId})
-  final Map<String, Object?> details
   final String approvalId
-  final String expiresAt
-  final String kind
+  PendingApproval copyWith({String? approvalId, String? kind, Map<String, Object?>? details, String? expiresAt, String? deviceId, bool clearDeviceId = false})
+  final Map<String, Object?> details
   final String? deviceId
+  final String expiresAt
   int get hashCode
+  final String kind
+  const PendingApproval({required String approvalId, required String kind, Map<String, Object?> details = const {}, required String expiresAt, String? deviceId})
 
 final class ReconnectController
-  ReconnectController({required void Function() onRemount, required void Function(ReconnectSnapshot) onSnapshot, required void Function() onHeal, Scheduler scheduler = const TimerScheduler(), double Function()? random})
-  ReconnectSnapshot get snapshot
-  bool shouldDeferTargetChange()
   void attemptMounted()
   void dispose()
   void handleConnected()
   void handleDisconnected()
   void handleFailure()
   void handleWake()
+  ReconnectController({required void Function() onRemount, required void Function(ReconnectSnapshot) onSnapshot, required void Function() onHeal, Scheduler scheduler = const TimerScheduler(), double Function()? random})
   void retry()
   void setDisabled()
+  bool shouldDeferTargetChange()
+  ReconnectSnapshot get snapshot
 
 abstract final class ReconnectPolicy
   static const Duration baseDelay
   static const Duration connectTimeout
+  static const int maxAttempts
   static const Duration maxDelay
   static const Duration stability
-  static const int maxAttempts
 
 final class ReconnectSnapshot
-  String toString()
   bool ==(Object other)
-  const ReconnectSnapshot({required ReconnectStatus status, required int attempt})
-  final ReconnectStatus status
   final int attempt
   int get hashCode
+  const ReconnectSnapshot({required ReconnectStatus status, required int attempt})
+  final ReconnectStatus status
+  String toString()
 
 enum ReconnectStatus
-  const ReconnectStatus()
-  static const List<ReconnectStatus> values
   static const ReconnectStatus connected
   static const ReconnectStatus connecting
+  const ReconnectStatus()
   static const ReconnectStatus reconnecting
   static const ReconnectStatus unavailable
+  static const List<ReconnectStatus> values
 
 final class RequestFrameMessage extends ClientMessage
-  Map<String, Object?> toJson()
-  String encode()
-  String get type
-  abstract Map<String, Object?> toJson()
-  abstract String get type
+  static const String messageType
   const RequestFrameMessage({required String sessionId})
   final String sessionId
-  static const String messageType
+  Map<String, Object?> toJson()
+  String get type
 
 final class RequestRtcConfigurationMessage extends ClientMessage
-  Map<String, Object?> toJson()
-  String encode()
-  String get type
-  abstract Map<String, Object?> toJson()
-  abstract String get type
+  static const String messageType
   const RequestRtcConfigurationMessage({required String sessionId})
   final String sessionId
-  static const String messageType
+  Map<String, Object?> toJson()
+  String get type
 
 final class RtcConfigurationMessage extends ServerMessage
   List<IceServer>? get iceServers
-  String get type
-  abstract String get type
-  final Map<String, Object?> rtcConfiguration
   static const String messageType
+  final Map<String, Object?> rtcConfiguration
+  String get type
 
 abstract interface class ScheduledTask
-  ScheduledTask()
   abstract void cancel()
+  ScheduledTask()
 
 abstract interface class Scheduler
   Scheduler()
   abstract ScheduledTask schedule(Duration delay, void Function() callback)
 
 final class ScreenshotErrorMessage extends ServerMessage
-  String get type
-  abstract String get type
   final String id
   final String message
   static const String messageType
+  String get type
 
 final class ScreenshotMessage extends ServerMessage
-  String get type
-  abstract String get type
   final String dataUri
   final String id
   static const String messageType
+  String get type
 
 final class ScreenshotRequestMessage extends ClientMessage
-  Map<String, Object?> toJson()
-  String encode()
-  String get type
-  abstract Map<String, Object?> toJson()
-  abstract String get type
-  const ScreenshotRequestMessage({required String id})
   final String id
   static const String messageType
+  const ScreenshotRequestMessage({required String id})
+  Map<String, Object?> toJson()
+  String get type
 
 final class ServerCandidateMessage extends ServerMessage
-  String get type
-  abstract String get type
   final String candidate
-  final String? sdpMid
-  final int? sdpMLineIndex
   static const String messageType
+  final int? sdpMLineIndex
+  final String? sdpMid
+  String get type
 
 sealed class ServerMessage
-  abstract String get type
-  const ServerMessage()
   factory ServerMessage.fromJson(Map<String, Object?> json)
+  const ServerMessage()
+  abstract String get type
 
 enum SignallingPhase
-  const SignallingPhase()
-  static const List<SignallingPhase> values
   static const SignallingPhase active
   static const SignallingPhase awaitingRtcConfiguration
+  const SignallingPhase()
+  static const List<SignallingPhase> values
 
 final class SignallingStartupException implements Exception
-  String toString()
   const SignallingStartupException(String text)
   final String text
+  String toString()
 
 abstract final class SignallingTiming
   static const Duration iceRestartGrace
   static const Duration keepAliveInterval
+  static const int requestFrameCount
   static const Duration requestFrameInterval
   static const Duration rtcConfigTimeout
   static const Duration screenshotTimeout
   static const Duration videoSizeInterval
   static const Duration wsOpenTimeout
-  static const int requestFrameCount
 
 final class StreamConfig
-  const StreamConfig({bool muted = true, bool zeroPlayoutDelay = true})
   final bool muted
+  const StreamConfig({bool muted = true, bool zeroPlayoutDelay = true})
   final bool zeroPlayoutDelay
 
 final class StreamConnected extends StreamStatus
-  String toString()
   bool ==(Object other)
-  const StreamConnected()
   int get hashCode
+  const StreamConnected()
+  String toString()
 
 final class StreamConnecting extends StreamStatus
-  String toString()
   bool ==(Object other)
-  const StreamConnecting()
   int get hashCode
+  const StreamConnecting()
+  String toString()
 
 final class StreamCredentials
+  const StreamCredentials({required String url, required String token})
   String toString()
   Uri toWebSocketUri()
-  const StreamCredentials({required String url, required String token})
   final String token
   final String url
 
@@ -313,23 +283,23 @@ abstract final class StreamDataChannels
   static const DataChannelSpec hover
 
 final class StreamLabels
-  StreamLabels copyWith({String? connecting, String? reconnecting, String? reconnectingAttempt, String? unavailable, String? retry, String? back, String? home, String? recent})
   bool ==(Object other)
-  const StreamLabels({String connecting = 'connecting', String reconnecting = 'reconnecting', String reconnectingAttempt = 'reconnecting ({attempt}/{max})', String unavailable = 'device stream unavailable', String retry = 'Retry', String back = 'Back', String home = 'Home', String recent = 'Recent'})
   final String back
   final String connecting
+  StreamLabels copyWith({String? connecting, String? reconnecting, String? reconnectingAttempt, String? unavailable, String? retry, String? back, String? home, String? recent})
+  int get hashCode
   final String home
+  const StreamLabels({String connecting = 'connecting', String reconnecting = 'reconnecting', String reconnectingAttempt = 'reconnecting ({attempt}/{max})', String unavailable = 'device stream unavailable', String retry = 'Retry', String back = 'Back', String home = 'Home', String recent = 'Recent'})
   final String recent
   final String reconnecting
   final String reconnectingAttempt
   final String retry
   final String unavailable
-  int get hashCode
 
 final class StreamLifecycle
+  void dispose()
   StreamLifecycle({required DeviceStreamSession session, Stream<bool>? connectivity})
   final DeviceStreamSession session
-  void dispose()
   void updateConnectivity(Stream<bool>? connectivity)
 
 class StreamNavigationBar extends StatelessWidget
@@ -340,152 +310,151 @@ class StreamNavigationBar extends StatelessWidget
 typedef StreamNavigationBuilder = Widget Function(BuildContext, StreamNavigationState)
 
 final class StreamNavigationState
-  const StreamNavigationState({bool canControl = true, StreamLabels labels = const StreamLabels(), required ValueChanged<DeviceSystemKey> onAction})
-  final StreamLabels labels
-  final ValueChanged<DeviceSystemKey> onAction
   final bool canControl
+  final StreamLabels labels
+  const StreamNavigationState({bool canControl = true, StreamLabels labels = const StreamLabels(), required ValueChanged<DeviceSystemKey> onAction})
+  final ValueChanged<DeviceSystemKey> onAction
 
 typedef StreamOverlayBuilder = Widget Function(BuildContext, StreamOverlayState)
 
 final class StreamOverlayState
   String get label
-  const StreamOverlayState({StreamStatus status = const StreamConnecting(), StreamLabels labels = const StreamLabels(), required VoidCallback retry})
   final StreamLabels labels
-  final StreamStatus status
+  const StreamOverlayState({StreamStatus status = const StreamConnecting(), StreamLabels labels = const StreamLabels(), required VoidCallback retry})
   final VoidCallback retry
+  final StreamStatus status
 
 final class StreamReconnecting extends StreamStatus
-  String toString()
   bool ==(Object other)
-  const StreamReconnecting(int attempt)
   final int attempt
   int get hashCode
+  const StreamReconnecting(int attempt)
+  String toString()
 
 final class StreamSessionException implements Exception
-  String toString()
-  const StreamSessionException(String message)
   final String message
+  const StreamSessionException(String message)
+  String toString()
 
 sealed class StreamStatus
   const StreamStatus()
 
 class StreamStatusPill extends StatelessWidget
   Widget build(BuildContext context)
-  const StreamStatusPill({Key? key, required String label})
   final String label
+  const StreamStatusPill({Key? key, required String label})
 
 class StreamTheme extends StatelessWidget
   Widget build(BuildContext context)
-  const StreamTheme({Key? key, StreamTokens tokens = const StreamTokens(), StreamTokens darkTokens = StreamTokens.dark, bool followSystem = false, required Widget child})
-  final StreamTokens darkTokens
-  final StreamTokens tokens
   final Widget child
+  final StreamTokens darkTokens
   final bool followSystem
+  const StreamTheme({Key? key, StreamTokens tokens = const StreamTokens(), StreamTokens darkTokens = StreamTokens.dark, bool followSystem = false, required Widget child})
   static StreamTokens of(BuildContext context)
+  final StreamTokens tokens
 
 final class StreamTokens
-  StreamTokens copyWith({Color? background, Color? foreground, Color? card, Color? cardForeground, Color? muted, Color? mutedForeground, Color? border, Color? ring, Color? primary, Color? primaryForeground, Color? accent, Color? accentForeground, Color? destructive, double? radius, TextStyle? typography})
   bool ==(Object other)
-  const StreamTokens({Color background = const Color(0xFFFFFFFF), Color foreground = const Color(0xFF0A0A0A), Color card = const Color(0xFFFFFFFF), Color cardForeground = const Color(0xFF0A0A0A), Color muted = const Color(0xFFF5F5F5), Color mutedForeground = const Color(0xFF737373), Color border = const Color(0xFFE5E5E5), Color ring = const Color(0xFFA1A1A1), Color primary = const Color(0xFF171717), Color primaryForeground = const Color(0xFFFAFAFA), Color accent = const Color(0xFFF5F5F5), Color accentForeground = const Color(0xFF171717), Color destructive = const Color(0xFFE7000B), double radius = 6, TextStyle typography = const TextStyle(fontSize: 14)})
   final Color accent
   final Color accentForeground
   final Color background
   final Color border
   final Color card
   final Color cardForeground
+  StreamTokens copyWith({Color? background, Color? foreground, Color? card, Color? cardForeground, Color? muted, Color? mutedForeground, Color? border, Color? ring, Color? primary, Color? primaryForeground, Color? accent, Color? accentForeground, Color? destructive, double? radius, TextStyle? typography})
+  static const StreamTokens dark
   final Color destructive
   final Color foreground
+  int get hashCode
   final Color muted
   final Color mutedForeground
+  const StreamTokens({Color background = const Color(0xFFFFFFFF), Color foreground = const Color(0xFF0A0A0A), Color card = const Color(0xFFFFFFFF), Color cardForeground = const Color(0xFF0A0A0A), Color muted = const Color(0xFFF5F5F5), Color mutedForeground = const Color(0xFF737373), Color border = const Color(0xFFE5E5E5), Color ring = const Color(0xFFA1A1A1), Color primary = const Color(0xFF171717), Color primaryForeground = const Color(0xFFFAFAFA), Color accent = const Color(0xFFF5F5F5), Color accentForeground = const Color(0xFF171717), Color destructive = const Color(0xFFE7000B), double radius = 6, TextStyle typography = const TextStyle(fontSize: 14)})
   final Color primary
   final Color primaryForeground
+  final double radius
   final Color ring
   final TextStyle typography
-  final double radius
-  int get hashCode
-  static const StreamTokens dark
 
 final class StreamUnavailable extends StreamStatus
-  String toString()
   bool ==(Object other)
-  const StreamUnavailable()
   int get hashCode
+  const StreamUnavailable()
+  String toString()
 
 class TaskApprovalCard extends StatefulWidget
-  State<TaskApprovalCard> createState()
-  const TaskApprovalCard({Key? key, PendingApproval? approval, required ValueChanged<ApprovalDecision> onDecide, bool isPending = false, ApprovalDecision? decision, String? error, Widget? device, TaskApprovalLabels labels = const TaskApprovalLabels(), ApprovalActionsBuilder actionsBuilder = defaultApprovalActions})
   final ApprovalActionsBuilder actionsBuilder
-  final ApprovalDecision? decision
   final PendingApproval? approval
-  final String? error
-  final TaskApprovalLabels labels
-  final ValueChanged<ApprovalDecision> onDecide
+  State<TaskApprovalCard> createState()
+  final ApprovalDecision? decision
   final Widget? device
+  final String? error
   final bool isPending
+  final TaskApprovalLabels labels
+  const TaskApprovalCard({Key? key, PendingApproval? approval, required ValueChanged<ApprovalDecision> onDecide, bool isPending = false, ApprovalDecision? decision, String? error, Widget? device, TaskApprovalLabels labels = const TaskApprovalLabels(), ApprovalActionsBuilder actionsBuilder = defaultApprovalActions})
+  final ValueChanged<ApprovalDecision> onDecide
 
 final class TaskApprovalController extends ChangeNotifier
   Future<void> decide(ApprovalDecision decision)
-  Future<void> refetch()
-  TaskApprovalController({required String? taskId, required Future<PendingApproval?> Function(String) fetchApproval, required Future<void> Function(TaskApprovalRequest) decide, ApprovalSubscribe? subscribe, FutureOr<void> Function(Object)? onError, bool enabled = true})
-  TaskApprovalState get state
   void dispose()
+  TaskApprovalController({required String? taskId, required Future<PendingApproval?> Function(String) fetchApproval, required Future<void> Function(TaskApprovalRequest) decide, ApprovalSubscribe? subscribe, FutureOr<void> Function(Object)? onError, bool enabled = true})
+  Future<void> refetch()
+  TaskApprovalState get state
   void update({required String? taskId, bool? enabled})
 
 final class TaskApprovalLabels
-  TaskApprovalLabels copyWith({String? paymentCardTitle, String? waiting, String? card, String? app, String? domain, String? timeLeft, String? expired, String? approve, String? deny, String? viewSwitch, String? details, String? device})
   bool ==(Object other)
-  const TaskApprovalLabels({String paymentCardTitle = 'Approve payment', String waiting = 'Waiting for approval', String card = 'Card', String app = 'App', String domain = 'Domain', String timeLeft = '{time} left', String expired = 'Approval expired', String approve = 'Approve', String deny = 'Deny', String viewSwitch = 'Approval view', String details = 'Details', String device = 'Device'})
   final String app
   final String approve
   final String card
+  TaskApprovalLabels copyWith({String? paymentCardTitle, String? waiting, String? card, String? app, String? domain, String? timeLeft, String? expired, String? approve, String? deny, String? viewSwitch, String? details, String? device})
   final String deny
   final String details
   final String device
   final String domain
   final String expired
+  int get hashCode
+  const TaskApprovalLabels({String paymentCardTitle = 'Approve payment', String waiting = 'Waiting for approval', String card = 'Card', String app = 'App', String domain = 'Domain', String timeLeft = '{time} left', String expired = 'Approval expired', String approve = 'Approve', String deny = 'Deny', String viewSwitch = 'Approval view', String details = 'Details', String device = 'Device'})
   final String paymentCardTitle
   final String timeLeft
   final String viewSwitch
   final String waiting
-  int get hashCode
 
 final class TaskApprovalRequest
-  TaskApprovalRequest copyWith({String? taskId, String? approvalId, ApprovalDecision? decision})
-  const TaskApprovalRequest({required String taskId, required String approvalId, required ApprovalDecision decision})
-  final ApprovalDecision decision
   final String approvalId
+  TaskApprovalRequest copyWith({String? taskId, String? approvalId, ApprovalDecision? decision})
+  final ApprovalDecision decision
+  const TaskApprovalRequest({required String taskId, required String approvalId, required ApprovalDecision decision})
   final String taskId
 
 final class TaskApprovalState
-  TaskApprovalState copyWith({PendingApproval? approval, bool? isLoading, bool? isDeciding, ApprovalDecision? decision, Object? error, bool clearApproval = false, bool clearDecision = false, bool clearError = false})
   bool ==(Object other)
-  const TaskApprovalState({PendingApproval? approval, bool isLoading = false, bool isDeciding = false, ApprovalDecision? decision, Object? error})
+  final PendingApproval? approval
+  TaskApprovalState copyWith({PendingApproval? approval, bool? isLoading, bool? isDeciding, ApprovalDecision? decision, Object? error, bool clearApproval = false, bool clearDecision = false, bool clearError = false})
   final ApprovalDecision? decision
   final Object? error
-  final PendingApproval? approval
+  int get hashCode
   final bool isDeciding
   final bool isLoading
-  int get hashCode
+  const TaskApprovalState({PendingApproval? approval, bool isLoading = false, bool isDeciding = false, ApprovalDecision? decision, Object? error})
 
 final class TimerScheduler implements Scheduler
-  ScheduledTask schedule(Duration delay, void Function() callback)
-  abstract ScheduledTask schedule(Duration delay, void Function() callback)
   const TimerScheduler()
+  ScheduledTask schedule(Duration delay, void Function() callback)
 
 final class VideoSize
-  String toString()
   bool ==(Object other)
-  const VideoSize(int width, int height)
-  final int height
-  final int width
   int get hashCode
+  final int height
+  const VideoSize(int width, int height)
+  String toString()
+  final int width
 
-static ServerMessage? decodeServerMessage(String text, {required SignallingPhase phase})
+ServerMessage? decodeServerMessage(String text, {required SignallingPhase phase})
 
-static Widget defaultApprovalActions(BuildContext context, ApprovalActionsState state)
+Widget defaultApprovalActions(BuildContext context, ApprovalActionsState state)
 
-static Widget defaultStreamNavigation(BuildContext context, StreamNavigationState state)
+Widget defaultStreamNavigation(BuildContext context, StreamNavigationState state)
 
-static Widget defaultStreamPlaceholder(BuildContext context, StreamOverlayState state)
+Widget defaultStreamPlaceholder(BuildContext context, StreamOverlayState state)
 
-static Widget defaultStreamUnavailable(BuildContext context, StreamOverlayState state)
+Widget defaultStreamUnavailable(BuildContext context, StreamOverlayState state)
