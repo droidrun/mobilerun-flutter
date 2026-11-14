@@ -126,6 +126,11 @@ final class E2eScript {
     await _awaitVideo('first');
     _log('first frame after ${stopwatch.elapsedMilliseconds} ms');
     await _sleep(3000);
+    final counts = <String, int>{};
+    for (final type in signalling.sentTypes) {
+      counts[type] = (counts[type] ?? 0) + 1;
+    }
+    _log('sent frames $counts');
     await hostShot('01-first-frame');
 
     // Raw control bytes: HOME key, then a tap on the Settings icon.
