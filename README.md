@@ -131,9 +131,53 @@ Apache-2.0, see `LICENSE`.
 
 ## Default UI and approvals
 
-`TaskApprovalCard`, `StreamStatusPill`, `StreamTheme`, and `StreamLabels` are
+`DeviceStreamView`, `StreamNavigationBar`, `TaskApprovalCard`,
+`StreamStatusPill`, `StreamTheme`, and `StreamLabels` are
 optional white-label widgets. They display no logo or product name. The
 headless session and approval controller also work with your own UI.
+
+### Stream with default chrome
+
+Use `DeviceStreamView` in a bounded area to compose the existing `DeviceStream`
+video/input widget with status overlays and Back/Home/Recent navigation:
+
+```dart
+DeviceStreamView(
+  session: session,
+  hasControl: true,
+  controller: view,
+  labels: const StreamLabels(connecting: 'Starting device'),
+  // showNavigation: false,
+  // connectivity: existingOnlineStream,
+);
+```
+
+Connecting and reconnecting show a corner spinner and label; reconnect attempts
+use `reconnectingAttempt` after the first failure. A connected stream shows the
+video. Unavailable shows a message and Retry, calling `session.retry()`. Local
+input and navigation share `hasControl && status is! StreamUnavailable`.
+Display-only mode keeps video visible. Navigation sends explicit Back/Home/Recent
+DOWN/UP pairs (4/3/187); it never handles host back implicitly.
+
+The app still owns `session.start()` and `session.close()`. By default the view
+attaches `StreamLifecycle`; set `handleLifecycle: false` if your app already
+owns one. Initial online/foreground snapshots and visible focus changes do not
+wake reconnects. App background pauses keepAlive; foreground/network return
+wakes pending reconnects.
+
+Every slot has its default builder as an explicit default value:
+
+- `placeholderBuilder(context, StreamOverlayState)` replaces the connecting
+  overlay. The scope supplies status, localized label, bounded container
+  constraints and `retry`.
+- `unavailableBuilder(context, StreamOverlayState)` replaces the unavailable
+  overlay and can call `state.retry()`.
+- `navigationBuilder(context, StreamNavigationState)` replaces navigation,
+  receiving `canControl`, labels and `onAction` in one object.
+
+You can call `defaultStreamPlaceholder`, `defaultStreamUnavailable`, or
+`defaultStreamNavigation` inside your builder to wrap the defaults. The bare
+`DeviceStream` remains available for fully custom UI.
 
 ### Task approvals
 
@@ -274,3 +318,8 @@ fake approval backend, including approve/deny → refetch and decision errors:
 cd example
 flutter run -t lib/ui_gallery_main.dart
 ```
+
+The stream chrome gallery uses a local credentials provider to exercise
+connecting, reconnecting, unavailable/retry, custom slots and themes without
+opening a cloud device: `flutter run -t lib/ui_stream_gallery_main.dart` from
+`example/`. It does not simulate connected video.

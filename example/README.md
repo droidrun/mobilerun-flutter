@@ -18,3 +18,9 @@ Run `flutter run -t lib/ui_gallery_main.dart` to exercise the default approval
 card without a cloud device. The mode chips select light, dark, custom labels
 and tokens, an unknown approval kind, backend errors and expiry. Approve or
 Deny calls the fake backend and refetches; select a mode again to reset it.
+
+Run `flutter run -t lib/ui_stream_gallery_main.dart` for default stream chrome
+without a device. Connecting polls a local null provider; Unavailable exhausts
+the normal retry budget against a local throwing provider, then Retry returns
+to polling. Dark, Custom, Slots and Display only exercise themes, labels,
+replacement builders and input configuration. No live video is simulated.

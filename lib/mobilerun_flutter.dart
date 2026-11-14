@@ -76,3 +76,15 @@ export 'src/ui/task_approval_card.dart'
         ApprovalActionsState,
         ApprovalActionsBuilder,
         defaultApprovalActions;
+
+export 'src/ui/device_stream_view.dart'
+    show
+        DeviceStreamView,
+        StreamNavigationBar,
+        StreamOverlayState,
+        StreamOverlayBuilder,
+        StreamNavigationState,
+        StreamNavigationBuilder,
+        defaultStreamPlaceholder,
+        defaultStreamUnavailable,
+        defaultStreamNavigation;
