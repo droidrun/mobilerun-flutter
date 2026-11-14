@@ -143,29 +143,6 @@ final class InputE2eScript {
     await wait(1800);
   }
 
-  Future<void> key(
-    PhysicalKeyboardKey physical,
-    LogicalKeyboardKey logical, {
-    String? character,
-  }) async {
-    for (final down in [true, false]) {
-      HardwareKeyboard.instance.handleKeyEvent(
-        down
-            ? KeyDownEvent(
-                timeStamp: Duration.zero,
-                physicalKey: physical,
-                logicalKey: logical,
-                character: character,
-              )
-            : KeyUpEvent(
-                timeStamp: Duration.zero,
-                physicalKey: physical,
-                logicalKey: logical,
-              ),
-      );
-    }
-  }
-
   Future<void> shot(String name) async {
     await wait(800);
     final bytes = await session.screenshot();
@@ -287,13 +264,10 @@ final class InputE2eScript {
     controller.hideKeyboard();
     await wait(700);
     final beforeHardware = sent.length;
-    await key(
-      PhysicalKeyboardKey.keyA,
-      LogicalKeyboardKey.keyA,
-      character: 'a',
-    );
-    await key(PhysicalKeyboardKey.backspace, LogicalKeyboardKey.backspace);
-    await key(PhysicalKeyboardKey.enter, LogicalKeyboardKey.enter);
+    // The host injects real emulator keyboard events. Calling HardwareKeyboard
+    // directly skips Flutter's Focus dispatch and cannot prove this path.
+    log('HOST-HARDWARE');
+    await until(() => sent.length >= beforeHardware + 5, 'host hardware keys');
     expectFrames(beforeHardware, [
       encodeText('a'),
       ...press(67),

@@ -134,6 +134,9 @@ while [ "$SECONDS" -lt "$deadline" ] && [ "$status" = timeout ]; do
         adb_ exec-out screencap -p >"$out/shots/host-$name.png"
         if ! check_shot "$name"; then status=failed; fi
         ;;
+      HOST-HARDWARE)
+        adb_ shell input keyevent 29 67 66
+        ;;
       HOST-TYPE)
         # Tap three visible keys on the emulator's English soft keyboard.
         # Positions are fractions of the full screen, independent of density.
