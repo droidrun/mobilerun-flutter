@@ -161,12 +161,22 @@ while [ "$SECONDS" -lt "$deadline" ] && [ "$status" = timeout ]; do
         if ! check_shot "$name"; then status=failed; fi
         ;;
       HOST-HARDWARE)
-        # Emulator evdev events carry real scan codes. `input keyevent` uses
-        # scan code zero, so it cannot exercise physical-key routing.
-        adb_ emu event send \
-          1:30:1 0:0:0 1:30:0 0:0:0 \
-          1:14:1 0:0:0 1:14:0 0:0:0 \
-          1:28:1 0:0:0 1:28:0 0:0:0
+        # Use the emulator keyboard's kernel device: `input keyevent` has
+        # scan code zero, and console `event send` can target another device.
+        # The google_apis userdebug image provides `su 0` for fixture input.
+        keyboard_device="$(adb_ shell getevent -pl | awk '
+          /^add device/ { device=$NF }
+          /name:.*"qwerty2"/ { print device; exit }
+        ' | tr -d '\r')"
+        [[ "$keyboard_device" =~ ^/dev/input/event[0-9]+$ ]] || {
+          echo "emulator keyboard device missing" >&2; exit 1;
+        }
+        for key in 30 14 28; do
+          for action in 1 0; do
+            adb_ shell su 0 sendevent "$keyboard_device" 1 "$key" "$action"
+            adb_ shell su 0 sendevent "$keyboard_device" 0 0 0
+          done
+        done
         ;;
       HOST-TYPE)
         # Tap three visible keys on the emulator's English soft keyboard.
