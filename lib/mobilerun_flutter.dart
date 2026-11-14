@@ -10,6 +10,8 @@ library;
 import 'src/core/device_stream_session.dart';
 
 export 'src/core/device_stream_session.dart' show DeviceStreamSession;
+export 'src/widgets/device_stream.dart'
+    show DeviceStream, DeviceStreamController, DeviceSystemKey;
 export 'src/core/reconnect_controller.dart'
     show ReconnectController, ReconnectSnapshot, ReconnectStatus;
 export 'src/core/reconnect_policy.dart' show ReconnectPolicy;

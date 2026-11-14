@@ -3,8 +3,8 @@
 # SPDX-License-Identifier: Apache-2.0
 #
 # Scripted run of the example app on an Android emulator against a cloud
-# device: first frame, raw control bytes (HOME key, tap), forced signalling
-# socket close and rebuild, mid-session credential refresh.
+# device: video pixels, widget touch/swipe, two fingers, rotated mapping,
+# soft and hardware keyboards, system keys, hover and scroll.
 #
 # Usage: example/tool/e2e_android.sh CREDENTIALS_JSON OUT_DIR
 #
@@ -19,9 +19,7 @@
 #
 # Proof of the picture is in pixels: every emulator screenshot of a live stream
 # must show the device picture in the video area (tool/png_check.py), and the
-# tap must change those pixels. The app itself fails the run when the credential
-# refresh does not change the ICE ufrag, is not answered, or frames stop for
-# 16 s.
+# tap must change those pixels. The app asserts outgoing input frames too.
 set -euo pipefail
 
 if [ "$#" -ne 2 ]; then
@@ -96,7 +94,7 @@ logcat_pid=$!
 check_shot() {
   local png="$out/shots/host-$1.png" check="$here/tool/png_check.py"
   case "$1" in
-    04-reconnecting) return 0 ;; # no video while rebuilding
+    11-rotated-tap) python3 -I "$check" "$png" --lit 0.08 | tee -a "$out/pixels.log" ;;
     03-after-tap)
       python3 -I "$check" "$png" --lit 0.3 | tee -a "$out/pixels.log" || return 1
       python3 -I "$check" "$png" --differs-from "$out/shots/host-02-before-tap.png" 0.05 |
@@ -125,8 +123,20 @@ while [ "$SECONDS" -lt "$deadline" ] && [ "$status" = timeout ]; do
         adb_ exec-out screencap -p >"$out/shots/host-$name.png"
         if ! check_shot "$name"; then status=failed; fi
         ;;
+      HOST-TYPE)
+        # Tap three visible keys on the emulator's English soft keyboard.
+        # Positions are fractions of the full screen, independent of density.
+        size=$(adb_ shell wm size | tr -d '\r' | sed -n 's/.*: \([0-9]*\)x\([0-9]*\)/\1 \2/p' | tail -1)
+        read -r sw sh <<<"$size"
+        adb_ shell input tap "$((sw * 15 / 100))" "$((sh * 78 / 100))"
+        adb_ shell input tap "$((sw * 25 / 100))" "$((sh * 78 / 100))"
+        adb_ shell input tap "$((sw * 35 / 100))" "$((sh * 78 / 100))"
+        ;;
       DONE) if [ "$status" = timeout ]; then status=done; fi ;;
-      FAILED*) status=failed ;;
+      FAILED*)
+        adb_ exec-out screencap -p >"$out/shots/host-failure.png"
+        status=failed
+        ;;
     esac
   done
   sleep 0.5

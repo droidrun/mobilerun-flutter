@@ -5,8 +5,7 @@ Flutter package for embedding Mobilerun device streaming and events.
 ## Status: pre-release
 
 The package connects to a Mobilerun cloud device and recovers from failures,
-exactly like `@mobilerun/react`. It has no touch or keyboard mapping and no
-video widget yet; those come next. The package is not published yet and its
+exactly like `@mobilerun/react`. The package is not published yet and its
 API may still change.
 
 ```dart
@@ -27,8 +26,8 @@ await session.close();
 
 - `status` is `StreamConnecting`, `StreamConnected`, `StreamReconnecting(attempt)`
   or `StreamUnavailable`; `retry()` starts a new cycle from unavailable.
-- `videoSize` is the size of the decoded video. The video widget comes with the
-  next release; `example/lib/stream_view.dart` renders the stream meanwhile.
+- `videoSize` is the decoded frame size; the view uses the renderer
+  dimensions and rotation for displayed video coordinates.
 - `sendControl` and `sendHover` return false and drop the message while their
   data channel is not open. Hover never goes over the control channel.
 - `StreamConfig` starts the audio muted (`setMuted` changes it) and asks for
@@ -41,6 +40,51 @@ await session.close();
 - The video codec offer is VP9, H.265, H.264 in that order, and H.264 only
   when the device has no H.265 decoder.
 
+## Video and input
+
+```dart
+final view = DeviceStreamController();
+
+// Place in a bounded area, such as an Expanded in a Column.
+DeviceStream(session: session, hasControl: true, controller: view);
+
+view.showKeyboard();
+view.hideKeyboard();
+view.sendSystemKey(DeviceSystemKey.back); // also home and recent
+final videoRect = view.renderedVideoRect; // local coordinates, null until video
+```
+
+The view renders video with contain fit and transparent letterboxing. It
+rebuilds on renderer changes, including reconnection and rotation. Touches
+outside the video are ignored; releases use the last position inside it.
+Up to ten fingers have stable slots, with MOVE coalesced per display frame.
+Mouse hover uses only the separate hover channel. Wheel and trackpad pan
+use the same pixel-to-tick conversion as the React SDK.
+
+Click or tap the picture to focus hardware input. Printable keys send text;
+control/navigation keys send Android keycodes. Cmd/Ctrl+V pastes the local
+clipboard through SET_CLIPBOARD; Cmd/Ctrl+M sends MENU. The optional controller
+opens a soft keyboard: marked IME text stays local until committed; deletion
+and enter send DEL and ENTER pairs. Hiding the keyboard discards composition.
+The view does not keep a copy of the remote editor's contents or selection.
+
+`hasControl: false` renders the picture and sends no input. This switch controls
+local interaction; the service remains responsible for permissions. The app
+owns the session lifecycle and must close the session when finished.
+
+Host back gestures/buttons are never forwarded automatically. Apps may wire
+an explicit back action with `PopScope` (choose whether the host route pops):
+
+```dart
+PopScope(
+  canPop: false,
+  onPopInvokedWithResult: (didPop, result) {
+    if (!didPop) view.sendSystemKey(DeviceSystemKey.back);
+  },
+  child: DeviceStream(session: session, hasControl: true, controller: view),
+);
+```
+
 Layout:
 
 - `lib/src/protocol/`: constants, the binary control message encoders and the
@@ -51,8 +95,8 @@ Layout:
 - `lib/src/webrtc/`: the `web_socket_channel` and `flutter_webrtc`
   implementations of those interfaces.
 - `example/`: a sample app, plus `example/tool/e2e_android.sh`, a scripted
-  emulator run against a cloud device (first frame, control bytes, forced
-  socket close, credential refresh).
+  emulator run against a cloud device (video pixels, widget touch/swipe,
+  two-finger input, keyboard/IME, navigation and rotated-view mapping).
 
 Behaviour is checked against the shared conformance fixtures vendored in
 `conformance/fixtures` (the pinned tag is in `conformance/VERSION`).
@@ -67,8 +111,8 @@ dart format --set-exit-if-changed .
 flutter test
 ```
 
-Every test is data-driven over the fixture files and named after the fixture
-case it checks.
+Protocol tests use the shared fixtures. Input tests cover geometry, pointer
+slots, scroll, key routing, IME composition and widget-level event routing.
 
 ### Updating the fixtures
 
