@@ -2,6 +2,18 @@
 
 Flutter package for embedding Mobilerun device streaming and events.
 
+## Installation (after first release)
+
+The package is not available on pub.dev yet. After the first release:
+
+```yaml
+dependencies:
+  mobilerun_flutter: ^0.1.0
+```
+
+Import `package:mobilerun_flutter/mobilerun_flutter.dart`. See `example/` for
+a complete Flutter app and [RELEASING.md](RELEASING.md) for release setup.
+
 ## Status: pre-release
 
 The package connects to a Mobilerun cloud device and recovers from failures,
@@ -109,6 +121,8 @@ flutter pub get --directory example
 flutter analyze
 dart format --set-exit-if-changed .
 flutter test
+dart run tool/api_dump.dart --check
+flutter pub publish --dry-run
 ```
 
 Protocol tests use the shared fixtures. Input tests cover geometry, pointer

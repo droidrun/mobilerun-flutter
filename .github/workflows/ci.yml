@@ -33,6 +33,12 @@ jobs:
       - name: Check formatting
         run: dart format --set-exit-if-changed .
 
+      - name: Check public API
+        run: dart run tool/api_dump.dart --check
+
+      - name: Package dry run
+        run: flutter pub publish --dry-run
+
       - name: Test
         run: flutter test
 

@@ -1,0 +1,56 @@
+name: Publish to pub.dev
+
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: read
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Verify release commit is on main
+        run: git merge-base --is-ancestor "$GITHUB_SHA" origin/main
+      - name: Verify tag matches release version
+        shell: bash
+        run: |
+          version=$(sed -n 's/^version: //p' pubspec.yaml)
+          if [[ ! "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo '::error::Package version must be X.Y.Z without a prerelease suffix.'
+            exit 1
+          fi
+          if [[ "$GITHUB_REF_NAME" != "v$version" ]]; then
+            echo '::error::Release tag must match the pubspec version.'
+            exit 1
+          fi
+      # Configures pub.dev OIDC authentication; no stored publishing token.
+      - uses: dart-lang/setup-dart@v1
+        with:
+          sdk: 3.13.7
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: 3.47.9
+          channel: stable
+          cache: true
+      - name: Install dependencies
+        run: |
+          flutter pub get
+          flutter pub get --directory example
+      - name: Analyze
+        run: flutter analyze
+      - name: Check public API
+        run: dart run tool/api_dump.dart --check
+      - name: Test
+        run: flutter test
+      - name: Package dry run
+        run: flutter pub publish --dry-run
+      - name: Publish
+        run: flutter pub publish --force

@@ -1,0 +1,12 @@
+# Keep development and generated files out of the public archive.
+.github/
+.dart_tool/
+.packages
+build/
+.idea/
+*.iml
+.DS_Store
+**/.dart_tool/
+**/build/
+**/.gradle/
+**/local.properties
