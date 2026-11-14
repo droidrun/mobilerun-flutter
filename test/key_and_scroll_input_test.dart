@@ -1,11 +1,10 @@
 // Copyright 2026 Mobilerun
 // SPDX-License-Identifier: Apache-2.0
 
-import 'dart:convert';
-
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:mobilerun_flutter/mobilerun_flutter.dart';
+import 'package:mobilerun_flutter/src/protocol/control_messages.dart';
+import 'package:mobilerun_flutter/src/protocol/constants.dart';
 import 'package:mobilerun_flutter/src/core/input/key_input.dart';
 import 'package:mobilerun_flutter/src/core/input/physical_key_codes.dart';
 import 'package:mobilerun_flutter/src/core/input/scroll_input.dart';
@@ -16,7 +15,13 @@ void main() {
       final entry = physicalKeyCodes.entries.singleWhere(
         (e) => e.value == code,
       );
-      expect(PhysicalKeyboardKey.findKeyByCode(entry.key), isNotNull);
+      expect(
+        PhysicalKeyboardKey.findKeyByCode(
+          entry.key,
+        )!.debugName!.replaceAll(' ', ''),
+        code,
+      );
+      expect(logicalKeyCodes.values, contains(code));
     });
   }
   test('printable characters send text without key-up', () {
@@ -24,8 +29,7 @@ void main() {
     for (final down in [true, false]) {
       routeKey(code: 'KeyA', text: 'é', down: down, send: sent.add);
     }
-    expect(sent.length, 1);
-    expect(utf8.decode(sent.single.sublist(5)), 'é');
+    expect(sent, [encodeText('é')]);
   });
   test('paste precedes control injection, menu sends a complete press', () {
     final sent = <Uint8List>[];
@@ -126,25 +130,26 @@ void main() {
     'F13',
     'F123',
   ]) {
-    test(
-      'unmapped $code is neither consumed nor sent, even with text/modifiers',
-      () {
-        final sent = <Uint8List>[];
-        for (final down in [true, false]) {
-          expect(
-            routeKey(
-              code: code,
-              text: 'v',
-              down: down,
-              control: true,
-              send: sent.add,
-            ),
-            KeyRoute.ignored,
-          );
-        }
-        expect(sent, isEmpty);
-      },
-    );
+    test('unmapped $code without text is ignored', () {
+      final sent = <Uint8List>[];
+      for (final down in [true, false]) {
+        expect(
+          routeKey(code: code, text: null, down: down, send: sent.add),
+          KeyRoute.ignored,
+        );
+      }
+      expect(sent, isEmpty);
+    });
+    test('unmapped $code with single-character text follows React', () {
+      final sent = <Uint8List>[];
+      for (final down in [true, false]) {
+        expect(
+          routeKey(code: code, text: 'x', down: down, send: sent.add),
+          KeyRoute.handled,
+        );
+      }
+      expect(sent, [encodeText('x')]);
+    });
   }
   for (final text in [
     '\u0000',
@@ -156,33 +161,29 @@ void main() {
     '\u0085',
   ]) {
     test(
-      'hardware control character ${text.codeUnitAt(0)} never becomes text',
+      'hardware character ${text.codeUnitAt(0)} follows React text branch',
       () {
         final sent = <Uint8List>[];
-        routeKey(code: 'KeyA', text: text, down: true, send: sent.add);
-        expect(sent, [encodeKeycode(action: 0, keycode: 29)]);
+        for (final down in [true, false]) {
+          routeKey(code: 'KeyA', text: text, down: down, send: sent.add);
+        }
+        expect(sent, [encodeText(text)]);
       },
     );
   }
-  test('unknown keys ignored, mapped dead keys use keydown fallback', () {
-    final sent = <Uint8List>[];
-    expect(
-      routeKey(code: null, text: null, down: true, send: sent.add),
-      KeyRoute.ignored,
-    );
-    routeKey(code: 'Quote', text: null, down: true, send: sent.add);
-    expect(sent.single, encodeKeycode(action: 0, keycode: 75));
+  for (final code in ['ContextMenu', 'Numpad1', 'Quote', 'KeyA']) {
+    test('mapped $code without text releases its fallback keycode', () {
+      final sent = <Uint8List>[];
+      for (final down in [true, false]) {
+        routeKey(code: code, text: null, down: down, alt: true, send: sent.add);
+      }
+      expect(sent, [
+        encodeKeycode(action: 0, keycode: keyboardCodeMap[code]!, metaState: 2),
+        encodeKeycode(action: 1, keycode: keyboardCodeMap[code]!, metaState: 2),
+      ]);
+    });
+  }
+  test('Flutter pixel scroll converts to React ticks', () {
+    expect(scrollTicks(const Offset(2, -4)), const Offset(-.02, .04));
   });
-  for (final unit in ScrollUnit.values) {
-    test(
-      'scroll ${unit.name}: React tick conversion before S1 fixed point',
-      () {
-        final factor = [0.01, 1.0, 3.0][unit.index];
-        expect(
-          scrollTicks(const Offset(2, -4), unit: unit),
-          Offset(-2 * factor, 4 * factor),
-        );
-      },
-    );
-  }
 }

@@ -4,7 +4,7 @@
 #
 # Scripted run of the example app on an Android emulator against a cloud
 # device: video pixels, widget touch/swipe, two fingers, rotated mapping,
-# soft and hardware keyboards, system keys, hover and scroll.
+# soft keyboard, system keys, hover, scroll, reconnect and ICE refresh.
 #
 # Usage: example/tool/e2e_android.sh CREDENTIALS_JSON OUT_DIR
 #
@@ -30,7 +30,8 @@ creds="$1"
 out="$2"
 : "${ANDROID_HOME:?set ANDROID_HOME}"
 export ANDROID_SDK_ROOT="$ANDROID_HOME"
-export PATH="$ANDROID_HOME/platform-tools:$ANDROID_HOME/emulator:$ANDROID_HOME/cmdline-tools/latest/bin:$PATH"
+export PATH="$ANDROID_HOME/platform-tools:$ANDROID_HOME/emulator:"\
+"$ANDROID_HOME/cmdline-tools/latest/bin:$PATH"
 
 here="$(cd "$(dirname "$0")/.." && pwd)"
 apk="$here/build/app/outputs/flutter-apk/app-debug.apk"
@@ -47,39 +48,14 @@ if ! avdmanager list avd 2>/dev/null | grep -q "Name: $avd"; then
     -k "system-images;android-36;google_apis;arm64-v8a" --force
 fi
 
-# The hardware path needs a keyboard device with scan codes. Restore this
-# fixture setting after the run so a reused AVD keeps its original config.
-avd_home="${ANDROID_AVD_HOME:-${ANDROID_USER_HOME:-$HOME/.android}/avd}"
-avd_dir="$(sed -n 's/^path=//p' "$avd_home/$avd.ini")"
-avd_config="$avd_dir/config.ini"
-avd_backup="$(mktemp "$out/avd-config.XXXXXX")"
-cp "$avd_config" "$avd_backup"
-show_ime_before=
 cleanup() {
   adb_ shell "run-as $pkg rm -f files/e2e.json" >/dev/null 2>&1 || true
-  if [ -n "$show_ime_before" ]; then
-    if [ "$show_ime_before" = null ]; then
-      adb_ shell settings delete secure show_ime_with_hard_keyboard >/dev/null 2>&1 || true
-    else
-      adb_ shell settings put secure show_ime_with_hard_keyboard "$show_ime_before" >/dev/null 2>&1 || true
-    fi
-  fi
   adb_ emu kill >/dev/null 2>&1 || true
   sleep 3
   pkill -f "qemu-system.*$avd" 2>/dev/null || true
-  cp "$avd_backup" "$avd_config"
-  rm -f "$avd_backup"
   echo "emulator stopped"
 }
 trap cleanup EXIT
-python3 -I -c '
-from pathlib import Path
-import sys
-p = Path(sys.argv[1])
-lines = [line for line in p.read_text().splitlines() if not line.startswith("hw.keyboard=")]
-p.write_text("\n".join(lines + ["hw.keyboard=yes"]) + "\n")
-' "$avd_config"
-
 emulator -avd "$avd" -port "$port" -no-window -no-audio -memory 2048 \
   -no-snapshot -no-boot-anim -gpu swiftshader_indirect \
   >"$out/emulator.log" 2>&1 &
@@ -93,9 +69,6 @@ for _ in $(seq 1 120); do
 done
 [ "$booted" = 1 ] || { echo "emulator failed to boot" >&2; exit 1; }
 echo "emulator booted"
-show_ime_before="$(adb_ shell settings get secure show_ime_with_hard_keyboard | tr -d '\r')"
-adb_ shell settings put secure show_ime_with_hard_keyboard 1
-
 adb_ install -r "$apk" >/dev/null
 # One start creates the app's private directories.
 adb_ shell am start -n "$pkg/.MainActivity" >/dev/null
@@ -119,26 +92,29 @@ logcat_pid=$!
 # Pixel checks of one emulator screenshot, see tool/png_check.py.
 check_shot() {
   local png="$out/shots/host-$1.png" check="$here/tool/png_check.py"
-  case "$1" in
-    11-rotated-home) python3 -I "$check" "$png" --lit 0.08 | tee -a "$out/pixels.log" ;;
-    03-after-tap)
-      python3 -I "$check" "$png" --lit 0.3 | tee -a "$out/pixels.log" || return 1
-      python3 -I "$check" "$png" --differs-from "$out/shots/host-02-before-tap.png" 0.05 |
-        tee -a "$out/pixels.log"
-      ;;
-    09-after-swipe|11-rotated-tap|12-recent|15-final-home)
-      case "$1" in
-        09-after-swipe) before=08-before-swipe; min_lit=0.3 ;;
-        11-rotated-tap) before=11-rotated-home; min_lit=0.08 ;;
-        12-recent) before=03-after-tap; min_lit=0.3 ;;
-        15-final-home) before=14-hardware-text; min_lit=0.3 ;;
-      esac
-      python3 -I "$check" "$png" --lit "$min_lit" | tee -a "$out/pixels.log" || return 1
-      python3 -I "$check" "$png" --differs-from "$out/shots/host-$before.png" 0.05 |
-        tee -a "$out/pixels.log"
-      ;;
-    *) python3 -I "$check" "$png" --lit 0.3 | tee -a "$out/pixels.log" ;;
-  esac
+  local before= min_lit=0.3
+  # name | minimum lit fraction | baseline (empty means video-only check)
+  while IFS='|' read -r name lit baseline; do
+    if [ "$name" = "$1" ]; then
+      min_lit="$lit"
+      before="$baseline"
+      break
+    fi
+  done <<'SHOTS'
+03-after-tap|0.3|02-before-tap
+05-after-swipe|0.3|04-before-swipe
+07-rotated-home|0.08|
+08-rotated-tap|0.08|07-rotated-home
+09-recent|0.3|03-after-tap
+12-final-home|0.3|11-platform-text
+13-reconnecting|0|
+16-reconnected-after-tap|0.3|15-reconnected-before-tap
+SHOTS
+  python3 -I "$check" "$png" --lit "$min_lit" | tee -a "$out/pixels.log" || return 1
+  if [ -n "$before" ]; then
+    python3 -I "$check" "$png" --differs-from "$out/shots/host-$before.png" 0.05 |
+      tee -a "$out/pixels.log"
+  fi
 }
 
 status=timeout
@@ -160,28 +136,11 @@ while [ "$SECONDS" -lt "$deadline" ] && [ "$status" = timeout ]; do
         adb_ exec-out screencap -p >"$out/shots/host-$name.png"
         if ! check_shot "$name"; then status=failed; fi
         ;;
-      HOST-HARDWARE)
-        # Use the emulator keyboard's kernel device: `input keyevent` has
-        # scan code zero, and console `event send` can target another device.
-        # The google_apis userdebug image provides `su 0` for fixture input.
-        keyboard_device="$(adb_ shell getevent -pl | awk '
-          /^add device/ { device=$NF }
-          /name:.*"qwerty2"/ { print device; exit }
-        ' | tr -d '\r')"
-        [[ "$keyboard_device" =~ ^/dev/input/event[0-9]+$ ]] || {
-          echo "emulator keyboard device missing" >&2; exit 1;
-        }
-        for key in 30 14 28; do
-          for action in 1 0; do
-            adb_ shell su 0 sendevent "$keyboard_device" 1 "$key" "$action"
-            adb_ shell su 0 sendevent "$keyboard_device" 0 0 0
-          done
-        done
-        ;;
       HOST-TYPE)
         # Tap three visible keys on the emulator's English soft keyboard.
         # Positions are fractions of the full screen, independent of density.
-        size=$(adb_ shell wm size | tr -d '\r' | sed -n 's/.*: \([0-9]*\)x\([0-9]*\)/\1 \2/p' | tail -1)
+        size=$(adb_ shell wm size | tr -d '\r' |
+          sed -n 's/.*: \([0-9]*\)x\([0-9]*\)/\1 \2/p' | tail -1)
         read -r sw sh <<<"$size"
         adb_ shell input tap "$((sw * 15 / 100))" "$((sh * 78 / 100))"
         adb_ shell input tap "$((sw * 25 / 100))" "$((sh * 78 / 100))"

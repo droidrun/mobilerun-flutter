@@ -49,7 +49,6 @@ DeviceStream(session: session, hasControl: true, controller: view);
 view.showKeyboard();
 view.hideKeyboard();
 view.sendSystemKey(DeviceSystemKey.back); // also home and recent
-final videoRect = view.renderedVideoRect; // local coordinates, null until video
 ```
 
 The view renders video with contain fit and transparent letterboxing. It
@@ -63,7 +62,8 @@ Click or tap the picture to focus hardware input. Printable keys send text;
 control/navigation keys send Android keycodes. Cmd/Ctrl+V pastes the local
 clipboard through SET_CLIPBOARD; Cmd/Ctrl+M sends MENU. The optional controller
 opens a soft keyboard: marked IME text stays local until committed; deletion
-and enter send DEL and ENTER pairs. Ordinary soft-keyboard characters commit immediately with suggestions disabled.
+and enter send DEL and ENTER pairs. Suggestions and autocorrection are disabled;
+CJK composition and emoji remain available.
 Hiding the keyboard finalizes composition only when the view owns the input;
 a host editor’s keyboard is left alone.
 The view does not keep a copy of the remote editor's contents or selection.

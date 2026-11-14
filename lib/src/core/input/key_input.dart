@@ -9,14 +9,50 @@ import 'dart:typed_data';
 import '../../protocol/constants.dart';
 import '../../protocol/control_messages.dart';
 
-enum KeyRoute { ignored, sent, paste }
+enum KeyRoute { ignored, handled, paste }
+
+final _functionCode = RegExp(r'^F\d{1,2}$');
+final _modifierCode = RegExp(r'^(Shift|Control|Alt|Meta)');
+final _letterCode = RegExp(r'^Key[A-Z]$');
+
+bool isPrintableRune(int rune) => rune >= 0x20 && (rune < 0x7f || rune > 0x9f);
+
+bool _isControlCode(String? code) =>
+    const {
+      'Backspace',
+      'Delete',
+      'Enter',
+      'NumpadEnter',
+      'Tab',
+      'Escape',
+      'Home',
+      'End',
+      'PageUp',
+      'PageDown',
+      'Insert',
+    }.contains(code) ||
+    code?.startsWith('Arrow') == true ||
+    _functionCode.hasMatch(code ?? '') ||
+    _modifierCode.hasMatch(code ?? '');
+
+String? _shortcutLetter(String? code, String? text) {
+  if (text != null &&
+      text.runes.length == 1 &&
+      isPrintableRune(text.runes.single)) {
+    return text.toLowerCase();
+  }
+  if (code == null || !_letterCode.hasMatch(code)) return null;
+  return code.substring(3).toLowerCase();
+}
 
 void pressKey(int keycode, void Function(Uint8List) send) {
   send(encodeKeycode(action: AndroidKeys.actionDown, keycode: keycode));
   send(encodeKeycode(action: AndroidKeys.actionUp, keycode: keycode));
 }
 
-/// React's shortcut → control → printable → fallback order.
+/// React's shortcut → control → single-character text → fallback order.
+/// Pass the down event's character again on release: Flutter key-up events
+/// omit it, but text keys must not produce a fallback keycode release.
 KeyRoute routeKey({
   required String? code,
   required String? text,
@@ -28,67 +64,36 @@ KeyRoute routeKey({
   bool meta = false,
   bool capsLock = false,
 }) {
-  final keycode = keyboardCodeMap[code];
-  if (keycode == null) return KeyRoute.ignored;
   final shortcut = control || meta;
-  // Physical key identity still works when a platform omits the character on
-  // shortcut events (notably macOS).
-  final shortcutText =
-      text != null && text.runes.length == 1 && text.runes.single >= 0x20
-      ? text.toLowerCase()
-      : null;
-  final shortcutLetter =
-      shortcutText ??
-      (code?.startsWith('Key') == true
-          ? code!.substring(3).toLowerCase()
-          : null);
-  if (down && shortcut && shortcutLetter == 'v') return KeyRoute.paste;
-  if (down && shortcut && shortcutLetter == 'm') {
-    pressKey(AndroidKeys.menu, send);
-    return KeyRoute.sent;
+  final keycode = keyboardCodeMap[code];
+  if (down && shortcut) {
+    final letter = _shortcutLetter(code, text);
+    if (letter == 'v') return KeyRoute.paste;
+    if (letter == 'm') {
+      pressKey(AndroidKeys.menu, send);
+      return KeyRoute.handled;
+    }
   }
-  final isControl =
-      shortcut ||
-      const {
-        'Backspace',
-        'Delete',
-        'Enter',
-        'NumpadEnter',
-        'Tab',
-        'Escape',
-        'Home',
-        'End',
-        'PageUp',
-        'PageDown',
-        'Insert',
-      }.contains(code) ||
-      code?.startsWith('Arrow') == true ||
-      RegExp(r'^F\d{1,2}$').hasMatch(code ?? '') ||
-      RegExp(r'^(Shift|Control|Alt|Meta)').hasMatch(code ?? '');
-  if (!isControl &&
-      down &&
-      text != null &&
-      text.runes.length == 1 &&
-      text.runes.single >= 0x20 &&
-      !(text.runes.single >= 0x7f && text.runes.single <= 0x9f)) {
-    send(encodeText(text));
-    return KeyRoute.sent;
+  if (!shortcut &&
+      (keycode == null || !_isControlCode(code)) &&
+      text?.runes.length == 1) {
+    if (down) send(encodeText(text!));
+    return KeyRoute.handled;
   }
-  if (isControl || down) {
-    final letter = RegExp(r'^Key[A-Z]$').hasMatch(code ?? '');
-    final effectiveShift = letter ? shift != capsLock : shift;
-    final metaState =
-        (effectiveShift ? AndroidKeys.metaShiftOn : 0) |
-        (control ? AndroidKeys.metaCtrlOn : 0) |
-        (alt ? AndroidKeys.metaAltOn : 0) |
-        (meta ? AndroidKeys.metaMetaOn : 0);
-    send(
-      encodeKeycode(
-        action: down ? AndroidKeys.actionDown : AndroidKeys.actionUp,
-        keycode: keycode,
-        metaState: metaState,
-      ),
-    );
-  }
-  return KeyRoute.sent;
+  if (keycode == null) return KeyRoute.ignored;
+  final letter = _letterCode.hasMatch(code!);
+  final effectiveShift = letter ? shift != capsLock : shift;
+  final metaState =
+      (effectiveShift ? AndroidKeys.metaShiftOn : 0) |
+      (control ? AndroidKeys.metaCtrlOn : 0) |
+      (alt ? AndroidKeys.metaAltOn : 0) |
+      (meta ? AndroidKeys.metaMetaOn : 0);
+  send(
+    encodeKeycode(
+      action: down ? AndroidKeys.actionDown : AndroidKeys.actionUp,
+      keycode: keycode,
+      metaState: metaState,
+    ),
+  );
+  return KeyRoute.handled;
 }

@@ -7,8 +7,9 @@ import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter_webrtc/flutter_webrtc.dart' show MediaStream;
 import 'package:mobilerun_flutter/mobilerun_flutter.dart';
+import 'package:mobilerun_flutter/src/protocol/control_messages.dart';
 
-import 'device_stream_session_test.dart' show Harness;
+import 'support/harness.dart';
 
 class _Stream implements MediaStream {
   @override
@@ -17,6 +18,73 @@ class _Stream implements MediaStream {
   String get id => 'video-test';
   @override
   String get ownerTag => 'remote';
+}
+
+Uint8List touch(int action, int slot, double x, double y) => encodeTouch(
+  action: action,
+  pointerId: slot,
+  videoWidth: 200,
+  videoHeight: 400,
+  x: x,
+  y: y,
+  pressure: 1,
+  actionButton: 1,
+  buttons: 1,
+);
+List<Uint8List> press(int keycode) => [
+  encodeKeycode(action: 0, keycode: keycode),
+  encodeKeycode(action: 1, keycode: keycode),
+];
+
+bool hideOrClear(MethodCall call) =>
+    call.method == 'TextInput.hide' || call.method == 'TextInput.clearClient';
+
+Future<Harness> pumpView(
+  WidgetTester tester, {
+  Harness? harness,
+  DeviceStreamController? controller,
+  bool hasControl = true,
+  Key? viewKey,
+  Widget Function(Widget)? wrap,
+}) async {
+  final h = harness ?? Harness();
+  if (h.peers.peers.isEmpty) {
+    await tester.runAsync(h.connect);
+    await tester.runAsync(() async {
+      h.peer.emitVideo(_Stream());
+      await Future<void>.delayed(Duration.zero);
+    });
+    addTearDown(() async {
+      await tester.pumpWidget(const SizedBox());
+      await tester.runAsync(h.session.close);
+    });
+  }
+  final view = SizedBox(
+    width: 400,
+    height: 400,
+    child: DeviceStream(
+      key: viewKey,
+      session: h.session,
+      hasControl: hasControl,
+      controller: controller,
+    ),
+  );
+  await tester.pumpWidget(
+    MaterialApp(home: wrap?.call(view) ?? Center(child: view)),
+  );
+  await tester.pump();
+  await TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+      .handlePlatformMessage(
+        'FlutterWebRTC/Texture1',
+        const StandardMethodCodec().encodeSuccessEnvelope({
+          'event': 'didTextureChangeVideoSize',
+          'width': 200,
+          'height': 400,
+        }),
+        (_) {},
+      );
+  await tester.pump();
+  return h;
 }
 
 void main() {
@@ -33,453 +101,471 @@ void main() {
     );
   });
 
-  Future<Harness> mount(
-    WidgetTester tester,
-    DeviceStreamController controller,
+  testWidgets('two fingers have stable slots, coalesced MOVE and CANCEL', (
+    tester,
   ) async {
-    final h = Harness();
-    await tester.runAsync(h.connect);
-    await tester.runAsync(() async {
-      h.peer.emitVideo(_Stream());
-      await Future<void>.delayed(Duration.zero);
-    });
-    await tester.pumpWidget(
-      MaterialApp(
-        home: Center(
-          child: SizedBox(
-            width: 400,
-            height: 400,
-            child: DeviceStream(
-              session: h.session,
-              hasControl: true,
-              controller: controller,
-            ),
-          ),
+    final h = await pumpView(tester);
+    final origin = tester.getTopLeft(find.byType(DeviceStream));
+    final first = await tester.startGesture(
+      origin + const Offset(150, 100),
+      pointer: 501,
+    );
+    final second = await tester.startGesture(
+      origin + const Offset(250, 200),
+      pointer: 912,
+    );
+    await first.moveTo(origin + const Offset(160, 110));
+    await first.moveTo(origin + const Offset(170, 120));
+    await tester.pump();
+    await second.cancel();
+    await first.up();
+    expect(h.peer.controlChannel.sent, [
+      touch(0, 0, 50, 100),
+      touch(0, 1, 150, 200),
+      touch(2, 0, 70, 120),
+      touch(3, 1, 150, 200),
+      touch(1, 0, 70, 120),
+    ]);
+  });
+
+  testWidgets('outside DOWN ignored, outside UP uses the last in-video point', (
+    tester,
+  ) async {
+    final h = await pumpView(tester);
+    final origin = tester.getTopLeft(find.byType(DeviceStream));
+    await tester.tapAt(origin + const Offset(50, 50));
+    final finger = await tester.startGesture(origin + const Offset(200, 100));
+    await finger.moveTo(origin + const Offset(10, 10));
+    await finger.up();
+    expect(h.peer.controlChannel.sent, [
+      touch(0, 0, 100, 100),
+      touch(1, 0, 100, 100),
+    ]);
+  });
+
+  for (final mode in ['controlled video', 'letterbox', 'display only']) {
+    testWidgets('ancestor ListView arena: $mode', (tester) async {
+      final scroll = ScrollController();
+      addTearDown(scroll.dispose);
+      final h = await pumpView(
+        tester,
+        hasControl: mode != 'display only',
+        wrap: (view) => ListView(
+          controller: scroll,
+          children: [
+            Center(child: view),
+            const SizedBox(height: 1200),
+          ],
         ),
+      );
+      final origin = tester.getTopLeft(find.byType(DeviceStream));
+      final x = mode == 'letterbox' ? 50.0 : 200.0;
+      final finger = await tester.startGesture(origin + Offset(x, 300));
+      await finger.moveTo(origin + Offset(x, 200));
+      await tester.pump();
+      await finger.moveTo(origin + Offset(x, 150));
+      await tester.pump();
+      await finger.up();
+      await tester.pumpAndSettle();
+      if (mode == 'controlled video') {
+        expect(scroll.offset, 0);
+        expect(h.peer.controlChannel.sent, [
+          touch(0, 0, 100, 300),
+          touch(2, 0, 100, 200),
+          touch(2, 0, 100, 150),
+          touch(1, 0, 100, 150),
+        ]);
+      } else {
+        expect(scroll.offset, greaterThan(0));
+        expect(h.peer.controlChannel.sent, isEmpty);
+      }
+    });
+  }
+
+  testWidgets('trackpad pan owns the ancestor arena and sends scroll', (
+    tester,
+  ) async {
+    final scroll = ScrollController();
+    addTearDown(scroll.dispose);
+    final h = await pumpView(
+      tester,
+      wrap: (view) => ListView(
+        controller: scroll,
+        children: [
+          Center(child: view),
+          const SizedBox(height: 1200),
+        ],
+      ),
+    );
+    final position =
+        tester.getTopLeft(find.byType(DeviceStream)) + const Offset(200, 300);
+    await tester.sendEventToBinding(
+      PointerPanZoomStartEvent(pointer: 404, position: position),
+    );
+    await tester.sendEventToBinding(
+      PointerPanZoomUpdateEvent(
+        pointer: 404,
+        position: position,
+        pan: const Offset(0, -100),
+        panDelta: const Offset(0, -100),
+      ),
+    );
+    await tester.sendEventToBinding(
+      PointerPanZoomEndEvent(pointer: 404, position: position),
+    );
+    await tester.pumpAndSettle();
+    expect(scroll.offset, 0);
+    expect(h.peer.controlChannel.sent, [
+      encodeScroll(
+        videoWidth: 200,
+        videoHeight: 400,
+        x: 100,
+        y: 300,
+        hscrollTicks: 0,
+        vscrollTicks: -1,
+      ),
+    ]);
+  });
+
+  testWidgets('mouse uses pointer -1', (tester) async {
+    final h = await pumpView(tester);
+    final origin = tester.getTopLeft(find.byType(DeviceStream));
+    final mouse = await tester.createGesture(kind: PointerDeviceKind.mouse);
+    await mouse.addPointer(location: origin + const Offset(180, 130));
+    await mouse.down(origin + const Offset(180, 130));
+    await mouse.moveTo(origin + const Offset(190, 140));
+    await tester.pump();
+    await mouse.up();
+    await mouse.removePointer();
+    expect(h.peer.controlChannel.sent, [
+      touch(0, -1, 80, 130),
+      touch(2, -1, 90, 140),
+      touch(1, -1, 90, 140),
+    ]);
+  });
+
+  testWidgets('hover preserves buttons only on hover channel', (tester) async {
+    final h = await pumpView(tester);
+    final origin = tester.getTopLeft(find.byType(DeviceStream));
+    await tester.sendEventToBinding(
+      PointerHoverEvent(
+        position: origin + const Offset(200, 150),
+        buttons: 2,
+        kind: PointerDeviceKind.mouse,
+      ),
+    );
+    expect(h.peer.hoverChannel.sent, [
+      encodeHover(
+        videoWidth: 200,
+        videoHeight: 400,
+        x: 100,
+        y: 150,
+        buttons: 2,
+      ),
+    ]);
+    expect(h.peer.controlChannel.sent, isEmpty);
+  });
+
+  testWidgets('held mouse entering from letterbox remains hover', (
+    tester,
+  ) async {
+    final h = await pumpView(tester);
+    final origin = tester.getTopLeft(find.byType(DeviceStream));
+    final mouse = await tester.createGesture(kind: PointerDeviceKind.mouse);
+    await mouse.addPointer(location: origin + const Offset(50, 50));
+    await mouse.down(origin + const Offset(50, 50));
+    await mouse.moveTo(origin + const Offset(220, 160));
+    expect(
+      h.peer.hoverChannel.sent.last,
+      encodeHover(
+        videoWidth: 200,
+        videoHeight: 400,
+        x: 120,
+        y: 160,
+        buttons: 1,
+      ),
+    );
+    expect(h.peer.controlChannel.sent, isEmpty);
+    await mouse.up();
+    await mouse.removePointer();
+  });
+
+  testWidgets('wheel sends exact scroll bytes', (tester) async {
+    final h = await pumpView(tester);
+    final origin = tester.getTopLeft(find.byType(DeviceStream));
+    await tester.sendEventToBinding(
+      PointerScrollEvent(
+        position: origin + const Offset(200, 150),
+        scrollDelta: const Offset(100, -200),
+        kind: PointerDeviceKind.mouse,
+      ),
+    );
+    expect(h.peer.controlChannel.sent, [
+      encodeScroll(
+        videoWidth: 200,
+        videoHeight: 400,
+        x: 100,
+        y: 150,
+        hscrollTicks: -1,
+        vscrollTicks: 2,
+      ),
+    ]);
+    expect(h.peer.hoverChannel.sent, isEmpty);
+  });
+
+  testWidgets('hardware printable text has no release frame', (tester) async {
+    final controller = DeviceStreamController();
+    final h = await pumpView(tester, controller: controller);
+    controller.showKeyboard();
+    await tester.pump();
+    await tester.sendKeyEvent(LogicalKeyboardKey.keyA, character: 'a');
+    expect(h.peer.controlChannel.sent, [encodeText('a')]);
+  });
+
+  testWidgets('scan-code-zero keys use logical fallback', (tester) async {
+    final controller = DeviceStreamController();
+    final h = await pumpView(tester, controller: controller);
+    controller.showKeyboard();
+    await tester.pump();
+    for (final (keycode, character) in [(29, 'a'), (67, null), (66, null)]) {
+      for (final type in ['keydown', 'keyup']) {
+        await binding.defaultBinaryMessenger.handlePlatformMessage(
+          SystemChannels.keyEvent.name,
+          SystemChannels.keyEvent.codec.encodeMessage({
+            'keymap': 'android',
+            'type': type,
+            'keyCode': keycode,
+            'scanCode': 0,
+            'character': type == 'keydown' ? character : null,
+            'codePoint': character?.codeUnitAt(0) ?? 0,
+            'plainCodePoint': character?.codeUnitAt(0) ?? 0,
+          }),
+          (_) {},
+        );
+      }
+    }
+    expect(h.peer.controlChannel.sent, [
+      encodeText('a'),
+      ...press(67),
+      ...press(66),
+    ]);
+  });
+
+  testWidgets('mapped fallback keys get down and up', (tester) async {
+    final controller = DeviceStreamController();
+    final h = await pumpView(tester, controller: controller);
+    controller.showKeyboard();
+    await tester.pump();
+    await tester.sendKeyEvent(
+      LogicalKeyboardKey.contextMenu,
+      physicalKey: PhysicalKeyboardKey.contextMenu,
+    );
+    expect(h.peer.controlChannel.sent, press(82));
+  });
+
+  testWidgets('clipboard shortcut sends the local text', (tester) async {
+    final controller = DeviceStreamController();
+    final h = await pumpView(tester, controller: controller);
+    controller.showKeyboard();
+    await tester.pump();
+    binding.defaultBinaryMessenger.setMockMethodCallHandler(
+      SystemChannels.platform,
+      (call) async => call.method == 'Clipboard.getData'
+          ? {'text': 'clipboard text'}
+          : null,
+    );
+    await tester.sendKeyDownEvent(LogicalKeyboardKey.controlLeft);
+    await tester.sendKeyEvent(LogicalKeyboardKey.keyV, character: 'v');
+    await tester.sendKeyUpEvent(LogicalKeyboardKey.controlLeft);
+    expect(h.peer.controlChannel.sent.where((b) => b[0] == 9), [
+      encodeSetClipboard(text: 'clipboard text'),
+    ]);
+  });
+
+  testWidgets('normal IME keyboard supports composition, delete and action', (
+    tester,
+  ) async {
+    final controller = DeviceStreamController();
+    final h = await pumpView(tester, controller: controller);
+    controller.showKeyboard();
+    await tester.pump();
+    expect(
+      tester.testTextInput.setClientArgs!['inputType'],
+      containsPair('name', 'TextInputType.text'),
+    );
+    expect(tester.testTextInput.setClientArgs!['autocorrect'], isFalse);
+    expect(tester.testTextInput.setClientArgs!['enableSuggestions'], isFalse);
+    tester.testTextInput.updateEditingValue(
+      const TextEditingValue(
+        text: '\u200b日本',
+        composing: TextRange(start: 1, end: 3),
       ),
     );
     await tester.pump();
-    await binding.defaultBinaryMessenger.handlePlatformMessage(
-      'FlutterWebRTC/Texture1',
-      const StandardMethodCodec().encodeSuccessEnvelope({
-        'event': 'didTextureChangeVideoSize',
-        'width': 200,
-        'height': 400,
-      }),
-      (_) {},
+    expect(h.peer.controlChannel.sent, isEmpty);
+    tester.testTextInput.updateEditingValue(
+      const TextEditingValue(text: '\u200b日本'),
     );
     await tester.pump();
-    return h;
+    tester.testTextInput.updateEditingValue(TextEditingValue.empty);
+    await tester.pump();
+    await tester.testTextInput.receiveAction(TextInputAction.done);
+    expect(h.peer.controlChannel.sent, [
+      encodeText('日本'),
+      ...press(67),
+      ...press(66),
+    ]);
+  });
+
+  testWidgets('hide finalizes owned composition', (tester) async {
+    final controller = DeviceStreamController();
+    final h = await pumpView(tester, controller: controller);
+    controller.showKeyboard();
+    await tester.pump();
+    tester.testTextInput.updateEditingValue(
+      const TextEditingValue(
+        text: '\u200bhide',
+        composing: TextRange(start: 1, end: 5),
+      ),
+    );
+    await tester.pump();
+    controller.hideKeyboard();
+    await tester.pump();
+    expect(h.peer.controlChannel.sent, [encodeText('hide')]);
+    expect(tester.testTextInput.isVisible, isFalse);
+  });
+
+  testWidgets('system navigation sends exact pairs', (tester) async {
+    final controller = DeviceStreamController();
+    final h = await pumpView(tester, controller: controller);
+    for (final key in DeviceSystemKey.values) {
+      controller.sendSystemKey(key);
+    }
+    expect(h.peer.controlChannel.sent, [
+      ...press(4),
+      ...press(3),
+      ...press(187),
+    ]);
+  });
+
+  for (final change in ['control lost', 'session swap']) {
+    testWidgets('$change cancels the old session touch', (tester) async {
+      final controller = DeviceStreamController();
+      final old = await pumpView(tester, controller: controller);
+      controller.showKeyboard();
+      await tester.pump();
+      final origin = tester.getTopLeft(find.byType(DeviceStream));
+      final finger = await tester.startGesture(origin + const Offset(200, 100));
+      final next = change == 'session swap' ? Harness() : old;
+      await pumpView(
+        tester,
+        harness: next,
+        controller: controller,
+        hasControl: change == 'session swap',
+      );
+      await finger.up();
+      expect(old.peer.controlChannel.sent, [
+        touch(0, 0, 100, 100),
+        touch(3, 0, 100, 100),
+      ]);
+      if (change == 'session swap') {
+        tester.testTextInput.updateEditingValue(
+          const TextEditingValue(text: '\u200bnew'),
+        );
+        await tester.pump();
+        expect(next.peer.controlChannel.sent, [encodeText('new')]);
+      }
+    });
   }
 
-  testWidgets(
-    'view routes touch, coalesces MOVE, hover only on hover channel',
-    (tester) async {
-      final controller = DeviceStreamController();
-      final h = await mount(tester, controller);
-      expect(
-        controller.renderedVideoRect,
-        const Rect.fromLTWH(100, 0, 200, 400),
-      );
-      final topLeft = tester.getTopLeft(find.byType(DeviceStream));
-      await tester.tapAt(topLeft + const Offset(50, 50));
-      expect(h.peer.controlChannel.sent, isEmpty);
-      final finger = await tester.startGesture(
-        topLeft + const Offset(200, 100),
-        pointer: 10,
-      );
-      await finger.moveTo(topLeft + const Offset(210, 110));
-      await finger.moveTo(topLeft + const Offset(220, 120));
-      await tester.pump();
-      await finger.moveTo(topLeft + const Offset(10, 10));
-      await finger.up();
-      expect(h.peer.controlChannel.sent.map((b) => b[1]), [0, 2, 1]);
-      final mouse = await tester.createGesture(kind: PointerDeviceKind.mouse);
-      await mouse.addPointer(location: topLeft + const Offset(200, 100));
-      await mouse.moveTo(topLeft + const Offset(210, 110));
-      expect(h.peer.hoverChannel.sent.last[0], 21);
-      expect(h.peer.controlChannel.sent.every((b) => b[0] != 21), isTrue);
-      await mouse.removePointer();
-      await tester.pumpWidget(const SizedBox());
-      await tester.runAsync(h.session.close);
-      expect(controller.renderedVideoRect, isNull);
-    },
-  );
+  testWidgets('new keyed view owns controller after old view disposal', (
+    tester,
+  ) async {
+    final controller = DeviceStreamController();
+    final old = await pumpView(
+      tester,
+      controller: controller,
+      viewKey: const ValueKey('old'),
+      wrap: (view) =>
+          AnimatedSwitcher(duration: const Duration(seconds: 1), child: view),
+    );
+    final next = Harness();
+    await pumpView(
+      tester,
+      harness: next,
+      controller: controller,
+      viewKey: const ValueKey('new'),
+      wrap: (view) =>
+          AnimatedSwitcher(duration: const Duration(seconds: 1), child: view),
+    );
+    controller.sendSystemKey(DeviceSystemKey.home);
+    await tester.pumpAndSettle();
+    controller.sendSystemKey(DeviceSystemKey.back);
+    expect(next.peer.controlChannel.sent, [...press(3), ...press(4)]);
+    expect(old.peer.controlChannel.sent, isEmpty);
+  });
 
-  testWidgets(
-    'hardware, clipboard, IME, system keys and display-only routing',
-    (tester) async {
-      final controller = DeviceStreamController();
-      final h = await mount(tester, controller);
-      controller.showKeyboard();
-      await tester.pump();
-      await tester.sendKeyEvent(LogicalKeyboardKey.keyA, character: 'a');
-      expect(h.peer.controlChannel.sent, [encodeText('a')]);
-      h.peer.controlChannel.sent.clear();
-      binding.defaultBinaryMessenger.setMockMethodCallHandler(
-        SystemChannels.platform,
-        (call) async => call.method == 'Clipboard.getData'
-            ? {'text': 'clipboard text'}
-            : null,
-      );
-      await tester.sendKeyDownEvent(LogicalKeyboardKey.controlLeft);
-      await tester.sendKeyEvent(LogicalKeyboardKey.keyV, character: 'v');
-      await tester.sendKeyUpEvent(LogicalKeyboardKey.controlLeft);
-      expect(h.peer.controlChannel.sent.any((b) => b[0] == 9), isTrue);
-      h.peer.controlChannel.sent.clear();
-      tester.testTextInput.updateEditingValue(
-        const TextEditingValue(
-          text: '\u200b日本',
-          composing: TextRange(start: 1, end: 3),
-        ),
-      );
-      await tester.pump();
-      expect(h.peer.controlChannel.sent, isEmpty);
-      tester.testTextInput.updateEditingValue(
-        const TextEditingValue(text: '\u200b日本'),
-      );
-      await tester.pump();
-      expect(h.peer.controlChannel.sent, [encodeText('日本')]);
-      controller.sendSystemKey(DeviceSystemKey.back);
-      expect(
-        h.peer.controlChannel.sent.last,
-        encodeKeycode(action: 1, keycode: 4),
-      );
-      await tester.pumpWidget(
-        MaterialApp(
-          home: Center(
-            child: SizedBox(
-              width: 400,
-              height: 400,
-              child: DeviceStream(
-                session: h.session,
-                hasControl: false,
-                controller: controller,
-              ),
-            ),
-          ),
-        ),
-      );
-      h.peer.controlChannel.sent.clear();
-      controller.showKeyboard();
-      controller.sendSystemKey(DeviceSystemKey.home);
-      await tester.tap(find.byType(DeviceStream));
-      await tester.sendKeyEvent(LogicalKeyboardKey.enter);
-      await tester.pump();
-      expect(h.peer.controlChannel.sent, isEmpty);
-      await tester.pumpWidget(const SizedBox());
-      await tester.runAsync(h.session.close);
-    },
-  );
-  testWidgets(
-    'recording session receives exact input bytes from the mounted view',
-    (tester) async {
-      final controller = DeviceStreamController();
-      final h = await mount(tester, controller);
-      final origin = tester.getTopLeft(find.byType(DeviceStream));
-      Uint8List touch(int action, int slot, double x, double y) => encodeTouch(
-        action: action,
-        pointerId: slot,
-        videoWidth: 200,
-        videoHeight: 400,
-        x: x,
-        y: y,
-        pressure: 1,
-        actionButton: 1,
-        buttons: 1,
-      );
-      List<Uint8List> press(int keycode) => [
-        encodeKeycode(action: 0, keycode: keycode),
-        encodeKeycode(action: 1, keycode: keycode),
-      ];
-      final first = await tester.startGesture(
-        origin + const Offset(150, 100),
-        pointer: 501,
-      );
-      final second = await tester.startGesture(
-        origin + const Offset(250, 200),
-        pointer: 912,
-      );
-      await first.moveTo(origin + const Offset(160, 110));
-      await first.moveTo(origin + const Offset(170, 120));
-      await tester.pump();
-      await second.cancel();
-      await first.up();
-      expect(h.peer.controlChannel.sent, [
-        touch(0, 0, 50, 100),
-        touch(0, 1, 150, 200),
-        touch(2, 0, 70, 120),
-        touch(3, 1, 150, 200),
-        touch(1, 0, 70, 120),
-      ]);
-      h.peer.controlChannel.sent.clear();
-      final mouse = await tester.createGesture(
-        kind: PointerDeviceKind.mouse,
-        pointer: 1010,
-      );
-      await mouse.addPointer(location: origin + const Offset(180, 130));
-      await mouse.down(origin + const Offset(180, 130));
-      await mouse.moveTo(origin + const Offset(190, 140));
-      await tester.pump();
-      await mouse.up();
-      expect(h.peer.controlChannel.sent, [
-        touch(0, -1, 80, 130),
-        touch(2, -1, 90, 140),
-        touch(1, -1, 90, 140),
-      ]);
-      h.peer.controlChannel.sent.clear();
-      h.peer.hoverChannel.sent.clear();
-      await tester.sendEventToBinding(
-        PointerHoverEvent(
-          position: origin + const Offset(200, 150),
-          buttons: 2,
-          kind: PointerDeviceKind.mouse,
-        ),
-      );
-      await tester.sendEventToBinding(
-        PointerScrollEvent(
-          position: origin + const Offset(200, 150),
-          scrollDelta: const Offset(100, -200),
-          kind: PointerDeviceKind.mouse,
-        ),
-      );
-      expect(h.peer.hoverChannel.sent, [
-        encodeHover(
-          videoWidth: 200,
-          videoHeight: 400,
-          x: 100,
-          y: 150,
-          buttons: 2,
-        ),
-      ]);
-      expect(h.peer.controlChannel.sent, [
-        encodeScroll(
-          videoWidth: 200,
-          videoHeight: 400,
-          x: 100,
-          y: 150,
-          hscrollTicks: -1,
-          vscrollTicks: 2,
-          buttons: 0,
-        ),
-      ]);
-      // A press beginning in the letterbox has no active remote pointer.
-      // Entering the picture while held arrives as MOVE, then becomes hover.
-      final entering = mouse;
-      await entering.moveTo(origin + const Offset(50, 50));
-      await entering.down(origin + const Offset(50, 50));
-      await entering.moveTo(origin + const Offset(220, 160));
-      expect(
-        h.peer.hoverChannel.sent.last,
-        encodeHover(
-          videoWidth: 200,
-          videoHeight: 400,
-          x: 120,
-          y: 160,
-          buttons: 1,
-        ),
-      );
-      expect(h.peer.controlChannel.sent.length, 1); // the preceding scroll only
-      await entering.up();
-      h.peer.controlChannel.sent.clear();
-      controller.showKeyboard();
-      await tester.pump();
-      expect(
-        tester.testTextInput.setClientArgs!['inputType'],
-        containsPair('name', 'TextInputType.visiblePassword'),
-      );
-      expect(tester.testTextInput.setClientArgs!['autocorrect'], isFalse);
-      expect(tester.testTextInput.setClientArgs!['enableSuggestions'], isFalse);
-      expect(
-        await tester.sendKeyEvent(
-          LogicalKeyboardKey.audioVolumeUp,
-          physicalKey: PhysicalKeyboardKey.audioVolumeUp,
-          character: 'x',
-        ),
-        isFalse,
-      );
-      expect(h.peer.controlChannel.sent, isEmpty);
-      await tester.sendKeyEvent(LogicalKeyboardKey.keyA, character: 'a');
-      await tester.sendKeyEvent(
-        LogicalKeyboardKey.numpadEnter,
-        physicalKey: PhysicalKeyboardKey.numpadEnter,
-        character: '\n',
-      );
-      expect(h.peer.controlChannel.sent, [encodeText('a'), ...press(160)]);
-      h.peer.controlChannel.sent.clear();
-      tester.testTextInput.updateEditingValue(
-        const TextEditingValue(text: '\u200bs'),
-      );
-      await tester.pump();
-      expect(h.peer.controlChannel.sent, [encodeText('s')]);
-      tester.testTextInput.updateEditingValue(
-        const TextEditingValue(text: '\u200bt'),
-      );
-      await tester.pump();
-      expect(h.peer.controlChannel.sent, [encodeText('s'), encodeText('t')]);
-      tester.testTextInput.updateEditingValue(
-        const TextEditingValue(
-          text: '\u200b日本',
-          composing: TextRange(start: 1, end: 3),
-        ),
-      );
-      await tester.pump();
-      expect(h.peer.controlChannel.sent.length, 2);
-      tester.testTextInput.updateEditingValue(
-        const TextEditingValue(text: '\u200b日本'),
-      );
-      await tester.pump();
-      tester.testTextInput.updateEditingValue(TextEditingValue.empty);
-      await tester.pump();
-      await tester.testTextInput.receiveAction(TextInputAction.done);
-      await tester.pump();
-      for (final key in DeviceSystemKey.values) {
-        controller.sendSystemKey(key);
-      }
-      expect(h.peer.controlChannel.sent, [
-        encodeText('s'),
-        encodeText('t'),
-        encodeText('日本'),
-        ...press(67),
-        ...press(66),
-        ...press(4),
-        ...press(3),
-        ...press(187),
-      ]);
-      h.peer.controlChannel.sent.clear();
-      tester.testTextInput.updateEditingValue(
-        const TextEditingValue(
-          text: '\u200bhide',
-          composing: TextRange(start: 1, end: 5),
-        ),
-      );
-      await tester.pump();
-      controller.hideKeyboard();
-      await tester.pump();
-      expect(h.peer.controlChannel.sent, [encodeText('hide')]);
-      expect(tester.testTextInput.isVisible, isFalse);
-      await mouse.removePointer();
-      await tester.pumpWidget(
-        MaterialApp(
-          home: Center(
-            child: SizedBox(
-              width: 400,
-              height: 400,
-              child: DeviceStream(
-                session: h.session,
-                hasControl: false,
-                controller: controller,
-              ),
-            ),
-          ),
-        ),
-      );
-      h.peer.controlChannel.sent.clear();
-      h.peer.hoverChannel.sent.clear();
-      final ignored = await tester.startGesture(
-        origin + const Offset(200, 150),
-        pointer: 2020,
-      );
-      await ignored.moveTo(origin + const Offset(220, 170));
-      await ignored.cancel();
-      await tester.sendEventToBinding(
-        PointerHoverEvent(
-          position: origin + const Offset(200, 150),
-          buttons: 2,
-        ),
-      );
-      await tester.sendEventToBinding(
-        PointerScrollEvent(
-          position: origin + const Offset(200, 150),
-          scrollDelta: const Offset(0, 100),
-        ),
-      );
-      await tester.sendKeyEvent(LogicalKeyboardKey.enter);
-      tester.testTextInput.updateEditingValue(
-        const TextEditingValue(text: 'ignored'),
-      );
-      for (final key in DeviceSystemKey.values) {
-        controller.sendSystemKey(key);
-      }
-      controller.showKeyboard();
-      controller.hideKeyboard();
-      await tester.pump();
-      expect(h.peer.controlChannel.sent, isEmpty);
-      expect(h.peer.hoverChannel.sent, isEmpty);
-      await tester.pumpWidget(const SizedBox());
-      await tester.runAsync(h.session.close);
-    },
-  );
+  testWidgets('display only sends no input on any channel', (tester) async {
+    final controller = DeviceStreamController();
+    final h = await pumpView(tester, controller: controller, hasControl: false);
+    final origin = tester.getTopLeft(find.byType(DeviceStream));
+    final finger = await tester.startGesture(origin + const Offset(200, 150));
+    await finger.moveTo(origin + const Offset(220, 170));
+    await finger.cancel();
+    await tester.sendEventToBinding(
+      PointerHoverEvent(position: origin + const Offset(200, 150)),
+    );
+    await tester.sendEventToBinding(
+      PointerScrollEvent(
+        position: origin + const Offset(200, 150),
+        scrollDelta: const Offset(0, 100),
+      ),
+    );
+    await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+    tester.testTextInput.updateEditingValue(
+      const TextEditingValue(text: 'ignored'),
+    );
+    for (final key in DeviceSystemKey.values) {
+      controller.sendSystemKey(key);
+    }
+    controller.showKeyboard();
+    controller.hideKeyboard();
+    await tester.pump();
+    expect(h.peer.controlChannel.sent, isEmpty);
+    expect(h.peer.hoverChannel.sent, isEmpty);
+  });
 
-  testWidgets(
-    'hide and disposal never clear or hide the host editor keyboard',
-    (tester) async {
+  for (final dispose in [false, true]) {
+    testWidgets('${dispose ? 'dispose' : 'hide'} preserves the host keyboard', (
+      tester,
+    ) async {
       final controller = DeviceStreamController();
-      final h = Harness();
-      final hostFocus = FocusNode();
-      await tester.pumpWidget(
-        MaterialApp(
-          home: Material(
-            child: Column(
-              children: [
-                Expanded(
-                  child: DeviceStream(
-                    session: h.session,
-                    hasControl: true,
-                    controller: controller,
-                  ),
-                ),
-                TextField(focusNode: hostFocus),
-              ],
-            ),
-          ),
+      final focus = FocusNode();
+      addTearDown(focus.dispose);
+      Widget host(Widget view) => Material(
+        child: Column(
+          children: [
+            Expanded(child: view),
+            TextField(focusNode: focus),
+          ],
         ),
       );
-      await tester.pump();
+      await pumpView(tester, controller: controller, wrap: host);
       controller.showKeyboard();
       await tester.pump();
-      hostFocus.requestFocus();
+      focus.requestFocus();
       await tester.pump();
-      expect(tester.testTextInput.isVisible, isTrue);
       final client = tester.testTextInput.setClientArgs;
       tester.testTextInput.log.clear();
-      controller.hideKeyboard();
+      if (dispose) {
+        await tester.pumpWidget(MaterialApp(home: host(const SizedBox())));
+      } else {
+        controller.hideKeyboard();
+      }
       await tester.pump();
       expect(tester.testTextInput.isVisible, isTrue);
       expect(tester.testTextInput.setClientArgs, client);
-      expect(
-        tester.testTextInput.log.where(
-          (c) =>
-              c.method == 'TextInput.hide' ||
-              c.method == 'TextInput.clearClient',
-        ),
-        isEmpty,
-      );
-      await tester.pumpWidget(
-        MaterialApp(
-          home: Material(
-            child: Column(
-              children: [
-                const Expanded(child: SizedBox()),
-                TextField(focusNode: hostFocus),
-              ],
-            ),
-          ),
-        ),
-      );
-      await tester.pump();
-      expect(tester.testTextInput.isVisible, isTrue);
-      expect(
-        tester.testTextInput.log.where(
-          (c) =>
-              c.method == 'TextInput.hide' ||
-              c.method == 'TextInput.clearClient',
-        ),
-        isEmpty,
-      );
-      await tester.pumpWidget(const SizedBox());
-      hostFocus.dispose();
-      await tester.runAsync(h.session.close);
-    },
-  );
+      expect(tester.testTextInput.log.where(hideOrClear), isEmpty);
+    });
+  }
 }

@@ -3,7 +3,7 @@
 
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:mobilerun_flutter/mobilerun_flutter.dart';
+import 'package:mobilerun_flutter/src/protocol/control_messages.dart';
 import 'package:mobilerun_flutter/src/core/input/stream_text_input.dart';
 
 void main() {
@@ -33,6 +33,51 @@ void main() {
       ),
     ]);
     expect(sent, [encodeText('ab')]);
+  });
+  test('stale non-text delta after reset cannot duplicate committed text', () {
+    final sent = <Uint8List>[];
+    final input = StreamTextInput(active: () => true, send: sent.add);
+    input.updateEditingValueWithDeltas([
+      const TextEditingDeltaInsertion(
+        oldText: '\u200b',
+        textInserted: 'a',
+        insertionOffset: 1,
+        selection: TextSelection.collapsed(offset: 2),
+        composing: TextRange.empty,
+      ),
+    ]);
+    input.updateEditingValueWithDeltas([
+      const TextEditingDeltaNonTextUpdate(
+        oldText: '\u200ba',
+        selection: TextSelection.collapsed(offset: 2),
+        composing: TextRange.empty,
+      ),
+    ]);
+    expect(sent, [encodeText('a')]);
+    expect(input.currentTextEditingValue.text, '\u200b');
+  });
+  test('stale empty update after delete cannot duplicate DEL', () {
+    final sent = <Uint8List>[];
+    final input = StreamTextInput(active: () => true, send: sent.add);
+    input.updateEditingValueWithDeltas([
+      const TextEditingDeltaDeletion(
+        oldText: '\u200b',
+        deletedRange: TextRange(start: 0, end: 1),
+        selection: TextSelection.collapsed(offset: 0),
+        composing: TextRange.empty,
+      ),
+    ]);
+    input.updateEditingValueWithDeltas([
+      const TextEditingDeltaNonTextUpdate(
+        oldText: '',
+        selection: TextSelection.collapsed(offset: 0),
+        composing: TextRange.empty,
+      ),
+    ]);
+    expect(sent, [
+      encodeKeycode(action: 0, keycode: 67),
+      encodeKeycode(action: 1, keycode: 67),
+    ]);
   });
   test('marked text stays local, committed composition sent once', () {
     final sent = <Uint8List>[];
@@ -136,7 +181,7 @@ void main() {
     final sent = <Uint8List>[];
     final input = StreamTextInput(active: () => true, send: sent.add);
     input.updateEditingValue(
-      const TextEditingValue(text: '\u200ba\tb\u0000\u007f\n'),
+      const TextEditingValue(text: '\u200ba\r\tb\u0000\u007f\b\n'),
     );
     expect(sent, [
       encodeText('a'),

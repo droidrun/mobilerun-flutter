@@ -2,9 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:mobilerun_flutter/mobilerun_flutter.dart';
-import 'package:mobilerun_flutter/src/protocol/constants.dart'
-    show ControlMessageType;
+import 'package:mobilerun_flutter/src/protocol/constants.dart';
 
 import 'support/fixtures.dart';
 

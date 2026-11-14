@@ -32,9 +32,7 @@ final class StreamTextInput with TextInputClient, DeltaTextInputClient {
       _connection = TextInput.attach(
         this,
         const TextInputConfiguration(
-          // Android's visible-password variation commits ordinary characters
-          // immediately instead of buffering the current word for suggestions.
-          inputType: TextInputType.visiblePassword,
+          inputType: TextInputType.text,
           inputAction: TextInputAction.done,
           autocorrect: false,
           enableSuggestions: false,
@@ -78,12 +76,18 @@ final class StreamTextInput with TextInputClient, DeltaTextInputClient {
   void updateEditingValueWithDeltas(List<TextEditingDelta> deltas) {
     if (!active()) return;
     var value = _value;
+    var changed = false;
     for (final delta in deltas) {
+      if (delta.oldText != value.text) {
+        _connection?.setEditingState(value);
+        continue;
+      }
       value = delta.apply(value);
+      changed = true;
     }
     // One platform batch may include insertion and selection/composition
     // changes for the same text. Commit that batch once before resetting.
-    if (deltas.isNotEmpty) updateEditingValue(value);
+    if (changed) updateEditingValue(value);
   }
 
   @override
@@ -113,18 +117,16 @@ final class StreamTextInput with TextInputClient, DeltaTextInputClient {
       printable.clear();
     }
 
-    for (final rune
-        in text.replaceAll('\r\n', '\n').replaceAll('\r', '\n').runes) {
+    for (final rune in text.replaceAll('\r\n', '\n').runes) {
       final key = switch (rune) {
         0x0a => AndroidKeys.enter,
         0x09 => AndroidKeys.keycodeTab,
-        0x08 => AndroidKeys.del,
         _ => null,
       };
       if (key != null) {
         flush();
         pressKey(key, send);
-      } else if (rune >= 0x20 && (rune < 0x7f || rune > 0x9f)) {
+      } else if (isPrintableRune(rune)) {
         printable.writeCharCode(rune);
       }
     }

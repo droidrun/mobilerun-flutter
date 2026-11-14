@@ -81,8 +81,6 @@ final class PointerInput {
     }
   }
 
-  void reset() => _active.clear();
-
   void _emit(int action, _Pointer pointer) => send(
     encodeTouch(
       action: action,

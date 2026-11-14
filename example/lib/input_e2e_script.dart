@@ -2,19 +2,24 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
-import 'dart:typed_data' show Endian;
 
 import 'package:flutter/foundation.dart' show listEquals;
 import 'package:flutter/gestures.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
 import 'package:mobilerun_flutter/mobilerun_flutter.dart';
+// The fixture asserts wire bytes using the package's internal encoders.
+// ignore_for_file: implementation_imports
+import 'package:mobilerun_flutter/src/protocol/control_messages.dart';
+import 'package:mobilerun_flutter/src/core/input/input_geometry.dart';
 
 import 'debug_signalling.dart';
 
-/// Runs input through the mounted widget and asserts the resulting wire
-/// messages. Device and emulator screenshots provide visual evidence too.
+const _settingsTarget = Offset(73 / 488, 966 / 1080);
+
+/// Runs input through the mounted view and asserts the resulting wire bytes.
 final class InputE2eScript {
   InputE2eScript({
     required this.session,
@@ -71,8 +76,12 @@ final class InputE2eScript {
     );
   }
 
-  Future<void> until(bool Function() condition, String what) async {
-    final deadline = DateTime.now().add(const Duration(seconds: 60));
+  Future<void> until(
+    bool Function() condition,
+    String what, {
+    Duration timeout = const Duration(seconds: 60),
+  }) async {
+    final deadline = DateTime.now().add(timeout);
     while (!condition()) {
       final status = debug.signalling.rejectedStatus;
       if (status == 401 || status == 404) {
@@ -89,8 +98,9 @@ final class InputE2eScript {
   }
 
   Offset point(double x, double y) {
-    final rect = controller.renderedVideoRect!;
     final box = viewKey.currentContext!.findRenderObject()! as RenderBox;
+    final size = session.videoSize.value!;
+    final rect = InputGeometry(box.size, size.width, size.height).rect;
     return box.localToGlobal(
       Offset(rect.left + x * rect.width, rect.top + y * rect.height),
     );
@@ -104,17 +114,25 @@ final class InputE2eScript {
     pointer(PointerDownEvent(pointer: id, position: p, buttons: 1));
     await wait(80);
     pointer(PointerUpEvent(pointer: id, position: p));
-    final touches = sent.skip(begin).where((b) => b[0] == 2).toList();
-    check(
-      touches.length == 2 &&
-          touches[0][1] == 0 &&
-          touches[1][1] == 1 &&
-          ByteData.sublistView(touches[0]).getInt64(2) == 0 &&
-          ByteData.sublistView(touches[1]).getInt64(2) == 0,
-      'tap DOWN/UP slot 0',
-    );
+    final size = session.videoSize.value!;
+    expectFrames(begin, [
+      for (final action in [0, 1])
+        encodeTouch(
+          action: action,
+          pointerId: 0,
+          videoWidth: size.width,
+          videoHeight: size.height,
+          x: x * size.width,
+          y: y * size.height,
+          pressure: 1,
+          actionButton: 1,
+          buttons: 1,
+        ),
+    ], 'tap DOWN/UP slot 0');
     await wait(1500);
   }
+
+  Future<void> tapSettings() => tap(_settingsTarget.dx, _settingsTarget.dy);
 
   Future<void> swipe({bool towardTop = false}) async {
     final start = point(.5, towardTop ? .25 : .78);
@@ -152,6 +170,44 @@ final class InputE2eScript {
     await hostShot(name);
   }
 
+  Future<void> checkRefresh() async {
+    final offersBefore = debug.offerUfrags.length;
+    final answersBefore = debug.received
+        .where((type) => type == 'answer')
+        .length;
+    final framesBefore = await debug.framesDecoded() ?? 0;
+    check(debug.injectRefresh(), 'no RTC configuration to replay');
+    await until(
+      () => debug.offerUfrags.length > offersBefore,
+      'ICE restart offer',
+    );
+    check(
+      debug.offerUfrags[offersBefore] != debug.offerUfrags[offersBefore - 1],
+      'ICE restart must change the local ufrag',
+    );
+    await until(
+      () =>
+          debug.received.where((type) => type == 'answer').length >
+          answersBefore,
+      'ICE restart answer',
+    );
+    for (var i = 0; i < 32; i++) {
+      await wait(500);
+      check(
+        session.status.value is StreamConnected,
+        'disconnected during refresh',
+      );
+    }
+    final framesAfter = await debug.framesDecoded() ?? 0;
+    check(
+      framesAfter - framesBefore >= 160,
+      'frames did not continue after refresh',
+    );
+    log(
+      'refresh: new ufrag, answer, frames $framesBefore -> $framesAfter over 16 s',
+    );
+  }
+
   Future<void> run() async {
     log('START input');
     session.status.addListener(() => log('status ${session.status.value}'));
@@ -159,7 +215,7 @@ final class InputE2eScript {
     await until(
       () =>
           session.status.value is StreamConnected &&
-          controller.renderedVideoRect != null,
+          session.videoSize.value != null,
       'connected video',
     );
     await wait(3000);
@@ -168,7 +224,7 @@ final class InputE2eScript {
     // activity. BACK while the launcher is foreground cannot reset that task.
     system(DeviceSystemKey.home);
     await wait(1800);
-    await tap(73 / 488, 966 / 1080);
+    await tapSettings();
     for (var i = 0; i < 3; i++) {
       system(DeviceSystemKey.back);
       await wait(1000);
@@ -176,17 +232,16 @@ final class InputE2eScript {
     system(DeviceSystemKey.home);
     await wait(1800);
     await shot('02-before-tap');
-    await tap(73 / 488, 966 / 1080);
-    // The list also retains its scroll position across launches. Return to
-    // its top before taking the baseline for the upward swipe assertion.
+    await tapSettings();
+    await shot('03-after-tap');
+    log('tap through widget');
+    // Reset the list only after the isolated tap screenshot assertion.
     for (var i = 0; i < 3; i++) {
       await swipe(towardTop: true);
     }
-    await shot('03-after-tap');
-    log('tap through widget');
-    await shot('08-before-swipe');
+    await shot('04-before-swipe');
     await swipe();
-    await shot('09-after-swipe');
+    await shot('05-after-swipe');
     log('swipe through widget');
 
     // Two independent fingers. The device may only act on one; bytes must
@@ -231,7 +286,7 @@ final class InputE2eScript {
       'multi-touch bytes',
     );
     log('pinch two slots=${slots.join(",")} messages=${touches.length}');
-    await shot('10-after-pinch');
+    await shot('06-after-pinch');
 
     // Rotate the local surface, preserve the cloud orientation, and tap the
     // same known target through a fresh letterboxed geometry.
@@ -239,24 +294,23 @@ final class InputE2eScript {
     await wait(1800);
     await rotateView(true);
     await wait(800);
-    check(controller.renderedVideoRect != null, 'rotated geometry');
-    await shot('11-rotated-home');
-    await tap(73 / 488, 966 / 1080);
-    await shot('11-rotated-tap');
+    check(session.videoSize.value != null, 'rotated geometry');
+    await shot('07-rotated-home');
+    await tapSettings();
+    await shot('08-rotated-tap');
     await rotateView(false);
     await wait(700);
     system(DeviceSystemKey.back);
     system(DeviceSystemKey.recent);
-    await shot('12-recent');
+    await shot('09-recent');
     system(DeviceSystemKey.home);
     await wait(1500);
-    await tap(73 / 488, 966 / 1080);
+    await tapSettings();
     // Settings search field (tap search icon, then the editor).
     await tap(.9, .065);
     await tap(.45, .065);
     controller.showKeyboard();
     await wait(1500);
-    final beforeText = sent.length;
     // Exercise the TextInputClient path with a committed value. The host
     // also taps the visible platform keyboard during this checkpoint.
     for (final character in 'display'.split('')) {
@@ -264,59 +318,38 @@ final class InputE2eScript {
       TextInput.updateEditingValue(TextEditingValue(text: '\u200b$character'));
       expectFrames(begin, [encodeText(character)], 'immediate IME character');
     }
-    await shot('13-soft-keyboard');
+    await shot('10-soft-keyboard');
     final beforeHost = sent.length;
     log('HOST-TYPE');
     await wait(7000);
-    check(sent.skip(beforeText).any((b) => b[0] == 1), 'IME text was not sent');
+    final platformText = sent.skip(beforeHost).toList();
     check(
-      sent.skip(beforeHost).any((b) => b[0] == 1),
-      'platform keyboard did not commit text',
+      platformText.length == 3 &&
+          platformText.every(
+            (bytes) =>
+                bytes[0] == 1 &&
+                utf8.decode(bytes.sublist(5)).runes.length == 1,
+          ),
+      'platform keyboard must commit exactly three one-character text frames',
     );
+    log('platform keyboard committed 3 one-character frames');
     final beforeDelete = sent.length;
     TextInput.updateEditingValue(TextEditingValue.empty);
     expectFrames(beforeDelete, press(67), 'IME empty-buffer DEL');
     controller.hideKeyboard();
     await wait(700);
-    final beforeHardware = sent.length;
-    // The host injects real emulator keyboard events. Calling HardwareKeyboard
-    // directly skips Flutter's Focus dispatch and cannot prove this path.
-    bool recordKey(KeyEvent event) {
-      log(
-        'hardware ${event.runtimeType} physical=${event.physicalKey.usbHidUsage}',
-      );
-      return false;
-    }
-
-    HardwareKeyboard.instance.addHandler(recordKey);
-    log('HOST-HARDWARE');
-    try {
-      await until(
-        () => sent.length >= beforeHardware + 5,
-        'host hardware keys',
-      );
-    } finally {
-      HardwareKeyboard.instance.removeHandler(recordKey);
-    }
-    expectFrames(beforeHardware, [
-      encodeText('a'),
-      ...press(67),
-      ...press(66),
-    ], 'hardware text/DEL/ENTER');
-    await shot('14-hardware-text');
-    check(
-      sent.any(
-        (b) =>
-            b[0] == 0 &&
-            ByteData.sublistView(b).getInt32(2, Endian.little) == 67,
-      ),
-      'Backspace key missing',
-    );
-    log('IME/hardware text, Backspace and Enter routed');
+    await shot('11-platform-text');
+    log('IME text, empty-buffer DEL and keyboard hide routed');
 
     final hoverStart = debug.peers.last!.hover.sent.length;
+    final scrollStart = sent.length;
+    final size = session.videoSize.value!;
     pointer(
-      PointerHoverEvent(position: point(.5, .3), kind: PointerDeviceKind.mouse),
+      PointerHoverEvent(
+        position: point(.5, .3),
+        kind: PointerDeviceKind.mouse,
+        buttons: 2,
+      ),
     );
     pointer(
       PointerScrollEvent(
@@ -326,15 +359,61 @@ final class InputE2eScript {
       ),
     );
     await wait(500);
+    final hover = debug.peers.last!.hover.sent.skip(hoverStart).toList();
     check(
-      debug.peers.last!.hover.sent.length > hoverStart &&
-          sent.every((b) => b[0] != 21) &&
-          sent.any((b) => b[0] == 3),
-      'hover/scroll routing',
+      hover.length == 1 &&
+          listEquals(
+            hover.single,
+            encodeHover(
+              videoWidth: size.width,
+              videoHeight: size.height,
+              x: size.width * .5,
+              y: size.height * .3,
+              buttons: 2,
+            ),
+          ),
+      'hover exact bytes on hover channel',
     );
-    log('hover channel only; pixel scroll sent');
+    expectFrames(scrollStart, [
+      encodeScroll(
+        videoWidth: size.width,
+        videoHeight: size.height,
+        x: size.width * .5,
+        y: size.height * .5,
+        hscrollTicks: 0,
+        vscrollTicks: -1,
+      ),
+    ], 'scroll exact bytes on control channel');
+    log('hover/scroll exact bytes on separate channels');
     system(DeviceSystemKey.home);
-    await shot('15-final-home');
+    await shot('12-final-home');
+
+    // Preserve the connection slice's forced-close/rebuild and control proof.
+    final oldPeer = debug.peers.last;
+    debug.killSocket();
+    await until(
+      () => session.status.value is StreamReconnecting,
+      'reconnecting',
+    );
+    log('socket killed; reconnecting');
+    await hostShot('13-reconnecting');
+    await until(
+      () =>
+          session.status.value is StreamConnected &&
+          debug.peers.last != oldPeer &&
+          session.videoSize.value != null,
+      'rebuilt video',
+    );
+    await wait(2500);
+    await shot('14-after-reconnect');
+    system(DeviceSystemKey.home);
+    await wait(1800);
+    await shot('15-reconnected-before-tap');
+    await tapSettings();
+    await shot('16-reconnected-after-tap');
+    log('reconnected tap exact bytes');
+    await checkRefresh();
+    await shot('17-after-refresh');
     await session.close();
   }
 }
