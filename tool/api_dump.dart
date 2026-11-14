@@ -41,6 +41,9 @@ Future<void> main(List<String> arguments) async {
       output.writeln(_signature(element));
       if (element is InterfaceElement) {
         final members = <String, Element>{};
+        final declaredNames = element.children
+            .map((child) => child.name)
+            .toSet();
         // Include members inherited from package types, even if the superclass
         // itself is hidden by the entry point's show combinators.
         final types = [
@@ -65,7 +68,10 @@ Future<void> main(List<String> arguments) async {
             ...type.methods,
           ];
           for (final member in declarations.where(
-            (member) => member.isPublic && !member.metadata.hasInternal,
+            (member) =>
+                member.isPublic &&
+                !member.metadata.hasInternal &&
+                (type == element || !declaredNames.contains(member.name)),
           )) {
             members.putIfAbsent(member.name!, () => member);
           }
