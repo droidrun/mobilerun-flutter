@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# Copyright 2026 Mobilerun
+# SPDX-License-Identifier: Apache-2.0
 # Refresh the vendored conformance fixtures from a clone of the shared
 # conformance repository.
 #
