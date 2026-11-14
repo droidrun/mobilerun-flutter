@@ -17,7 +17,10 @@ final class StreamLifecycle {
   StreamLifecycle({required this.session, Stream<bool>? connectivity}) {
     _listener = AppLifecycleListener(onStateChange: _onState);
     final initial = WidgetsBinding.instance.lifecycleState;
-    _foreground = initial == null || initial == AppLifecycleState.resumed;
+    _foreground =
+        initial != AppLifecycleState.hidden &&
+        initial != AppLifecycleState.paused &&
+        initial != AppLifecycleState.detached;
     session.setVisible(_foreground);
     _network = connectivity?.listen(_onNetwork, onError: (Object _) {});
   }
@@ -32,6 +35,9 @@ final class StreamLifecycle {
 
   void _onState(AppLifecycleState state) {
     if (_disposed) return;
+    // Inactive can still be visible (for example a system overlay or lost
+    // window focus). Only actual hidden/background states pause the stream.
+    if (state == AppLifecycleState.inactive) return;
     final foreground = state == AppLifecycleState.resumed;
     if (foreground == _foreground) return;
     _foreground = foreground;

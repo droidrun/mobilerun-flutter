@@ -52,6 +52,13 @@ void main() {
       tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
       await tester.pump();
       expect(connector.uris.length, before);
+      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.inactive);
+      final unfocusedAdapter = StreamLifecycle(session: session);
+      addTearDown(unfocusedAdapter.dispose);
+      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+      await tester.pump();
+      expect(connector.uris.length, before);
+      unfocusedAdapter.dispose();
       for (final state in [
         AppLifecycleState.inactive,
         AppLifecycleState.hidden,
