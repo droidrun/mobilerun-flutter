@@ -347,7 +347,9 @@ class _TaskApprovalCardState extends State<TaskApprovalCard> {
                                   child: SizedBox(
                                     width: wide
                                         ? 256
-                                        : constraints.maxWidth - 32,
+                                        : constraints
+                                              .deflate(const EdgeInsets.all(16))
+                                              .maxWidth,
                                     height: wide ? 400 : 320,
                                     child: widget.device,
                                   ),
