@@ -34,4 +34,12 @@ void main() {
     );
     expect(credentials.toWebSocketUri().toString(), credentials.url);
   });
+
+  test('toString never shows the token', () {
+    const credentials = StreamCredentials(
+      url: 'wss://x.test/s',
+      token: 'secret',
+    );
+    expect(credentials.toString(), isNot(contains('secret')));
+  });
 }

@@ -42,7 +42,7 @@ final class StreamReconnecting extends StreamStatus {
   const StreamReconnecting(this.attempt);
 
   /// The 1-based number of the upcoming or in-flight reconnect attempt, out of
-  /// [ReconnectPolicy.maxAttempts].
+  /// [ReconnectPolicy.maxAttempts]; 0 right after [DeviceStreamSession.retry].
   final int attempt;
 
   @override
@@ -73,29 +73,22 @@ final class StreamUnavailable extends StreamStatus {
 
 /// The size of the decoded device video.
 final class VideoSize {
-  /// Creates a size of [width] by [height] pixels turned by [rotation]
-  /// degrees.
-  const VideoSize(this.width, this.height, {this.rotation = 0});
+  /// Creates a size of [width] by [height] pixels.
+  const VideoSize(this.width, this.height);
 
-  /// Frame width in pixels, before [rotation] is applied.
+  /// Frame width in pixels.
   final int width;
 
-  /// Frame height in pixels, before [rotation] is applied.
+  /// Frame height in pixels.
   final int height;
-
-  /// Clockwise rotation in degrees (0, 90, 180 or 270) a renderer must apply.
-  final int rotation;
 
   @override
   bool operator ==(Object other) =>
-      other is VideoSize &&
-      other.width == width &&
-      other.height == height &&
-      other.rotation == rotation;
+      other is VideoSize && other.width == width && other.height == height;
 
   @override
-  int get hashCode => Object.hash(width, height, rotation);
+  int get hashCode => Object.hash(width, height);
 
   @override
-  String toString() => 'VideoSize(${width}x$height, rotation: $rotation)';
+  String toString() => 'VideoSize(${width}x$height)';
 }

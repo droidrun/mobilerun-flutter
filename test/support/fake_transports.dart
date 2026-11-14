@@ -7,6 +7,7 @@ import 'dart:typed_data';
 
 import 'package:flutter_webrtc/flutter_webrtc.dart' show MediaStream;
 import 'package:mobilerun_flutter/mobilerun_flutter.dart';
+import 'package:mobilerun_flutter/src/core/stream_transports.dart';
 
 import 'fake_scheduler.dart';
 
@@ -73,8 +74,8 @@ final class FakeConnector implements SignallingConnector {
   final List<FakeConnection> connections = [];
   final List<Uri> uris = [];
 
-  /// Completes the next connect when set; otherwise connects immediately.
-  Completer<FakeConnection>? gate;
+  /// Holds the next connect until it completes; otherwise connects at once.
+  Completer<void>? gate;
 
   /// Throws on the next connects while set.
   Object? failWith;
@@ -89,9 +90,7 @@ final class FakeConnector implements SignallingConnector {
     connections.add(connection);
     if (pending != null) {
       gate = null;
-      pending.future.ignore();
-      final value = await pending.future;
-      return value;
+      await pending.future;
     }
     return connection;
   }
@@ -126,11 +125,10 @@ final class FakeMediaStream implements MediaStream {
 }
 
 final class FakePeer implements PeerTransport {
-  FakePeer(this.scheduler, this.offerSdp, this.iceServers);
+  FakePeer(this.offerSdp, {required this.muted});
 
-  final FakeScheduler scheduler;
   final String offerSdp;
-  final Map<String, Object?> iceServers;
+  bool muted;
 
   final StreamController<PeerState> _states =
       StreamController<PeerState>.broadcast(sync: true);
@@ -145,7 +143,7 @@ final class FakePeer implements PeerTransport {
   final List<String> calls = [];
   bool closed = false;
   Object? setIceServersError;
-  VideoSize? size;
+  VideoStats? stats;
 
   @override
   Stream<PeerState> get connectionStates => _states.stream;
@@ -186,7 +184,10 @@ final class FakePeer implements PeerTransport {
   }
 
   @override
-  Future<VideoSize?> readVideoSize() async => size;
+  void setAudioMuted(bool muted) => this.muted = muted;
+
+  @override
+  Future<VideoStats?> readVideoStats() async => stats;
 
   @override
   Future<void> close() async {
@@ -204,9 +205,8 @@ final class FakePeer implements PeerTransport {
 }
 
 final class FakePeerFactory implements PeerTransportFactory {
-  FakePeerFactory(this.scheduler, this.offerSdp);
+  FakePeerFactory(this.offerSdp);
 
-  final FakeScheduler scheduler;
   final String offerSdp;
   final List<FakePeer> peers = [];
   final List<Map<String, Object?>> configurations = [];
@@ -215,9 +215,10 @@ final class FakePeerFactory implements PeerTransportFactory {
   Future<PeerTransport> create(
     Map<String, Object?> rtcConfiguration, {
     required StreamConfig config,
+    required bool muted,
   }) async {
     configurations.add(rtcConfiguration);
-    final peer = FakePeer(scheduler, offerSdp, rtcConfiguration);
+    final peer = FakePeer(offerSdp, muted: muted);
     peers.add(peer);
     return peer;
   }

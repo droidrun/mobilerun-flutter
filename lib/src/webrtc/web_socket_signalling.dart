@@ -6,6 +6,7 @@ import 'dart:convert';
 
 import 'package:web_socket_channel/web_socket_channel.dart';
 
+import '../core/stream_exception.dart';
 import '../core/stream_transports.dart';
 
 /// A [SignallingConnector] on `web_socket_channel`.
@@ -20,7 +21,12 @@ final class WebSocketSignallingConnector implements SignallingConnector {
       await channel.ready;
     } on Object catch (error) {
       unawaited(channel.sink.close().catchError((Object _) {}));
-      throw SignallingRejectedException(_httpStatus(error));
+      final status = _httpStatus(error);
+      if (status != null) throw SignallingRejectedException(status);
+      // The error text can carry the URL, which carries the token.
+      throw const StreamSessionException(
+        'could not open the signalling socket',
+      );
     }
     return _WebSocketConnection(channel);
   }

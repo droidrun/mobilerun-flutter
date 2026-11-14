@@ -4,20 +4,18 @@
 /// Mobilerun device streaming SDK: the control message encoders, the
 /// signalling message types, the reconnect controller and
 /// [DeviceStreamSession], which connects to a cloud device (WebSocket
-/// signalling and WebRTC) and recovers from failures. The session logic is
-/// pure Dart over transport interfaces; the `flutter_webrtc` and WebSocket
-/// transports are the defaults.
+/// signalling and WebRTC) and recovers from failures.
 library;
 
 import 'src/core/device_stream_session.dart';
 
-export 'src/core/device_stream_session.dart'
-    show DeviceStreamSession, StreamSessionException;
+export 'src/core/device_stream_session.dart' show DeviceStreamSession;
 export 'src/core/reconnect_controller.dart'
     show ReconnectController, ReconnectSnapshot, ReconnectStatus;
 export 'src/core/reconnect_policy.dart' show ReconnectPolicy;
 export 'src/core/scheduler.dart' show ScheduledTask, Scheduler, TimerScheduler;
 export 'src/core/stream_config.dart' show StreamConfig;
+export 'src/core/stream_exception.dart' show StreamSessionException;
 export 'src/core/stream_credentials.dart'
     show StreamCredentials, StreamCredentialsProvider;
 export 'src/core/stream_status.dart'
@@ -28,22 +26,6 @@ export 'src/core/stream_status.dart'
         StreamStatus,
         StreamUnavailable,
         VideoSize;
-export 'src/core/stream_transports.dart'
-    show
-        ChannelState,
-        DataChannelTransport,
-        IceCandidateData,
-        PeerState,
-        PeerTransport,
-        PeerTransportFactory,
-        SignallingConnection,
-        SignallingConnector,
-        SignallingRejectedException,
-        StreamTransports;
-export 'src/core/video_codecs.dart' show videoCodecOrder;
-export 'src/webrtc/default_transports.dart' show defaultStreamTransports;
-export 'src/webrtc/web_socket_signalling.dart'
-    show WebSocketSignallingConnector;
 export 'src/protocol/constants.dart'
     show AndroidKeys, AndroidMotionEvent, keyboardCodeMap;
 export 'src/protocol/control_messages.dart'

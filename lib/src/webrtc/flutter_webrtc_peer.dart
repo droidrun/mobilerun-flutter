@@ -7,7 +7,6 @@ import 'dart:typed_data';
 import 'package:flutter_webrtc/flutter_webrtc.dart';
 
 import '../core/stream_config.dart';
-import '../core/stream_status.dart';
 import '../core/stream_transports.dart';
 import '../core/video_codecs.dart';
 import '../protocol/stream_spec.dart';
@@ -36,6 +35,7 @@ final class FlutterWebRtcPeerFactory implements PeerTransportFactory {
   Future<PeerTransport> create(
     Map<String, Object?> rtcConfiguration, {
     required StreamConfig config,
+    required bool muted,
   }) async {
     await _ensureInitialized(config);
     final pc = await createPeerConnection({
@@ -43,7 +43,7 @@ final class FlutterWebRtcPeerFactory implements PeerTransportFactory {
       'sdpSemantics': 'unified-plan',
     });
     try {
-      return await _FlutterWebRtcPeer.setUp(pc, config);
+      return await _FlutterWebRtcPeer.setUp(pc, muted);
     } on Object {
       await pc.close();
       await pc.dispose();
@@ -131,7 +131,7 @@ final class _Channel implements DataChannelTransport {
 }
 
 final class _FlutterWebRtcPeer implements PeerTransport {
-  _FlutterWebRtcPeer._(this._pc, this._config, this._control, this._hover) {
+  _FlutterWebRtcPeer._(this._pc, this._muted, this._control, this._hover) {
     _pc.onConnectionState = (state) => _connectionStates.add(_peerState(state));
     _pc.onIceCandidate = (candidate) {
       final line = candidate.candidate;
@@ -150,7 +150,7 @@ final class _FlutterWebRtcPeer implements PeerTransport {
 
   static Future<_FlutterWebRtcPeer> setUp(
     RTCPeerConnection pc,
-    StreamConfig config,
+    bool muted,
   ) async {
     await pc.addTransceiver(
       kind: RTCRtpMediaType.RTCRtpMediaTypeAudio,
@@ -177,11 +177,14 @@ final class _FlutterWebRtcPeer implements PeerTransport {
       StreamDataChannels.hover.label,
       _ChannelInit(StreamDataChannels.hover),
     );
-    return _FlutterWebRtcPeer._(pc, config, _Channel(control), _Channel(hover));
+    return _FlutterWebRtcPeer._(pc, muted, _Channel(control), _Channel(hover));
   }
 
   final RTCPeerConnection _pc;
-  final StreamConfig _config;
+  bool _muted;
+  MediaStreamTrack? _audioTrack;
+  MediaStream? _fallbackStream;
+  bool _closed = false;
   final _Channel _control;
   final _Channel _hover;
 
@@ -196,20 +199,38 @@ final class _FlutterWebRtcPeer implements PeerTransport {
     final track = event.track;
     if (track.kind == 'audio') {
       // The audio track is negotiated either way; muting only disables it.
-      track.enabled = !_config.muted;
+      _audioTrack = track;
+      track.enabled = !_muted;
       return;
     }
     if (track.kind != 'video') return;
     // The backend sends audio and video under separate stream ids; the video
     // track's own stream is what a renderer needs.
-    final stream = event.streams.isNotEmpty
-        ? event.streams.first
-        : await (() async {
-            final local = await createLocalMediaStream('mobilerun-remote');
-            await local.addTrack(track);
-            return local;
-          })();
+    if (event.streams.isNotEmpty) {
+      _emitVideo(event.streams.first);
+      return;
+    }
+    // No stream ids: wrap the track in a stream this peer owns.
+    final local = await createLocalMediaStream('mobilerun-remote');
+    if (_closed) {
+      await _disposeStream(local);
+      return;
+    }
+    await local.addTrack(track);
+    _fallbackStream = local;
+    _emitVideo(local);
+  }
+
+  void _emitVideo(MediaStream stream) {
     if (!_remoteVideoStreams.isClosed) _remoteVideoStreams.add(stream);
+  }
+
+  static Future<void> _disposeStream(MediaStream? stream) async {
+    try {
+      await stream?.dispose();
+    } on Object {
+      // Already released.
+    }
   }
 
   @override
@@ -264,7 +285,13 @@ final class _FlutterWebRtcPeer implements PeerTransport {
       _pc.setConfiguration({'iceServers': iceServers});
 
   @override
-  Future<VideoSize?> readVideoSize() async {
+  void setAudioMuted(bool muted) {
+    _muted = muted;
+    _audioTrack?.enabled = !muted;
+  }
+
+  @override
+  Future<VideoStats?> readVideoStats() async {
     final reports = await _pc.getStats();
     for (final report in reports) {
       if (report.type != 'inbound-rtp') continue;
@@ -273,7 +300,12 @@ final class _FlutterWebRtcPeer implements PeerTransport {
       final width = values['frameWidth'];
       final height = values['frameHeight'];
       if (width is num && height is num && width > 0 && height > 0) {
-        return VideoSize(width.toInt(), height.toInt());
+        final decoded = values['framesDecoded'];
+        return VideoStats(
+          width: width.toInt(),
+          height: height.toInt(),
+          framesDecoded: decoded is num ? decoded.toInt() : 0,
+        );
       }
     }
     return null;
@@ -281,6 +313,7 @@ final class _FlutterWebRtcPeer implements PeerTransport {
 
   @override
   Future<void> close() async {
+    _closed = true;
     _pc.onConnectionState = null;
     _pc.onIceCandidate = null;
     _pc.onTrack = null;
@@ -292,6 +325,8 @@ final class _FlutterWebRtcPeer implements PeerTransport {
     } on Object {
       // Already closed.
     }
+    await _disposeStream(_fallbackStream);
+    _fallbackStream = null;
     await _connectionStates.close();
     await _localCandidates.close();
     await _remoteVideoStreams.close();

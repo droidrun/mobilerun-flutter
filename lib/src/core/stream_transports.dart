@@ -6,7 +6,6 @@ import 'dart:typed_data';
 import 'package:flutter_webrtc/flutter_webrtc.dart' show MediaStream;
 
 import 'stream_config.dart';
-import 'stream_status.dart';
 
 /// The connection state of a peer connection, as defined by W3C WebRTC.
 enum PeerState {
@@ -44,6 +43,25 @@ enum ChannelState {
   closed,
 }
 
+/// Statistics of the decoded device video.
+final class VideoStats {
+  /// Creates statistics.
+  const VideoStats({
+    required this.width,
+    required this.height,
+    required this.framesDecoded,
+  });
+
+  /// Frame width in pixels.
+  final int width;
+
+  /// Frame height in pixels.
+  final int height;
+
+  /// Frames decoded so far on this connection.
+  final int framesDecoded;
+}
+
 /// A locally or remotely gathered ICE candidate.
 final class IceCandidateData {
   /// Creates a candidate.
@@ -78,13 +96,14 @@ abstract interface class SignallingConnection {
 }
 
 /// Thrown by [SignallingConnector.connect] when the server refused the
-/// WebSocket upgrade, for example with HTTP 401 for a rejected token.
+/// WebSocket upgrade with an HTTP status, for example 401 for a rejected
+/// token. Other failures to open are plain errors.
 final class SignallingRejectedException implements Exception {
-  /// Creates the exception for the HTTP [statusCode], if known.
+  /// Creates the exception for the HTTP [statusCode] of the refused upgrade.
   const SignallingRejectedException(this.statusCode);
 
-  /// The HTTP status of the refused upgrade, or null when not known.
-  final int? statusCode;
+  /// The HTTP status of the refused upgrade.
+  final int statusCode;
 
   /// Whether the token (not the network) was refused.
   bool get isUnauthorized => statusCode == 401 || statusCode == 403;
@@ -150,8 +169,12 @@ abstract interface class PeerTransport {
   /// the configuration is not accepted.
   Future<void> setIceServers(Object? iceServers);
 
-  /// The size of the video currently decoded, or null when there is none yet.
-  Future<VideoSize?> readVideoSize();
+  /// Mutes or unmutes the audio track (it stays negotiated and attached).
+  /// Applies to a track that arrives later as well.
+  void setAudioMuted(bool muted);
+
+  /// Statistics of the decoded video, or null when no frame was decoded yet.
+  Future<VideoStats?> readVideoStats();
 
   /// Closes the channels and the connection and releases everything.
   Future<void> close();
@@ -160,9 +183,11 @@ abstract interface class PeerTransport {
 /// Creates peer connections.
 abstract interface class PeerTransportFactory {
   /// Creates a peer connection for the raw `RTCConfiguration` the server sent.
+  /// [muted] is the initial state of the audio track.
   Future<PeerTransport> create(
     Map<String, Object?> rtcConfiguration, {
     required StreamConfig config,
+    required bool muted,
   });
 }
 

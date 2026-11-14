@@ -11,6 +11,14 @@ bool _isH264(String mimeType) {
   return mime.contains('h264') || mime.contains('avc');
 }
 
+bool _isAuxiliary(String mimeType) {
+  final mime = mimeType.toLowerCase();
+  return mime.endsWith('/rtx') ||
+      mime.endsWith('/red') ||
+      mime.endsWith('/ulpfec') ||
+      mime.contains('/flexfec');
+}
+
 int _priority(String mimeType) {
   final mime = mimeType.toLowerCase();
   if (mime.contains('vp9')) return 1;
@@ -25,17 +33,16 @@ int _priority(String mimeType) {
 /// Default: VP9, then H.265, then H.264, then everything else, each group in
 /// its original order (the server picks H.265 when it is offered).
 ///
-/// When the receiver has no H.265 decoder the offer shrinks to H.264 (plus
-/// retransmission entries), the one other hardware accelerated codec every
-/// platform has. If there is no H.264 either, the default order is kept.
+/// When the receiver has no H.265 decoder the offer shrinks to H.264 plus the
+/// auxiliary entries (rtx, red, ulpfec, flexfec), the one other hardware
+/// accelerated codec every platform has. If there is no H.264 either, the
+/// default order is kept.
 List<int> videoCodecOrder(List<String> mimeTypes) {
   final indices = List<int>.generate(mimeTypes.length, (i) => i);
   if (!mimeTypes.any(_isH265) && mimeTypes.any(_isH264)) {
     return [
       for (final i in indices)
-        if (_isH264(mimeTypes[i]) ||
-            mimeTypes[i].toLowerCase().endsWith('/rtx'))
-          i,
+        if (_isH264(mimeTypes[i]) || _isAuxiliary(mimeTypes[i])) i,
     ];
   }
   // A stable sort: Dart's List.sort is not guaranteed to be.

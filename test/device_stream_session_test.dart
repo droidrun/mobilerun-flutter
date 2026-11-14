@@ -7,6 +7,7 @@ import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mobilerun_flutter/mobilerun_flutter.dart';
+import 'package:mobilerun_flutter/src/core/stream_transports.dart';
 
 import 'support/fake_scheduler.dart';
 import 'support/fake_transports.dart';
@@ -28,10 +29,13 @@ const sessionId = 'sess_0123456789abcdef';
 
 /// A session on fake transports and a virtual clock, with a status log.
 final class Harness {
-  Harness({StreamCredentials? Function(int call)? credentials}) {
+  Harness({
+    StreamConfig config = const StreamConfig(),
+    StreamCredentials? Function(int call)? credentials,
+  }) {
     connector = FakeConnector(scheduler);
     final offer = example('client-offer.json')['sdp']! as String;
-    peers = FakePeerFactory(scheduler, offer);
+    peers = FakePeerFactory(offer);
     session = DeviceStreamSession.withTransports(
       credentials: () async {
         credentialCalls++;
@@ -43,6 +47,7 @@ final class Harness {
               );
       },
       transports: StreamTransports(signalling: connector, peers: peers),
+      config: config,
       scheduler: scheduler,
       random: () => 0.5,
       sessionId: () => sessionId,
@@ -189,14 +194,22 @@ void main() {
       final h = Harness();
       await h.connect();
       final stream = FakeMediaStream();
-      h.peer.size = const VideoSize(488, 1080);
+      h.peer.stats = const VideoStats(
+        width: 488,
+        height: 1080,
+        framesDecoded: 5,
+      );
       h.peer.emitVideo(stream);
-      await h.advance(0);
+      await pump();
       expect(h.session.videoStream.value, same(stream));
       expect(h.session.videoSize.value, const VideoSize(488, 1080));
       // A rotation of the device shows up on the next poll.
-      h.peer.size = const VideoSize(1080, 488);
-      await h.advance(600);
+      h.peer.stats = const VideoStats(
+        width: 1080,
+        height: 488,
+        framesDecoded: 9,
+      );
+      await h.advance(500);
       expect(h.session.videoSize.value, const VideoSize(1080, 488));
     });
   });
@@ -493,30 +506,41 @@ void main() {
 
     test('WebSocket open timeout (15 s) fails the attempt', () async {
       final h = Harness();
-      h.connector.gate = Completer<FakeConnection>();
+      h.connector.gate = Completer<void>();
       h.session.start();
       await pump();
       await h.advance(14999);
       expect(h.session.status.value, const StreamConnecting());
       await h.advance(1);
       expect(h.session.status.value, const StreamReconnecting(1));
-      // A socket that opens late is closed, not used.
-      final late = h.connector.connections.first;
-      h.connector.gate = null;
-      expect(late.closedByClient, isFalse);
     });
 
     test('a late-opening socket is closed', () async {
       final h = Harness();
-      final gate = Completer<FakeConnection>();
+      final gate = Completer<void>();
       h.connector.gate = gate;
       h.session.start();
       await pump();
       await h.advance(15000);
-      gate.complete(h.connector.connections.first);
+      gate.complete();
       await pump();
       expect(h.connector.connections.first.closedByClient, isTrue);
       expect(h.connector.connections.first.sent, isEmpty);
+    });
+
+    test('a socket that opens while close() runs is closed', () async {
+      final h = Harness();
+      final gate = Completer<void>();
+      h.connector.gate = gate;
+      h.session.start();
+      await pump();
+      await h.session.close();
+      gate.complete();
+      await pump();
+      final socket = h.connector.connections.single;
+      expect(socket.closedByClient, isTrue);
+      expect(socket.sent, isEmpty);
+      expect(h.peers.peers, isEmpty);
     });
 
     test('rtcConfiguration timeout (15 s) fails the attempt', () async {
@@ -706,13 +730,36 @@ void main() {
       await h.advance(29999);
       await h.advance(1);
       await outcome;
-      // A late reply is ignored.
+      // A late reply is ignored: it neither throws nor disturbs the session.
       h.ws.receive({
         'type': 'screenshot',
         'id': h.ws.ofType('screenshot').single.json['id'],
         'dataUri': 'data:image/png;base64,AA==',
       });
       await pump();
+      expect(h.session.status.value, const StreamConnected());
+      expect(h.ws.closedByClient, isFalse);
+    });
+
+    test('request ids are unique and web-safe', () async {
+      final h = Harness();
+      await h.connect();
+      unawaited(
+        h.session.screenshot().then<void>((_) {}, onError: (Object _) {}),
+      );
+      unawaited(
+        h.session.screenshot().then<void>((_) {}, onError: (Object _) {}),
+      );
+      await pump();
+      final ids = [
+        for (final f in h.ws.ofType('screenshot')) f.json['id']! as String,
+      ];
+      expect(ids, hasLength(2));
+      expect(ids.toSet(), hasLength(2));
+      for (final id in ids) {
+        expect(id, matches(RegExp(r'^ui-ss-\d+-\d+$')));
+      }
+      await h.session.close();
     });
 
     test('honours a custom timeout', () async {
@@ -818,19 +865,78 @@ void main() {
     });
   });
 
+  group('retry budget exhausted', () {
+    test(
+      'retires the last attempt; a late connected cannot restore it',
+      () async {
+        final h = Harness();
+        h.session.start();
+        await pump();
+        // Every attempt negotiates but never connects: the watchdog (45 s)
+        // counts each as a failure. Backoff 1, 2, 4, 8, 16, 30 s.
+        for (final backoff in const [1000, 2000, 4000, 8000, 16000, 30000, 0]) {
+          h.ws.receive(example('server-rtc-configuration.json'));
+          await pump();
+          h.ws.receive(example('server-answer.json'));
+          await pump();
+          await h.advance(45000);
+          if (backoff > 0) await h.advance(backoff);
+        }
+        expect(h.session.status.value, const StreamUnavailable());
+        final lastPeer = h.peer;
+        final lastSocket = h.ws;
+        expect(lastPeer.closed, isTrue);
+        expect(lastSocket.closedByClient, isTrue);
+        expect(h.session.videoStream.value, isNull);
+
+        // A peer event that arrives late changes nothing without retry().
+        lastPeer.emitState(PeerState.connected);
+        await pump();
+        expect(h.session.status.value, const StreamUnavailable());
+        await h.advance(120000);
+        expect(h.session.status.value, const StreamUnavailable());
+        expect(h.scheduler.pendingTimers, 0);
+        expect(h.session.sendControl(Uint8List(1)), isFalse);
+
+        h.session.retry();
+        await pump();
+        expect(h.session.status.value, const StreamReconnecting(0));
+        expect(h.connector.connections, hasLength(8));
+      },
+    );
+  });
+
+  group('setMuted', () {
+    test('audio is muted by default, setMuted reaches the live peer and '
+        'later connections', () async {
+      final h = Harness();
+      await h.connect();
+      expect(h.peer.muted, isTrue);
+      h.session.setMuted(false);
+      expect(h.peer.muted, isFalse);
+      h.ws.serverClose();
+      await pump();
+      await h.advance(1000);
+      h.ws.receive(example('server-rtc-configuration.json'));
+      await pump();
+      expect(h.peers.peers, hasLength(2));
+      expect(h.peer.muted, isFalse);
+    });
+
+    test('StreamConfig.muted is the initial value', () async {
+      final h = Harness(config: const StreamConfig(muted: false));
+      await h.connect();
+      expect(h.peer.muted, isFalse);
+      h.session.setMuted(true);
+      expect(h.peer.muted, isTrue);
+    });
+  });
+
   test('start() twice connects once', () async {
     final h = Harness();
     h.session.start();
     h.session.start();
     await pump();
     expect(h.connector.connections, hasLength(1));
-  });
-
-  test('credentials never show up in toString', () {
-    const credentials = StreamCredentials(
-      url: 'wss://x.test/s',
-      token: 'secret',
-    );
-    expect(credentials.toString(), isNot(contains('secret')));
   });
 }
