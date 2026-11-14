@@ -263,6 +263,24 @@ void main() {
           buttons: 0,
         ),
       ]);
+      // A press beginning in the letterbox has no active remote pointer.
+      // Entering the picture while held arrives as MOVE, then becomes hover.
+      final entering = mouse;
+      await entering.moveTo(origin + const Offset(50, 50));
+      await entering.down(origin + const Offset(50, 50));
+      await entering.moveTo(origin + const Offset(220, 160));
+      expect(
+        h.peer.hoverChannel.sent.last,
+        encodeHover(
+          videoWidth: 200,
+          videoHeight: 400,
+          x: 120,
+          y: 160,
+          buttons: 1,
+        ),
+      );
+      expect(h.peer.controlChannel.sent.length, 1); // the preceding scroll only
+      await entering.up();
       h.peer.controlChannel.sent.clear();
       controller.showKeyboard();
       await tester.pump();

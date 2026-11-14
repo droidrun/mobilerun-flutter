@@ -25,6 +25,8 @@ final class PointerInput {
   final void Function(Uint8List) send;
   final _active = <int, _Pointer>{};
 
+  bool contains(int id) => _active.containsKey(id);
+
   bool down(
     int id,
     Offset position,

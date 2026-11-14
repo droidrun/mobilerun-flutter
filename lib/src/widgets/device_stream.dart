@@ -230,6 +230,12 @@ class _DeviceStreamState extends State<DeviceStream> {
 
   void _move(PointerMoveEvent event) {
     if (!widget.hasControl) return;
+    if ((event.kind == PointerDeviceKind.mouse ||
+            event.kind == PointerDeviceKind.trackpad) &&
+        !_pointers.contains(event.pointer)) {
+      _hover(event);
+      return;
+    }
     _pointers.move(event.pointer, event.localPosition);
     _moveFrame ??= SchedulerBinding.instance.scheduleFrameCallback((_) {
       _moveFrame = null;
@@ -237,7 +243,7 @@ class _DeviceStreamState extends State<DeviceStream> {
     });
   }
 
-  void _hover(PointerHoverEvent event) {
+  void _hover(PointerEvent event) {
     if (!widget.hasControl) return;
     final geometry = _geometry;
     final point = geometry?.map(event.localPosition);

@@ -163,6 +163,12 @@ final class InputE2eScript {
     );
     await wait(3000);
     await shot('01-first-frame');
+    // Return a previous search/editor and its keyboard to the Settings root
+    // before returning home. This makes repeated runs use a scrollable list.
+    for (var i = 0; i < 3; i++) {
+      system(DeviceSystemKey.back);
+      await wait(500);
+    }
     system(DeviceSystemKey.home);
     await wait(1800);
     await shot('02-before-tap');
