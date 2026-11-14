@@ -11,7 +11,7 @@ import '../core/device_stream_session.dart';
 ///
 /// Uses Flutter app lifecycle and optionally the host's existing connectivity
 /// stream. Initial foreground/online snapshots never wake the session. The
-/// default [DeviceStreamView] creates this adapter automatically.
+/// embedding UI owns this adapter's lifetime alongside its session.
 final class StreamLifecycle {
   /// Attaches app lifecycle and an optional online/offline source.
   StreamLifecycle({required this.session, Stream<bool>? connectivity}) {
