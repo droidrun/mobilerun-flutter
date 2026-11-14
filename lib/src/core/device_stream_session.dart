@@ -10,6 +10,7 @@ import 'package:flutter_webrtc/flutter_webrtc.dart' show MediaStream;
 import '../protocol/stream_timing.dart';
 import '../webrtc/default_transports.dart';
 import 'reconnect_controller.dart';
+import 'reconnect_policy.dart';
 import 'scheduler.dart';
 import 'stream_attempt.dart';
 import 'stream_config.dart';
@@ -62,7 +63,7 @@ final class DeviceStreamSession {
     _controller = ReconnectController(
       onRemount: _beginAttempt,
       onSnapshot: _onSnapshot,
-      onHeal: () => _credentialsStale = true,
+      onHeal: _requestCredentials,
       scheduler: scheduler,
       random: random,
     );
@@ -85,8 +86,13 @@ final class DeviceStreamSession {
   bool _closed = false;
   bool _muted;
   StreamCredentials? _lastCredentials;
-  bool _credentialsStale = true;
+  StreamCredentials? _activeCredentials;
+  int _credentialsEpoch = 0;
+  bool _credentialsPending = false;
+  ScheduledTask? _credentialsTimeout;
   StreamAttempt? _attempt;
+  ScheduledTask? _credentialsPoll;
+  bool _visible = true;
 
   /// The connection status. Starts as [StreamConnecting].
   ValueListenable<StreamStatus> get status => _status;
@@ -103,14 +109,38 @@ final class DeviceStreamSession {
   void start() {
     if (_started || _closed) return;
     _started = true;
-    _beginAttempt();
+    _requestCredentials();
   }
 
   /// Starts a fresh connect cycle after the stream became
-  /// [StreamUnavailable]. A no-op in every other status.
+  /// [StreamUnavailable]. Before discovery, also restarts a pending provider call.
   void retry() {
-    if (_closed) return;
-    _controller.retry();
+    if (_closed || !_started) return;
+    if (_lastCredentials == null) {
+      _requestCredentials(replacePending: true);
+    } else {
+      _controller.retry();
+    }
+  }
+
+  /// Wakes a pending reconnect wait or restarts an unavailable session.
+  /// Call this when the app's existing connectivity source comes back online.
+  void wake() {
+    if (_closed || !_started) return;
+    if (_lastCredentials == null) {
+      _requestCredentials(replacePending: true);
+    } else {
+      _controller.handleWake();
+    }
+  }
+
+  /// Pauses keepAlive while hidden; a real foreground transition also wakes
+  /// reconnects. Registration with an already-visible app is a no-op.
+  void setVisible(bool visible) {
+    if (_closed || _visible == visible) return;
+    _visible = visible;
+    _attempt?.setVisible(visible);
+    if (visible) wake();
   }
 
   /// Closes the session and releases the peer connection, streams, channels,
@@ -118,6 +148,9 @@ final class DeviceStreamSession {
   Future<void> close() async {
     if (_closed) return;
     _closed = true;
+    _credentialsEpoch++;
+    _credentialsTimeout?.cancel();
+    _credentialsPoll?.cancel();
     _controller.dispose();
     final attempt = _attempt;
     _attempt = null;
@@ -173,6 +206,7 @@ final class DeviceStreamSession {
       ReconnectStatus.reconnecting => StreamReconnecting(snapshot.attempt),
       ReconnectStatus.unavailable => const StreamUnavailable(),
     };
+    scheduleMicrotask(_applyPendingTarget);
     if (snapshot.status == ReconnectStatus.unavailable) {
       // The retry budget is spent: nothing of the last attempt may linger, a
       // late peer state must not bring the stream back without retry().
@@ -181,21 +215,64 @@ final class DeviceStreamSession {
     }
   }
 
-  Future<StreamCredentials?> _resolveCredentials() async {
-    if (_lastCredentials == null || _credentialsStale) {
-      _credentialsStale = false;
-      _lastCredentials = await _credentials();
-      if (_lastCredentials == null) _credentialsStale = true;
+  // Only initial discovery polls. Recovery mounts always use the latest cached
+  // target; a bounded background refresh must never stall reconnect progress.
+  void _requestCredentials({bool replacePending = false}) {
+    if (_closed || (_credentialsPending && !replacePending)) return;
+    final epoch = ++_credentialsEpoch;
+    _credentialsPending = true;
+    _credentialsPoll?.cancel();
+    _credentialsTimeout?.cancel();
+    void finish(StreamCredentials? next) {
+      if (_closed || epoch != _credentialsEpoch || !_credentialsPending) return;
+      _credentialsPending = false;
+      _credentialsTimeout?.cancel();
+      _credentialsTimeout = null;
+      if (next == null) {
+        if (_lastCredentials == null) {
+          _credentialsPoll = _scheduler.schedule(
+            const Duration(seconds: 3),
+            () {
+              _credentialsPoll = null;
+              _requestCredentials();
+            },
+          );
+        }
+        return;
+      }
+      _lastCredentials = next;
+      _applyPendingTarget();
     }
-    return _lastCredentials;
+
+    _credentialsTimeout = _scheduler.schedule(
+      ReconnectPolicy.connectTimeout,
+      () => finish(null),
+    );
+    unawaited(
+      Future<StreamCredentials?>.sync(
+        _credentials,
+      ).then(finish, onError: (Object _) => finish(null)),
+    );
   }
 
-  /// A new mount epoch: the previous attempt (if any) is torn down, a fresh
-  /// one starts and the connect watchdog is armed.
+  void _applyPendingTarget() {
+    final next = _lastCredentials;
+    if (_closed || next == null || _controller.shouldDeferTargetChange()) {
+      return;
+    }
+    if (_activeCredentials?.url != next.url ||
+        _activeCredentials?.token != next.token) {
+      _beginAttempt();
+    }
+  }
+
+  /// Tears down the previous connection and mounts the cached target.
   void _beginAttempt() {
-    if (_closed) return;
+    final resolved = _lastCredentials;
+    if (_closed || resolved == null) return;
     unawaited(_attempt?.dispose());
     _clearVideo();
+    _activeCredentials = resolved;
     _controller.attemptMounted();
     _attempt = StreamAttempt(
       sessionId: _sessionId,
@@ -203,7 +280,8 @@ final class DeviceStreamSession {
       scheduler: _scheduler,
       config: _config,
       muted: _muted,
-      credentials: _resolveCredentials,
+      credentials: resolved,
+      visible: _visible,
       events: StreamAttemptEvents(
         connected: _controller.handleConnected,
         disconnected: _controller.handleDisconnected,
@@ -213,7 +291,7 @@ final class DeviceStreamSession {
         },
         videoStream: (stream) => _videoStream.value = stream,
         videoSize: (size) => _videoSize.value = size,
-        credentialsRejected: () => _credentialsStale = true,
+        credentialsRejected: _requestCredentials,
       ),
     )..start();
   }

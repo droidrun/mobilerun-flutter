@@ -30,10 +30,10 @@ final class StreamCredentials {
 
 /// Supplies the credentials of a stream.
 ///
-/// It is called when the session starts, once per recovery cycle (the first
-/// failure after a healthy stretch, and manual retries) and whenever the
-/// server rejects the token. Return null when the credentials are not ready
-/// yet (for example the device is still booting): the attempt then counts as
-/// a failure and is retried with backoff. A throwing provider counts as a
-/// failure too.
+/// Before the first target, null, throwing and timed-out calls are polled every
+/// three seconds without consuming the reconnect budget. Every call is bounded
+/// by ReconnectPolicy.connectTimeout. Wake/retry can supersede a pending call.
+/// After discovery, reconnects reuse the cached target while a heal or rejected
+/// token refreshes credentials in the background. Null/failed refreshes retain
+/// that target; connection failures exhaust the normal budget and show Retry.
 typedef StreamCredentialsProvider = Future<StreamCredentials?> Function();

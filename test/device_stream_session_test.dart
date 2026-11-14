@@ -13,6 +13,133 @@ import 'support/fake_transports.dart';
 import 'support/harness.dart';
 
 void main() {
+  group('credentials discovery and cached recovery', () {
+    const target = StreamCredentials(
+      url: 'wss://stream.example.test/cached',
+      token: 'stable',
+    );
+    test(
+      'null recovery retains target and exhausts budget, then Retry connects',
+      () async {
+        var ready = false;
+        final h = Harness(
+          credentials: (call) => call == 1 || ready ? target : null,
+        );
+        await h.connect();
+        h.connector.failWith = StateError('offline');
+        h.ws.serverClose();
+        await pump();
+        expect(h.credentialCalls, 2);
+        for (final delay in [1000, 2000, 4000, 8000, 16000, 30000]) {
+          await h.advance(delay);
+        }
+        expect(h.session.status.value, const StreamUnavailable());
+        expect(h.credentialCalls, 2); // No null polling after discovery.
+        expect(h.connector.uris.every((u) => u.path == '/cached'), isTrue);
+        ready = true;
+        h.connector.failWith = null;
+        h.session.retry();
+        await h.connect();
+        expect(h.session.status.value, const StreamConnected());
+        expect(h.credentialCalls, 3);
+        await h.session.close();
+        expect(h.scheduler.pendingTimers, 0);
+      },
+    );
+
+    test(
+      'initial hung provider times out, then polls; late result is ignored',
+      () async {
+        final hung = Completer<StreamCredentials?>();
+        final h = Harness(
+          credentials: (call) => call == 1 ? hung.future : target,
+        );
+        h.session.start();
+        await pump();
+        await h.advance(ReconnectPolicy.connectTimeout.inMilliseconds);
+        expect(h.session.status.value, const StreamConnecting());
+        expect(h.credentialCalls, 1);
+        await h.advance(2999);
+        expect(h.credentialCalls, 1);
+        await h.advance(1);
+        expect(h.credentialCalls, 2);
+        expect(h.connector.uris, hasLength(1));
+        hung.complete(
+          const StreamCredentials(
+            url: 'wss://stale.example.test/s',
+            token: 'stale',
+          ),
+        );
+        await pump();
+        expect(h.connector.uris, hasLength(1));
+        await h.session.close();
+        expect(h.scheduler.pendingTimers, 0);
+      },
+    );
+
+    for (final retry in [false, true]) {
+      test(
+        '${retry ? "retry" : "wake"} supersedes initial hung call',
+        () async {
+          final hung = Completer<StreamCredentials?>();
+          final h = Harness(
+            credentials: (call) => call == 1 ? hung.future : target,
+          );
+          h.session.start();
+          await pump();
+          if (retry) {
+            h.session.retry();
+          } else {
+            h.session.wake();
+          }
+          await pump();
+          expect(h.credentialCalls, 2);
+          expect(h.connector.uris, hasLength(1));
+          hung.completeError(TimeoutException('stale integrator'));
+          await pump();
+          expect(h.connector.uris, hasLength(1));
+          await h.session.close();
+          expect(h.scheduler.pendingTimers, 0);
+        },
+      );
+    }
+
+    test(
+      'hung background refresh never blocks mounts, wake or retry',
+      () async {
+        final hung = Completer<StreamCredentials?>();
+        final h = Harness(
+          credentials: (call) => call == 1 ? target : hung.future,
+        );
+        await h.connect();
+        h.connector.failWith = StateError('offline');
+        h.ws.serverClose();
+        await pump();
+        h.session.wake();
+        await pump();
+        expect(h.connector.uris, hasLength(2));
+        expect(h.credentialCalls, 2);
+        for (
+          var i = 0;
+          i < 10 && h.session.status.value is! StreamUnavailable;
+          i++
+        ) {
+          await h.advance(45000);
+        }
+        expect(h.session.status.value, const StreamUnavailable());
+        h.connector.failWith = null;
+        h.session.retry();
+        await h.connect();
+        expect(h.session.status.value, const StreamConnected());
+        expect(h.credentialCalls, 3);
+        await h.session.close();
+        hung.complete(null);
+        await pump();
+        expect(h.scheduler.pendingTimers, 0);
+      },
+    );
+  });
+
   group('happy path (sequence.json)', () {
     test('sends the fixture frames in order with the fixture timing', () async {
       final h = Harness();
@@ -354,7 +481,12 @@ void main() {
     });
 
     test('a transient disconnect does not rebuild if it recovers', () async {
-      final h = Harness();
+      final h = Harness(
+        credentials: (_) => const StreamCredentials(
+          url: 'wss://stream.example.test/s',
+          token: 'stable',
+        ),
+      );
       await h.connect();
       h.peer.emitState(PeerState.disconnected);
       expect(h.session.status.value, const StreamReconnecting(1));
@@ -382,9 +514,9 @@ void main() {
       await pump();
       h.connector.failWith = const SignallingRejectedException(401);
       await h.advance(1000);
-      expect(h.credentialCalls, 2);
+      expect(h.credentialCalls, 3);
       expect(h.session.status.value, const StreamReconnecting(2));
-      // The next attempt, in the same cycle, asks again because of the 401.
+      // The rejection refreshed in the background; the next mount reuses it.
       h.connector.failWith = null;
       await h.advance(2000);
       expect(h.credentialCalls, 3);
@@ -404,31 +536,44 @@ void main() {
       expect(h.credentialCalls, 2);
     });
 
-    test('null credentials count as a failure and are retried', () async {
-      final h = Harness(
-        credentials: (call) => call < 3
-            ? null
-            : const StreamCredentials(
-                url: 'wss://stream.example.test/s',
-                token: 't',
-              ),
-      );
-      h.session.start();
-      await pump();
-      expect(h.connector.connections, isEmpty);
-      expect(h.session.status.value, const StreamReconnecting(1));
-      await h.advance(1000);
-      expect(h.session.status.value, const StreamReconnecting(2));
-      await h.advance(2000);
-      expect(h.connector.connections, hasLength(1));
-    });
+    test(
+      'null credentials poll every three seconds without failures',
+      () async {
+        final h = Harness(
+          credentials: (call) => call < 3
+              ? null
+              : const StreamCredentials(
+                  url: 'wss://stream.example.test/s',
+                  token: 't',
+                ),
+        );
+        h.session.start();
+        await pump();
+        expect(h.connector.connections, isEmpty);
+        expect(h.session.status.value, const StreamConnecting());
+        await h.advance(2999);
+        expect(h.credentialCalls, 1);
+        await h.advance(1);
+        expect(h.credentialCalls, 2);
+        expect(h.session.status.value, const StreamConnecting());
+        await h.advance(3000);
+        expect(h.connector.connections, hasLength(1));
+      },
+    );
 
-    test('a throwing credentials provider counts as a failure', () async {
-      final h = Harness(credentials: (_) => throw StateError('offline'));
-      h.session.start();
-      await pump();
-      expect(h.session.status.value, const StreamReconnecting(1));
-    });
+    test(
+      'a throwing initial provider polls without consuming failures',
+      () async {
+        final h = Harness(credentials: (_) => throw StateError('offline'));
+        h.session.start();
+        await pump();
+        expect(h.session.status.value, const StreamConnecting());
+        await h.advance(3000);
+        expect(h.credentialCalls, 2);
+        expect(h.session.status.value, const StreamConnecting());
+        await h.session.close();
+      },
+    );
 
     test('WebSocket open timeout (15 s) fails the attempt', () async {
       final h = Harness();
@@ -795,7 +940,12 @@ void main() {
     test(
       'retires the last attempt; a late connected cannot restore it',
       () async {
-        final h = Harness();
+        final h = Harness(
+          credentials: (_) => const StreamCredentials(
+            url: 'wss://stream.example.test/s',
+            token: 'stable',
+          ),
+        );
         h.session.start();
         await pump();
         // Every attempt negotiates but never connects: the watchdog (45 s)

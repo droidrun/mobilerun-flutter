@@ -62,7 +62,7 @@ Future<Harness> pumpView(
   final view = SizedBox(
     width: 400,
     height: 400,
-    child: DeviceStream(
+    child: DeviceStreamView(
       key: viewKey,
       session: h.session,
       hasControl: hasControl,
@@ -105,7 +105,7 @@ void main() {
     tester,
   ) async {
     final h = await pumpView(tester);
-    final origin = tester.getTopLeft(find.byType(DeviceStream));
+    final origin = tester.getTopLeft(find.byType(DeviceStreamView));
     final first = await tester.startGesture(
       origin + const Offset(150, 100),
       pointer: 501,
@@ -132,7 +132,7 @@ void main() {
     tester,
   ) async {
     final h = await pumpView(tester);
-    final origin = tester.getTopLeft(find.byType(DeviceStream));
+    final origin = tester.getTopLeft(find.byType(DeviceStreamView));
     await tester.tapAt(origin + const Offset(50, 50));
     final finger = await tester.startGesture(origin + const Offset(200, 100));
     await finger.moveTo(origin + const Offset(10, 10));
@@ -158,7 +158,7 @@ void main() {
           ],
         ),
       );
-      final origin = tester.getTopLeft(find.byType(DeviceStream));
+      final origin = tester.getTopLeft(find.byType(DeviceStreamView));
       final x = mode == 'letterbox' ? 50.0 : 200.0;
       final finger = await tester.startGesture(origin + Offset(x, 300));
       await finger.moveTo(origin + Offset(x, 200));
@@ -198,7 +198,8 @@ void main() {
       ),
     );
     final position =
-        tester.getTopLeft(find.byType(DeviceStream)) + const Offset(200, 300);
+        tester.getTopLeft(find.byType(DeviceStreamView)) +
+        const Offset(200, 300);
     await tester.sendEventToBinding(
       PointerPanZoomStartEvent(pointer: 404, position: position),
     );
@@ -229,7 +230,7 @@ void main() {
 
   testWidgets('mouse uses pointer -1', (tester) async {
     final h = await pumpView(tester);
-    final origin = tester.getTopLeft(find.byType(DeviceStream));
+    final origin = tester.getTopLeft(find.byType(DeviceStreamView));
     final mouse = await tester.createGesture(kind: PointerDeviceKind.mouse);
     await mouse.addPointer(location: origin + const Offset(180, 130));
     await mouse.down(origin + const Offset(180, 130));
@@ -246,7 +247,7 @@ void main() {
 
   testWidgets('hover preserves buttons only on hover channel', (tester) async {
     final h = await pumpView(tester);
-    final origin = tester.getTopLeft(find.byType(DeviceStream));
+    final origin = tester.getTopLeft(find.byType(DeviceStreamView));
     await tester.sendEventToBinding(
       PointerHoverEvent(
         position: origin + const Offset(200, 150),
@@ -270,7 +271,7 @@ void main() {
     tester,
   ) async {
     final h = await pumpView(tester);
-    final origin = tester.getTopLeft(find.byType(DeviceStream));
+    final origin = tester.getTopLeft(find.byType(DeviceStreamView));
     final mouse = await tester.createGesture(kind: PointerDeviceKind.mouse);
     await mouse.addPointer(location: origin + const Offset(50, 50));
     await mouse.down(origin + const Offset(50, 50));
@@ -292,7 +293,7 @@ void main() {
 
   testWidgets('wheel sends exact scroll bytes', (tester) async {
     final h = await pumpView(tester);
-    final origin = tester.getTopLeft(find.byType(DeviceStream));
+    final origin = tester.getTopLeft(find.byType(DeviceStreamView));
     await tester.sendEventToBinding(
       PointerScrollEvent(
         position: origin + const Offset(200, 150),
@@ -454,7 +455,7 @@ void main() {
       final old = await pumpView(tester, controller: controller);
       controller.showKeyboard();
       await tester.pump();
-      final origin = tester.getTopLeft(find.byType(DeviceStream));
+      final origin = tester.getTopLeft(find.byType(DeviceStreamView));
       final finger = await tester.startGesture(origin + const Offset(200, 100));
       final next = change == 'session swap' ? Harness() : old;
       await pumpView(
@@ -508,7 +509,7 @@ void main() {
   testWidgets('display only sends no input on any channel', (tester) async {
     final controller = DeviceStreamController();
     final h = await pumpView(tester, controller: controller, hasControl: false);
-    final origin = tester.getTopLeft(find.byType(DeviceStream));
+    final origin = tester.getTopLeft(find.byType(DeviceStreamView));
     final finger = await tester.startGesture(origin + const Offset(200, 150));
     await finger.moveTo(origin + const Offset(220, 170));
     await finger.cancel();

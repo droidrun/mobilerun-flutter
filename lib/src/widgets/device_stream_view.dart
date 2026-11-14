@@ -34,10 +34,10 @@ enum DeviceSystemKey {
   final int _keycode;
 }
 
-/// Optional handle for one mounted [DeviceStream]. Calls while detached are
+/// Optional handle for one mounted [DeviceStreamView]. Calls while detached are
 /// no-ops; input also requires the view's `hasControl` to be true.
 final class DeviceStreamController {
-  _DeviceStreamState? _state;
+  _DeviceStreamViewState? _state;
 
   /// Focuses the view and opens the platform keyboard.
   void showKeyboard() => _state?._showKeyboard();
@@ -61,9 +61,9 @@ final class DeviceStreamController {
 /// The app owns [session]'s start/close lifecycle. `hasControl: false` renders
 /// video and sends no input; the device service still decides permissions.
 /// No navigation chrome or implicit host back handling is included.
-class DeviceStream extends StatefulWidget {
+class DeviceStreamView extends StatefulWidget {
   /// Creates a live video and input view.
-  const DeviceStream({
+  const DeviceStreamView({
     super.key,
     required this.session,
     required this.hasControl,
@@ -84,12 +84,12 @@ class DeviceStream extends StatefulWidget {
   final bool autofocus;
 
   @override
-  State<DeviceStream> createState() => _DeviceStreamState();
+  State<DeviceStreamView> createState() => _DeviceStreamViewState();
 }
 
-class _DeviceStreamState extends State<DeviceStream> {
+class _DeviceStreamViewState extends State<DeviceStreamView> {
   final _renderer = RTCVideoRenderer();
-  final _focus = FocusNode(debugLabel: 'DeviceStream');
+  final _focus = FocusNode(debugLabel: 'DeviceStreamView');
   late var _pointers = PointerInput(widget.session.sendControl);
   late final _textInput = StreamTextInput(
     active: () => mounted && widget.hasControl && _focus.hasFocus,
@@ -136,7 +136,7 @@ class _DeviceStreamState extends State<DeviceStream> {
   }
 
   @override
-  void didUpdateWidget(DeviceStream oldWidget) {
+  void didUpdateWidget(DeviceStreamView oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.controller != widget.controller) {
       if (oldWidget.controller?._state == this) {

@@ -7,8 +7,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter_webrtc/flutter_webrtc.dart';
 import 'package:mobilerun_flutter/mobilerun_flutter.dart';
 
-import 'stream_view.dart';
-
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await WebRTC.initialize(options: {'zeroPlayoutDelay': true});
@@ -103,7 +101,11 @@ class _StreamPageState extends State<StreamPage> {
             if (session != null)
               Expanded(
                 key: ObjectKey(session),
-                child: StreamView(session: session, controller: _view),
+                child: DeviceStream(
+                  session: session,
+                  controller: _view,
+                  autofocus: true,
+                ),
               ),
           ],
         ),

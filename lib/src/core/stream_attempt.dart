@@ -61,7 +61,8 @@ final class StreamAttempt {
     required this.muted,
     required this.credentials,
     required this.events,
-  });
+    bool visible = true,
+  }) : _visible = visible;
 
   /// The streaming session id sent with every message.
   final String sessionId;
@@ -78,8 +79,8 @@ final class StreamAttempt {
   /// The initial state of the audio track.
   final bool muted;
 
-  /// Supplies the credentials; null means not ready yet.
-  final Future<StreamCredentials?> Function() credentials;
+  /// Resolved target for this attempt. Discovery belongs to the session.
+  final StreamCredentials credentials;
 
   /// The session callbacks.
   final StreamAttemptEvents events;
@@ -98,6 +99,7 @@ final class StreamAttempt {
   ScheduledTask? _sizePoll;
   ScheduledTask? _graceTimer;
   bool _requestedFrames = false;
+  bool _visible = true;
 
   // The first rtcConfiguration reply ends the awaiting phase; later ones are
   // credential refreshes.
@@ -122,8 +124,17 @@ final class StreamAttempt {
 
   /// Arms the keepAlive timer (at mount, like the web client) and connects.
   void start() {
-    _scheduleKeepAlive();
+    if (_visible) _scheduleKeepAlive();
     unawaited(_run());
+  }
+
+  /// Mirrors tab visibility: hidden apps stop sending keepAlive messages.
+  void setVisible(bool visible) {
+    if (_visible == visible || !live) return;
+    _visible = visible;
+    _keepAlive?.cancel();
+    _keepAlive = null;
+    if (visible) _scheduleKeepAlive();
   }
 
   // ---- requests -----------------------------------------------------------
@@ -234,14 +245,8 @@ final class StreamAttempt {
 
   Future<void> _run() async {
     try {
-      final resolved = await credentials();
-      if (!live) return;
-      if (resolved == null) {
-        throw const StreamSessionException('credentials not ready');
-      }
-
       final connecting = transports.signalling.connect(
-        resolved.toWebSocketUri(),
+        credentials.toWebSocketUri(),
       );
       // A socket that opens after the attempt gave up is closed.
       unawaited(
