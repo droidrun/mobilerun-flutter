@@ -135,11 +135,13 @@ final class DeviceStreamSession {
 
   /// Sends a binary control message on the control channel. Returns whether it
   /// was sent: it is dropped while the channel is not open.
+  @internal
   bool sendControl(Uint8List data) => _attempt?.sendControl(data) ?? false;
 
   /// Sends a binary hover message on the hover channel only, never on the
   /// control channel. Returns whether it was sent: it is dropped while the
   /// hover channel is not open.
+  @internal
   bool sendHover(Uint8List data) => _attempt?.sendHover(data) ?? false;
 
   /// Asks the device to open [url]. Returns whether the request was sent: it

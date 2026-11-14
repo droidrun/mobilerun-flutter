@@ -3,6 +3,8 @@
 
 import 'dart:async';
 import 'dart:convert';
+import 'dart:typed_data';
+import 'package:flutter_webrtc/flutter_webrtc.dart' show MediaStream;
 
 // The scripted run wraps the default transports, which are not public API.
 // ignore_for_file: implementation_imports
@@ -53,6 +55,7 @@ final class DebugSignalling implements SignallingConnector {
 
   final SignallingConnector _inner;
   DebugConnection? current;
+  int? rejectedStatus;
 
   List<String> get sent => current?.sent ?? const [];
   List<String> get received => current?.received ?? const [];
@@ -60,9 +63,14 @@ final class DebugSignalling implements SignallingConnector {
 
   @override
   Future<SignallingConnection> connect(Uri uri) async {
-    final connection = DebugConnection(await _inner.connect(uri));
-    current = connection;
-    return connection;
+    try {
+      final connection = DebugConnection(await _inner.connect(uri));
+      current = connection;
+      return connection;
+    } on SignallingRejectedException catch (error) {
+      rejectedStatus = error.statusCode;
+      rethrow;
+    }
   }
 }
 
@@ -131,7 +139,7 @@ final class DebugPeers implements PeerTransportFactory {
   DebugPeers(this._inner);
 
   final PeerTransportFactory _inner;
-  PeerTransport? last;
+  DebugPeer? last;
 
   @override
   Future<PeerTransport> create(
@@ -144,7 +152,57 @@ final class DebugPeers implements PeerTransportFactory {
       config: config,
       muted: muted,
     );
-    last = peer;
-    return peer;
+    last = DebugPeer(peer);
+    return last!;
+  }
+}
+
+/// Records only binary device input for assertions in the example harness.
+final class DebugPeer implements PeerTransport {
+  DebugPeer(this.inner)
+    : control = DebugChannel(inner.control),
+      hover = DebugChannel(inner.hover);
+  final PeerTransport inner;
+  @override
+  final DebugChannel control;
+  @override
+  final DebugChannel hover;
+  @override
+  Stream<PeerState> get connectionStates => inner.connectionStates;
+  @override
+  Stream<IceCandidateData> get localCandidates => inner.localCandidates;
+  @override
+  Stream<MediaStream> get remoteVideoStreams => inner.remoteVideoStreams;
+  @override
+  Future<String> createLocalOffer({bool iceRestart = false}) =>
+      inner.createLocalOffer(iceRestart: iceRestart);
+  @override
+  Future<void> setRemoteAnswer(String sdp) => inner.setRemoteAnswer(sdp);
+  @override
+  Future<void> addRemoteCandidate(IceCandidateData candidate) =>
+      inner.addRemoteCandidate(candidate);
+  @override
+  Future<void> setIceServers(Object? iceServers) =>
+      inner.setIceServers(iceServers);
+  @override
+  void setAudioMuted(bool muted) => inner.setAudioMuted(muted);
+  @override
+  Future<VideoStats?> readVideoStats() => inner.readVideoStats();
+  @override
+  Future<void> close() => inner.close();
+}
+
+final class DebugChannel implements DataChannelTransport {
+  DebugChannel(this.inner);
+  final DataChannelTransport inner;
+  final List<Uint8List> sent = [];
+  @override
+  ChannelState get state => inner.state;
+  @override
+  Stream<ChannelState> get states => inner.states;
+  @override
+  void send(Uint8List bytes) {
+    sent.add(Uint8List.fromList(bytes));
+    inner.send(bytes);
   }
 }

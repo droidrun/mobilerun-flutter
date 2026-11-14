@@ -10,8 +10,8 @@
       Exit 0 when at least MIN_FRACTION of the pixels in the video rectangle
       differ from the other image (the device screen changed).
 
-The video rectangle is the lower 60 % of the screen, below the status line
-of the example app. Prints one line with the measured fraction.
+Comparisons use a fixed content crop (8 % to 92 % of frame height),
+excluding the status and navigation bars. No target detection is performed.
 """
 import struct
 import sys
@@ -65,7 +65,7 @@ def read_png(path):
 
 
 def rect_rows(height):
-    return range(int(height * 0.4), int(height * 0.95))
+    return range(int(height * 0.08), int(height * 0.92))
 
 
 def lit_fraction(path):

@@ -37,6 +37,7 @@ class _StreamPageState extends State<StreamPage> {
   final _url = TextEditingController();
   final _token = TextEditingController();
   DeviceStreamSession? _session;
+  final _view = DeviceStreamController();
 
   void _connect() {
     unawaited(_session?.close());
@@ -85,6 +86,11 @@ class _StreamPageState extends State<StreamPage> {
                         child: const Text('Connect'),
                       ),
                       const SizedBox(width: 8),
+                      IconButton(
+                        onPressed: session == null ? null : _view.showKeyboard,
+                        tooltip: 'Keyboard',
+                        icon: const Icon(Icons.keyboard),
+                      ),
                       OutlinedButton(
                         onPressed: session?.retry,
                         child: const Text('Retry'),
@@ -97,7 +103,7 @@ class _StreamPageState extends State<StreamPage> {
             if (session != null)
               Expanded(
                 key: ObjectKey(session),
-                child: StreamView(session: session),
+                child: StreamView(session: session, controller: _view),
               ),
           ],
         ),

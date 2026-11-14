@@ -4,7 +4,7 @@
 import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:mobilerun_flutter/mobilerun_flutter.dart';
+import 'package:mobilerun_flutter/src/protocol/control_messages.dart';
 
 import 'support/fixtures.dart';
 

@@ -16,8 +16,7 @@ import 'package:mobilerun_flutter/mobilerun_flutter.dart';
 import 'package:path_provider/path_provider.dart';
 
 import 'debug_signalling.dart';
-import 'e2e_script.dart';
-import 'stream_view.dart';
+import 'input_e2e_script.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -48,6 +47,9 @@ class E2eApp extends StatefulWidget {
 
 class _E2eAppState extends State<E2eApp> {
   final _debug = DebugTransports();
+  final _controller = DeviceStreamController();
+  final _viewKey = GlobalKey();
+  bool _rotated = false;
   late final DeviceStreamSession _session = DeviceStreamSession.withTransports(
     credentials: () async => widget.credentials,
     transports: _debug.transports,
@@ -56,7 +58,13 @@ class _E2eAppState extends State<E2eApp> {
   @override
   void initState() {
     super.initState();
-    final script = E2eScript(
+    final script = InputE2eScript(
+      controller: _controller,
+      viewKey: _viewKey,
+      rotateView: (value) async {
+        setState(() => _rotated = value);
+        await WidgetsBinding.instance.endOfFrame;
+      },
       session: _session,
       debug: _debug,
       outDir: widget.outDir,
@@ -78,9 +86,18 @@ class _E2eAppState extends State<E2eApp> {
   Widget build(BuildContext context) => MaterialApp(
     home: Scaffold(
       body: SafeArea(
-        child: StreamView(
-          session: _session,
-          log: (message) => debugPrint('E2E $message'),
+        child: ColoredBox(
+          color: Colors.black,
+          child: RotatedBox(
+            quarterTurns: _rotated ? 1 : 0,
+            child: DeviceStream(
+              key: _viewKey,
+              session: _session,
+              hasControl: true,
+              controller: _controller,
+              autofocus: true,
+            ),
+          ),
         ),
       ),
     ),
