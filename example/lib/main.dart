@@ -47,11 +47,14 @@ class _StreamPageState extends State<StreamPage> {
 
   Future<void> _init() async {
     await _renderer.initialize();
-    _renderer
-      ..onFirstFrameRendered = () => debugPrint('E2E renderer first frame')
-        ..onResize = () => debugPrint(
-          'E2E renderer size ${_renderer.videoWidth}x${_renderer.videoHeight}',
-        );
+    _renderer.onFirstFrameRendered = () {
+      debugPrint('E2E renderer first frame');
+    };
+    _renderer.onResize = () {
+      debugPrint(
+        'E2E renderer size ${_renderer.videoWidth}x${_renderer.videoHeight}',
+      );
+    };
     if (!mounted) return;
     setState(() => _rendererReady = true);
     final config = await E2eConfig.load();
@@ -167,7 +170,11 @@ class _StreamPageState extends State<StreamPage> {
               child: ColoredBox(
                 color: Colors.black,
                 child: _rendererReady
-                    ? RTCVideoView(_renderer)
+                    ? RTCVideoView(
+                        _renderer,
+                        objectFit:
+                            RTCVideoViewObjectFit.RTCVideoViewObjectFitContain,
+                      )
                     : const SizedBox.shrink(),
               ),
             ),

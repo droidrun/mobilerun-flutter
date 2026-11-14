@@ -77,6 +77,7 @@ c = json.load(open(sys.argv[1]))
 print(json.dumps({"streamUrl": c["streamUrl"], "streamToken": c["streamToken"]}))
 ' "$creds" | adb_ shell "run-as $pkg sh -c 'mkdir -p files && cat > files/e2e.json'"
 
+adb_ shell "run-as $pkg rm -rf files/e2e-out"
 adb_ logcat -c
 adb_ shell am start -n "$pkg/.MainActivity" >/dev/null
 
@@ -112,5 +113,7 @@ for f in $(adb_ shell "run-as $pkg ls files/e2e-out" 2>/dev/null | tr -d '\r'); 
   adb_ exec-out "run-as $pkg cat files/e2e-out/$f" >"$out/shots/device-$f"
 done
 adb_ logcat -d -v brief -s flutter | sed 's/^.*flutter *: //' >"$out/app.log"
+# Warnings and errors of every process, to diagnose native failures.
+adb_ logcat -d -v brief '*:W' >"$out/native-warnings.log"
 echo "run status: $status"
 [ "$status" = done ]
