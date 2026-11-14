@@ -163,20 +163,19 @@ final class InputE2eScript {
     );
     await wait(3000);
     await shot('01-first-frame');
-    // Return a previous search/editor and its keyboard to the Settings root
-    // before returning home. This makes repeated runs use a scrollable list.
+    // Bring Settings to the foreground before resetting its retained search
+    // activity. BACK while the launcher is foreground cannot reset that task.
+    system(DeviceSystemKey.home);
+    await wait(1800);
+    await tap(73 / 488, 966 / 1080);
     for (var i = 0; i < 3; i++) {
       system(DeviceSystemKey.back);
-      await wait(500);
+      await wait(1000);
     }
     system(DeviceSystemKey.home);
     await wait(1800);
     await shot('02-before-tap');
     await tap(73 / 488, 966 / 1080);
-    // Settings can restore its search activity when relaunched. Its known
-    // toolbar back target returns to the scrollable root; on the root this
-    // location is only the title and has no action.
-    await tap(.09, .065);
     await shot('03-after-tap');
     log('tap through widget');
     await shot('08-before-swipe');
