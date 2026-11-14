@@ -47,14 +47,38 @@ if ! avdmanager list avd 2>/dev/null | grep -q "Name: $avd"; then
     -k "system-images;android-36;google_apis;arm64-v8a" --force
 fi
 
+# The hardware path needs a keyboard device with scan codes. Restore this
+# fixture setting after the run so a reused AVD keeps its original config.
+avd_home="${ANDROID_AVD_HOME:-${ANDROID_USER_HOME:-$HOME/.android}/avd}"
+avd_dir="$(sed -n 's/^path=//p' "$avd_home/$avd.ini")"
+avd_config="$avd_dir/config.ini"
+avd_backup="$(mktemp "$out/avd-config.XXXXXX")"
+cp "$avd_config" "$avd_backup"
+show_ime_before=
 cleanup() {
   adb_ shell "run-as $pkg rm -f files/e2e.json" >/dev/null 2>&1 || true
+  if [ -n "$show_ime_before" ]; then
+    if [ "$show_ime_before" = null ]; then
+      adb_ shell settings delete secure show_ime_with_hard_keyboard >/dev/null 2>&1 || true
+    else
+      adb_ shell settings put secure show_ime_with_hard_keyboard "$show_ime_before" >/dev/null 2>&1 || true
+    fi
+  fi
   adb_ emu kill >/dev/null 2>&1 || true
   sleep 3
   pkill -f "qemu-system.*$avd" 2>/dev/null || true
+  cp "$avd_backup" "$avd_config"
+  rm -f "$avd_backup"
   echo "emulator stopped"
 }
 trap cleanup EXIT
+python3 -I -c '
+from pathlib import Path
+import sys
+p = Path(sys.argv[1])
+lines = [line for line in p.read_text().splitlines() if not line.startswith("hw.keyboard=")]
+p.write_text("\n".join(lines + ["hw.keyboard=yes"]) + "\n")
+' "$avd_config"
 
 emulator -avd "$avd" -port "$port" -no-window -no-audio -memory 2048 \
   -no-snapshot -no-boot-anim -gpu swiftshader_indirect \
@@ -69,6 +93,8 @@ for _ in $(seq 1 120); do
 done
 [ "$booted" = 1 ] || { echo "emulator failed to boot" >&2; exit 1; }
 echo "emulator booted"
+show_ime_before="$(adb_ shell settings get secure show_ime_with_hard_keyboard | tr -d '\r')"
+adb_ shell settings put secure show_ime_with_hard_keyboard 1
 
 adb_ install -r "$apk" >/dev/null
 # One start creates the app's private directories.
@@ -135,7 +161,12 @@ while [ "$SECONDS" -lt "$deadline" ] && [ "$status" = timeout ]; do
         if ! check_shot "$name"; then status=failed; fi
         ;;
       HOST-HARDWARE)
-        adb_ shell input keyevent 29 67 66
+        # Emulator evdev events carry real scan codes. `input keyevent` uses
+        # scan code zero, so it cannot exercise physical-key routing.
+        adb_ emu event send \
+          1:30:1 0:0:0 1:30:0 0:0:0 \
+          1:14:1 0:0:0 1:14:0 0:0:0 \
+          1:28:1 0:0:0 1:28:0 0:0:0
         ;;
       HOST-TYPE)
         # Tap three visible keys on the emulator's English soft keyboard.

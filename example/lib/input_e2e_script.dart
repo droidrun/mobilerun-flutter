@@ -281,8 +281,23 @@ final class InputE2eScript {
     final beforeHardware = sent.length;
     // The host injects real emulator keyboard events. Calling HardwareKeyboard
     // directly skips Flutter's Focus dispatch and cannot prove this path.
+    bool recordKey(KeyEvent event) {
+      log(
+        'hardware ${event.runtimeType} physical=${event.physicalKey.usbHidUsage}',
+      );
+      return false;
+    }
+
+    HardwareKeyboard.instance.addHandler(recordKey);
     log('HOST-HARDWARE');
-    await until(() => sent.length >= beforeHardware + 5, 'host hardware keys');
+    try {
+      await until(
+        () => sent.length >= beforeHardware + 5,
+        'host hardware keys',
+      );
+    } finally {
+      HardwareKeyboard.instance.removeHandler(recordKey);
+    }
     expectFrames(beforeHardware, [
       encodeText('a'),
       ...press(67),
