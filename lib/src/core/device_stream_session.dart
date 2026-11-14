@@ -46,7 +46,6 @@ final class DeviceStreamSession {
 
   /// Creates a session on custom transports and clock, for tests and debug
   /// tooling that wraps the default transports.
-  @internal
   DeviceStreamSession._withTransports({
     required StreamCredentialsProvider credentials,
     required StreamTransports transports,

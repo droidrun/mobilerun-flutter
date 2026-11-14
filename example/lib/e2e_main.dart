@@ -9,7 +9,7 @@ import 'dart:convert';
 import 'dart:io';
 
 // The scripted run needs the internal transport hook.
-// ignore_for_file: invalid_use_of_internal_member
+// ignore_for_file: invalid_use_of_internal_member, implementation_imports
 import 'package:flutter/material.dart';
 import 'package:flutter_webrtc/flutter_webrtc.dart';
 import 'package:mobilerun_flutter/mobilerun_flutter.dart';
