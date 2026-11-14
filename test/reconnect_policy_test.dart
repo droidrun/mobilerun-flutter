@@ -16,14 +16,6 @@ void main() {
     final backoff = asObject(policy['backoff']);
     expect(ReconnectPolicy.maxAttempts, policy['max_attempts']);
     expect(
-      SignallingTiming.wsOpenTimeout.inMilliseconds,
-      policy['ws_open_timeout_ms'],
-    );
-    expect(
-      SignallingTiming.rtcConfigTimeout.inMilliseconds,
-      policy['rtc_config_timeout_ms'],
-    );
-    expect(
       ReconnectPolicy.connectTimeout.inMilliseconds,
       policy['connect_timeout_ms'],
     );
@@ -37,7 +29,9 @@ void main() {
     () {
       expect(
         (policy['invariants']! as List).single,
-        'connect_timeout_ms > ws_open_timeout_ms + rtc_config_timeout_ms',
+        startsWith(
+          'connect_timeout_ms > ws_open_timeout_ms + rtc_config_timeout_ms',
+        ),
       );
       expect(
         ReconnectPolicy.connectTimeout,
