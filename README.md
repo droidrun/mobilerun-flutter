@@ -368,7 +368,7 @@ differences; the first report has no derived rates. A new attempt resets all
 baselines. First-frame timing starts at attempt creation and has the video poll's
 500 ms observation resolution. `copyWith` applies typed non-null overrides and retains omitted fields.
 
-The diagnostic benchmark uses an existing Android emulator and an existing test
+Run the diagnostic benchmark with exclusive emulator access. It uses an existing test
 device with the Settings icon in the launcher's first column near the bottom
 (the same layout as the input run). Supply runtime credentials as a JSON file
 with `streamUrl` and `streamToken`; they are copied into private app storage and
@@ -376,7 +376,8 @@ removed on exit, never compiled into the app:
 
 ```sh
 export ANDROID_HOME=PATH_TO_ANDROID_SDK
-mr-heavy tool/benchmark.sh CREDENTIALS_JSON OUT_DIR
+export AVD=YOUR_EXISTING_AVD
+tool/benchmark.sh CREDENTIALS_JSON OUT_DIR
 ```
 
 It runs five fresh connections, records seven seconds of steady FPS/bitrate/RTT,

@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # Copyright 2026 Mobilerun
 # SPDX-License-Identifier: Apache-2.0
-# Run under mr-heavy. Credentials never enter argv of the app or its APK.
-# Usage: mr-heavy tool/benchmark.sh CREDENTIALS_JSON OUT_DIR
+# Use exclusive emulator access. Credentials never enter argv or the APK.
+# Usage: tool/benchmark.sh CREDENTIALS_JSON OUT_DIR
 set -euo pipefail
 [ "$#" = 2 ] || { echo 'usage: tool/benchmark.sh CREDENTIALS_JSON OUT_DIR' >&2; exit 2; }
 creds="$1"
@@ -12,7 +12,7 @@ root="$(cd "$(dirname "$0")/.." && pwd)"
 export ANDROID_SDK_ROOT="$ANDROID_HOME"
 export PATH="$ANDROID_HOME/platform-tools:$ANDROID_HOME/emulator:$ANDROID_HOME/cmdline-tools/latest/bin:$PATH"
 pkg=ai.mobilerun.mobilerun_flutter_example
-avd="${AVD:-spike_a36}"
+avd="${AVD:-mobilerun_benchmark}"
 port="${EMULATOR_PORT:-5584}"
 serial="emulator-$port"
 adb_() { adb -s "$serial" "$@"; }
