@@ -90,7 +90,10 @@ class DeviceStreamView extends StatefulWidget {
 class _DeviceStreamViewState extends State<DeviceStreamView> {
   final _renderer = RTCVideoRenderer();
   final _focus = FocusNode(debugLabel: 'DeviceStreamView');
-  late var _pointers = PointerInput(widget.session.sendControl);
+  late var _pointers = PointerInput(
+    widget.session.sendControl,
+    sendHover: widget.session.sendHover,
+  );
   late final _textInput = StreamTextInput(
     active: () => mounted && widget.hasControl && _focus.hasFocus,
     send: _send,
@@ -158,7 +161,10 @@ class _DeviceStreamViewState extends State<DeviceStreamView> {
     }
     if (sessionChanged) {
       oldWidget.session.videoStream.removeListener(_syncStream);
-      _pointers = PointerInput(widget.session.sendControl);
+      _pointers = PointerInput(
+        widget.session.sendControl,
+        sendHover: widget.session.sendHover,
+      );
       widget.session.videoStream.addListener(_syncStream);
       _syncStream();
     }
@@ -241,17 +247,12 @@ class _DeviceStreamViewState extends State<DeviceStreamView> {
 
   void _hover(PointerEvent event) {
     if (!widget.hasControl) return;
-    final geometry = _geometry;
-    final point = geometry?.map(event.localPosition);
-    if (point == null) return;
-    widget.session.sendHover(
-      encodeHover(
-        videoWidth: geometry!.videoWidth,
-        videoHeight: geometry.videoHeight,
-        x: point.dx,
-        y: point.dy,
-        buttons: event.buttons,
-      ),
+    _pointers.move(
+      event.pointer,
+      event.localPosition,
+      mouse: true,
+      geometry: _geometry,
+      buttons: event.buttons,
     );
   }
 
