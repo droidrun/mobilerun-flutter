@@ -37,6 +37,9 @@ for _ in $(seq 1 120); do
   sleep 3
 done
 [ "$booted" = 1 ] || { echo 'emulator failed to boot'; exit 1; }
+# Keep the foreground soak visible; automatic screen sleep is tested separately
+# by the explicit background/foreground cycle.
+adb_ shell settings put system screen_off_timeout 1800000
 adb_ shell wm size 1080x2400
 adb_ shell wm density 440
 adb_ install -r "$root/example/build/app/outputs/flutter-apk/app-debug.apk" >/dev/null

@@ -219,6 +219,7 @@ class _BenchmarkAppState extends State<BenchmarkApp> {
         credentials: () async => widget.credentials,
         transports: debug.transports,
       );
+      session.status.addListener(() => log('STATUS ${session.status.value}'));
       setState(() {
         _session = session;
         _debug = debug;
@@ -460,6 +461,7 @@ ${rows.join('\n')}
         session.status.value is StreamConnected && session.stats.value != null,
         'soak connection lost',
       );
+      if ((i + 1) % 12 == 0) log('SOAK ${(i + 1) * 5}s connected');
     }
     await _freshVideo('soak');
     final endMemory = ProcessInfo.currentRss;
