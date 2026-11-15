@@ -57,9 +57,9 @@ final class _WebSocketConnection implements SignallingConnection {
   void send(String frame) => _channel.sink.add(frame);
 
   @override
-  Future<void> close() async {
+  Future<void> close({int code = 1000}) async {
     try {
-      await _channel.sink.close();
+      await _channel.sink.close(code);
     } on Object {
       // Closing an already closed socket is fine.
     }

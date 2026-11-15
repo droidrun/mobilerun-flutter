@@ -341,15 +341,12 @@ connecting, reconnecting, unavailable/retry, custom slots and themes without
 opening a cloud device: `flutter run -t lib/ui_stream_gallery_main.dart` from
 `example/`. It does not simulate connected video.
 
-## License
+## Stream statistics
 
-Apache-2.0, see `LICENSE`.
-
-## Stream statistics and benchmark
-
-`session.stats` is a read-only `ValueListenable<StreamStats?>`. Listen while a
-session runs; it is null before video statistics arrive, on disconnect and after
-close. Samples are published every second from WebRTC inbound-video reports.
+`session.stats` is a read-only `ValueListenable<StreamStats?>`. Samples are
+published once per second only while the session is connected, visible, and
+has listeners; the value is null otherwise, including after close. Suppressed
+ICE restart dips follow the session's connected state.
 
 ```dart
 session.stats.addListener(() {
@@ -359,40 +356,18 @@ session.stats.addListener(() {
 });
 ```
 
-The immutable value includes video dimensions, codec MIME type, payload bitrate,
-selected ICE pair RTT, local/remote candidate types (`candidateType` combines
-them), packets lost, frames dropped, freezes, jitter-buffer delay per emitted
-frame, decode time per decoded frame and time to first observed decoded frame.
-Unsupported fields stay null. Rates and per-frame durations use report-counter
-differences; the first report has no derived rates. A new attempt resets all
-baselines. First-frame timing starts at attempt creation and has the video poll's
-500 ms observation resolution. `copyWith` applies typed non-null overrides and retains omitted fields.
+`StreamStats` is an immutable, SDK-created value. Optional fields include video
+dimensions, codec, bitrate, selected ICE pair RTT, separate local/remote candidate
+types, lost packets, dropped frames, freezes, jitter-buffer/decode duration per
+frame, and time to the first observed decoded frame. Unsupported values and the
+first counter-derived rates remain null. Rates use one-second publishing ticks;
+size-only polls do not advance their baselines. First-frame timing uses the
+attempt's monotonic clock with a 50 ms polling interval until the first frame.
+Value equality lets the notifier deduplicate unchanged samples.
 
-Run the diagnostic benchmark with exclusive emulator access. It uses an existing test
-device with the Settings icon in the launcher's first column near the bottom
-(the same layout as the input run). Supply runtime credentials as a JSON file
-with `streamUrl` and `streamToken`; they are copied into private app storage and
-removed on exit, never compiled into the app:
+See [the benchmark procedure](tool/BENCHMARK.md) for rendered tap-region and
+app-launch latency measurements, steady rates, and lifecycle/memory checks.
 
-```sh
-export ANDROID_HOME=PATH_TO_ANDROID_SDK
-export AVD=YOUR_EXISTING_AVD
-tool/benchmark.sh CREDENTIALS_JSON OUT_DIR
-```
+## License
 
-It runs five fresh connections, records seven seconds of steady FPS/bitrate/RTT,
-and measures ten taps per connection. A GPU snapshot captures the rendered
-video texture at quarter logical resolution. The probe excludes the outer 15%
-of the upright picture on every side and waits for at least 2% of pixels to
-change after tapping Settings from Home. It rejects blank or unsettled baseline
-images. Input latency includes snapshot/readback overhead, so median/p90 are
-observed upper bounds, rather than decoder-only timing. Results and phone/tablet
-screenshots go into `OUT_DIR`, outside the package.
-
-The same entry point checks default navigation, text commit, forced socket
-rebuild, unavailable/retry, a fake approval fetch/decision/refetch, host
-background/foreground, emulator network loss/return and a ten-minute connected
-soak. It records app RSS and Android memory snapshots; RSS growth must stay below
-64 MiB. No cloud devices are created or deleted. Session cleanup also has a
-virtual-clock regression asserting that every timer is cancelled and pending
-peer/socket teardown is awaited.
+Apache-2.0, see `LICENSE`.

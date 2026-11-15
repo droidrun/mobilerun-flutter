@@ -61,24 +61,27 @@ final class PointerInput {
   }) {
     final pointer = _active[_identity(id, mouse)];
     if (pointer == null) {
-      final point = geometry?.map(position);
-      if (mouse && point != null) {
-        sendHover?.call(
-          encodeHover(
-            videoWidth: geometry!.videoWidth,
-            videoHeight: geometry.videoHeight,
-            x: point.dx,
-            y: point.dy,
-            buttons: buttons,
-          ),
-        );
-      }
+      if (mouse) hover(position, geometry, buttons: buttons);
       return;
     }
     final point = pointer.geometry.map(position);
     if (point == null) return;
     pointer.point = point;
     pointer.pending = true;
+  }
+
+  void hover(Offset position, InputGeometry? geometry, {int buttons = 0}) {
+    final point = geometry?.map(position);
+    if (point == null) return;
+    sendHover?.call(
+      encodeHover(
+        videoWidth: geometry!.videoWidth,
+        videoHeight: geometry.videoHeight,
+        x: point.dx,
+        y: point.dy,
+        buttons: buttons,
+      ),
+    );
   }
 
   void flushMoves() {

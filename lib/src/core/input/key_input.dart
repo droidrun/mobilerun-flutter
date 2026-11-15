@@ -47,8 +47,7 @@ final class KeyInput {
   void clear() => _pressed.clear();
 
   /// React's shortcut → control → single-character text → fallback order.
-  /// Pass the down event's character again on release: Flutter key-up events
-  /// omit it, but text keys must not produce a fallback keycode release.
+  /// Releases only keycodes tracked on DOWN; text keys have no release frame.
   KeyRoute route({
     required String? code,
     required String? text,

@@ -103,7 +103,6 @@ class _DeviceStreamViewState extends State<DeviceStreamView> {
   int? _moveFrame;
   InputGeometry? _geometry;
   final _keys = KeyInput();
-  final _keyCharacters = <PhysicalKeyboardKey, String?>{};
   Offset? _panAnchor;
 
   void _send(Uint8List bytes) {
@@ -154,7 +153,6 @@ class _DeviceStreamViewState extends State<DeviceStreamView> {
       // The pointer sender is bound to the session that received DOWN.
       _pointers.cancel();
       _textInput.close();
-      _keyCharacters.clear();
       _keys.clear();
       _keyboardRequested = false;
       _panAnchor = null;
@@ -200,7 +198,6 @@ class _DeviceStreamViewState extends State<DeviceStreamView> {
     } else {
       _pointers.cancel();
       _textInput.close();
-      _keyCharacters.clear();
       _keys.clear();
       _keyboardRequested = false;
     }
@@ -221,12 +218,12 @@ class _DeviceStreamViewState extends State<DeviceStreamView> {
   void _down(PointerDownEvent event) {
     if (!widget.hasControl || _geometry == null) return;
     final mouse = _isMouse(event);
-    if (mouse && event.buttons & kPrimaryMouseButton == 0) return;
     if (_pointers.down(
       event.pointer,
       event.localPosition,
       _geometry!,
       mouse: mouse,
+      button: mouse && event.buttons & kPrimaryMouseButton == 0 ? 1 : 0,
     )) {
       _focus.requestFocus();
     }
@@ -234,11 +231,13 @@ class _DeviceStreamViewState extends State<DeviceStreamView> {
 
   void _move(PointerMoveEvent event) {
     if (!widget.hasControl) return;
-    if (_isMouse(event) && !_pointers.contains(event.pointer, mouse: true)) {
-      _hover(event);
-      return;
-    }
-    _pointers.move(event.pointer, event.localPosition, mouse: _isMouse(event));
+    _pointers.move(
+      event.pointer,
+      event.localPosition,
+      mouse: _isMouse(event),
+      geometry: _geometry,
+      buttons: event.buttons,
+    );
     _moveFrame ??= SchedulerBinding.instance.scheduleFrameCallback((_) {
       _moveFrame = null;
       if (mounted && widget.hasControl) _pointers.flushMoves();
@@ -247,13 +246,7 @@ class _DeviceStreamViewState extends State<DeviceStreamView> {
 
   void _hover(PointerEvent event) {
     if (!widget.hasControl) return;
-    _pointers.move(
-      event.pointer,
-      event.localPosition,
-      mouse: true,
-      geometry: _geometry,
-      buttons: event.buttons,
-    );
+    _pointers.hover(event.localPosition, _geometry, buttons: event.buttons);
   }
 
   void _scroll(Offset position, Offset delta, {int buttons = 0}) {
@@ -295,7 +288,10 @@ class _DeviceStreamViewState extends State<DeviceStreamView> {
         physicalKeyCodes[event.physicalKey.usbHidUsage] ??
         logicalKeyCodes[event.logicalKey.keyId];
     final down = event is! KeyUpEvent;
-    final character = event.character;
+    final raw = event.character;
+    final character = raw != null && raw.runes.every(isPrintableRune)
+        ? raw
+        : null;
     // Native Ctrl combinations may omit the produced character or report a
     // C0 control. Recover the layout-aware logical key, never the physical code.
     final produced =
@@ -303,12 +299,9 @@ class _DeviceStreamViewState extends State<DeviceStreamView> {
             (character == null || !character.runes.every(isPrintableRune))
         ? event.logicalKey.keyLabel
         : character;
-    final text = down
-        ? (_keyCharacters[event.physicalKey] = produced)
-        : _keyCharacters.remove(event.physicalKey);
     final route = _keys.route(
       code: code,
-      text: text,
+      text: produced,
       down: down,
       send: _send,
       shift: keyboard.isShiftPressed,

@@ -63,38 +63,32 @@ void main() {
       encodeKeycode(action: 1, keycode: 82),
     ]);
   });
-  for (final code in [
-    'Backspace',
-    'Delete',
-    'Enter',
-    'NumpadEnter',
-    'Tab',
-    'Escape',
-    'Home',
-    'End',
-    'PageUp',
-    'PageDown',
-    'Insert',
-    'ArrowLeft',
-    'F12',
-    'ShiftLeft',
-    'ControlRight',
-    'AltLeft',
-    'MetaRight',
+  for (final (code, text, keycode) in [
+    ('Backspace', 'Backspace', 67),
+    ('Delete', 'Delete', 112),
+    ('Enter', 'Enter', 66),
+    ('NumpadEnter', 'Enter', 160),
+    ('Tab', 'Tab', 61),
+    ('Escape', 'Escape', 111),
+    ('Home', 'Home', 122),
+    ('End', 'End', 123),
+    ('PageUp', 'PageUp', 92),
+    ('PageDown', 'PageDown', 93),
+    ('Insert', 'Insert', 124),
+    ('ArrowLeft', 'ArrowLeft', 21),
+    ('F12', 'F12', 142),
+    ('ShiftLeft', 'ShiftLeft', 59),
+    ('ControlRight', 'ControlRight', 114),
+    ('AltLeft', 'AltLeft', 57),
+    ('MetaRight', 'MetaRight', 118),
   ]) {
     test('$code sends down and up keycodes', () {
       final sent = <Uint8List>[];
-      for (final down in [true, false]) {
-        keys.route(
-          code: code,
-          text: code == 'NumpadEnter' ? 'Enter' : code,
-          down: down,
-          send: sent.add,
-        );
-      }
+      keys.route(code: code, text: text, down: true, send: sent.add);
+      keys.route(code: code, text: text, down: false, send: sent.add);
       expect(sent, [
-        encodeKeycode(action: 0, keycode: keyboardCodeMap[code]!),
-        encodeKeycode(action: 1, keycode: keyboardCodeMap[code]!),
+        encodeKeycode(action: 0, keycode: keycode),
+        encodeKeycode(action: 1, keycode: keycode),
       ]);
     });
   }
@@ -128,25 +122,20 @@ void main() {
       encodeKeycode(action: 0, keycode: 29, metaState: 4096 | 1),
     );
   });
-  for (final code in [
-    null,
-    'AudioVolumeUp',
-    'MediaPlayPause',
-    'Camera',
-    'GamepadA',
-    'F13',
-    'F123',
+  for (final (code, text) in [
+    (null, null),
+    ('AudioVolumeUp', 'AudioVolumeUp'),
+    ('MediaPlayPause', 'MediaPlayPause'),
+    ('Camera', 'Camera'),
+    ('GamepadA', 'GamepadA'),
+    ('F13', 'F13'),
+    ('F123', 'F123'),
   ]) {
     test('unmapped $code without text is ignored', () {
       final sent = <Uint8List>[];
       for (final down in [true, false]) {
         expect(
-          keys.route(
-            code: code,
-            text: code == 'NumpadEnter' ? 'Enter' : code,
-            down: down,
-            send: sent.add,
-          ),
+          keys.route(code: code, text: text, down: down, send: sent.add),
           KeyRoute.ignored,
         );
       }
@@ -183,21 +172,26 @@ void main() {
       },
     );
   }
-  for (final code in ['ContextMenu', 'Numpad1', 'Quote', 'KeyA']) {
+  for (final (code, text, keycode) in [
+    ('ContextMenu', null, 82),
+    ('Numpad1', null, 145),
+    ('Quote', null, 75),
+    ('KeyA', null, 29),
+  ]) {
     test('mapped $code without text releases its fallback keycode', () {
       final sent = <Uint8List>[];
       for (final down in [true, false]) {
         keys.route(
           code: code,
-          text: null,
+          text: text,
           down: down,
           alt: true,
           send: sent.add,
         );
       }
       expect(sent, [
-        encodeKeycode(action: 0, keycode: keyboardCodeMap[code]!, metaState: 2),
-        encodeKeycode(action: 1, keycode: keyboardCodeMap[code]!, metaState: 2),
+        encodeKeycode(action: 0, keycode: keycode, metaState: 2),
+        encodeKeycode(action: 1, keycode: keycode, metaState: 2),
       ]);
     });
   }

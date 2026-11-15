@@ -67,7 +67,8 @@ final class StreamAttempt {
     required this.credentials,
     required this.events,
     bool visible = true,
-  }) : _visible = visible;
+  }) : _visible = visible,
+       _startedAt = scheduler.now;
 
   /// The streaming session id sent with every message.
   final String sessionId;
@@ -103,8 +104,11 @@ final class StreamAttempt {
   ScheduledTask? _keepAlive;
   ScheduledTask? _sizePoll;
   bool _polling = false;
-  int _pollTicks = 0;
-  final _clock = Stopwatch()..start();
+  bool _statsEnabled = false;
+  bool _resetRates = true;
+  int _sampleEpoch = 0;
+  Duration? _nextStatsAt;
+  final Duration _startedAt;
   double? _firstFrameMs;
   ScheduledTask? _graceTimer;
   bool _requestedFrames = false;
@@ -362,29 +366,57 @@ final class StreamAttempt {
     _readVideoSize();
   }
 
+  /// The session owns eligibility, including suppressed ICE restart dips.
+  void setStatsEnabled(bool enabled) {
+    if (_statsEnabled == enabled) return;
+    _statsEnabled = enabled;
+    _resetRates = true;
+    _sampleEpoch++;
+    _nextStatsAt = enabled
+        ? scheduler.now + SignallingTiming.statsInterval
+        : null;
+  }
+
   void _readVideoSize() {
     final peer = _peer;
     if (!live || peer == null) return;
+    final now = scheduler.now;
+    final epoch = _sampleEpoch;
+    final resetRates = _resetRates;
+    _resetRates = false;
+    final publish = _statsEnabled && now >= _nextStatsAt!;
+    if (publish) _nextStatsAt = now + SignallingTiming.statsInterval;
     unawaited(() async {
       try {
-        final stats = await peer.readVideoStats();
+        final stats = await peer.readVideoStats(
+          sampleTime: _statsEnabled ? now - _startedAt : null,
+          publishStats: publish,
+          resetRates: resetRates,
+          timeToFirstFrameMs: _firstFrameMs,
+        );
         if (live && stats != null) {
           events.videoSize(VideoSize(stats.width, stats.height));
           if (stats.framesDecoded > 0) {
-            _firstFrameMs ??= _clock.elapsedMicroseconds / 1000;
+            _firstFrameMs ??=
+                (scheduler.now - _startedAt).inMicroseconds / 1000;
           }
-          if (_peerState == PeerState.connected && _pollTicks++ % 2 == 0) {
-            events.stats(
-              stats.sample?.copyWith(timeToFirstFrameMs: _firstFrameMs),
-            );
+          if (_statsEnabled && epoch == _sampleEpoch && publish) {
+            events.stats(stats.sample);
           }
         }
       } on Object {
-        // A failed stats read is retried on the next tick.
+        // A malformed or failed read must never stop size/first-frame polling.
       }
       if (live) {
+        var delay = _firstFrameMs == null
+            ? SignallingTiming.firstFrameInterval
+            : SignallingTiming.videoSizeInterval;
+        if (_statsEnabled) {
+          final untilSample = _nextStatsAt! - scheduler.now;
+          if (untilSample < delay) delay = untilSample;
+        }
         _sizePoll = scheduler.schedule(
-          SignallingTiming.videoSizeInterval,
+          delay.isNegative ? Duration.zero : delay,
           _readVideoSize,
         );
       }
@@ -583,7 +615,10 @@ final class StreamAttempt {
       );
     }
     _screenshots.clear();
-    // Listeners go first so that closing never reports a failure.
+    // live is already false: close normally before cancellation so that the
+    // channel can send its close frame without subscription teardown racing it.
+    final connection = _connection, peer = _peer;
+    if (connection != null) await connection.close(code: 1000);
     final socketSubscription = _socketSubscription;
     _socketSubscription = null;
     if (socketSubscription != null) await socketSubscription.cancel();
@@ -591,8 +626,6 @@ final class StreamAttempt {
       await subscription.cancel();
     }
     _subscriptions.clear();
-    final connection = _connection, peer = _peer;
-    if (connection != null) await connection.close();
     if (peer != null) await peer.close();
   }
 }

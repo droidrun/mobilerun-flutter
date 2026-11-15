@@ -134,7 +134,7 @@ final class DebugConnection implements SignallingConnection {
   }
 
   @override
-  Future<void> close() => inner.close();
+  Future<void> close({int code = 1000}) => inner.close(code: code);
 }
 
 final class DebugPeers implements PeerTransportFactory {
@@ -189,7 +189,17 @@ final class DebugPeer implements PeerTransport {
   @override
   void setAudioMuted(bool muted) => inner.setAudioMuted(muted);
   @override
-  Future<VideoStats?> readVideoStats() => inner.readVideoStats();
+  Future<VideoStats?> readVideoStats({
+    Duration? sampleTime,
+    bool publishStats = false,
+    bool resetRates = false,
+    double? timeToFirstFrameMs,
+  }) => inner.readVideoStats(
+    sampleTime: sampleTime,
+    publishStats: publishStats,
+    resetRates: resetRates,
+    timeToFirstFrameMs: timeToFirstFrameMs,
+  );
   @override
   Future<void> close() => inner.close();
 }

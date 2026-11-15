@@ -60,6 +60,7 @@ final class DeviceStreamSession {
        _scheduler = scheduler,
        _sessionId = (sessionId ?? _randomUuid)(),
        _muted = config.muted {
+    _stats = _ObservedStats(_updateSampling);
     _controller = ReconnectController(
       onRemount: _beginAttempt,
       onSnapshot: _onSnapshot,
@@ -79,7 +80,7 @@ final class DeviceStreamSession {
   final ValueNotifier<StreamStatus> _status = ValueNotifier(
     const StreamConnecting(),
   );
-  final ValueNotifier<StreamStats?> _stats = ValueNotifier(null);
+  late final _ObservedStats _stats;
   final ValueNotifier<VideoSize?> _videoSize = ValueNotifier(null);
   final ValueNotifier<MediaStream?> _videoStream = ValueNotifier(null);
 
@@ -100,7 +101,7 @@ final class DeviceStreamSession {
   ValueListenable<StreamStatus> get status => _status;
 
   /// Inbound video statistics sampled every second while connected.
-  /// Null while disconnected or closed; unsupported report fields stay null.
+  /// Null unless connected, visible and observed; unsupported fields stay null.
   ValueListenable<StreamStats?> get stats => _stats;
 
   /// The size of the decoded video, null until the first frame.
@@ -146,6 +147,7 @@ final class DeviceStreamSession {
     if (_closed || _visible == visible) return;
     _visible = visible;
     _attempt?.setVisible(visible);
+    _updateSampling();
     if (visible) wake();
   }
 
@@ -214,6 +216,7 @@ final class DeviceStreamSession {
       ReconnectStatus.reconnecting => StreamReconnecting(snapshot.attempt),
       ReconnectStatus.unavailable => const StreamUnavailable(),
     };
+    _updateSampling();
     scheduleMicrotask(_applyPendingTarget);
     if (snapshot.status == ReconnectStatus.unavailable) {
       // The retry budget is spent: nothing of the last attempt may linger, a
@@ -221,6 +224,16 @@ final class DeviceStreamSession {
       _retireAttempt();
       _clearVideo();
     }
+  }
+
+  void _updateSampling() {
+    final enabled =
+        !_closed &&
+        _visible &&
+        _stats.observed &&
+        _status.value is StreamConnected;
+    _attempt?.setStatsEnabled(enabled);
+    if (!enabled) _stats.value = null;
   }
 
   // Only initial discovery polls. Recovery mounts always use the latest cached
@@ -312,6 +325,7 @@ final class DeviceStreamSession {
         credentialsRejected: _requestCredentials,
       ),
     )..start();
+    _updateSampling();
   }
 
   static String _randomUuid() {
@@ -342,3 +356,24 @@ DeviceStreamSession createDeviceStreamSessionWithTransports({
   random: random,
   sessionId: sessionId,
 );
+
+// Eligibility follows observer changes without adding a public notifier API.
+final class _ObservedStats extends ValueNotifier<StreamStats?> {
+  _ObservedStats(this.changed) : super(null);
+  final VoidCallback changed;
+  bool get observed => hasListeners;
+
+  @override
+  void addListener(VoidCallback listener) {
+    final before = hasListeners;
+    super.addListener(listener);
+    if (!before) changed();
+  }
+
+  @override
+  void removeListener(VoidCallback listener) {
+    final before = hasListeners;
+    super.removeListener(listener);
+    if (before && !hasListeners) changed();
+  }
+}

@@ -323,6 +323,24 @@ void main() {
     expect(h.peer.controlChannel.sent, [encodeText('a')]);
   });
 
+  for (final (key, character, code) in [
+    (LogicalKeyboardKey.enter, '\n', 66),
+    (LogicalKeyboardKey.tab, '\t', 61),
+    (LogicalKeyboardKey.backspace, '\b', 67),
+    (LogicalKeyboardKey.escape, '\u001b', 111),
+  ]) {
+    testWidgets('native control character ${key.keyLabel} uses keycodes', (
+      tester,
+    ) async {
+      final controller = DeviceStreamController();
+      final h = await pumpView(tester, controller: controller);
+      controller.showKeyboard();
+      await tester.pump();
+      await tester.sendKeyEvent(key, character: character);
+      expect(h.peer.controlChannel.sent, press(code));
+    });
+  }
+
   testWidgets('scan-code-zero keys use logical fallback', (tester) async {
     final controller = DeviceStreamController();
     final h = await pumpView(tester, controller: controller);
@@ -364,7 +382,7 @@ void main() {
     expect(h.peer.controlChannel.sent, press(82));
   });
 
-  for (final character in ['v', '\u0016']) {
+  for (final character in <String?>[null, 'v', '\u0016']) {
     testWidgets('clipboard shortcut translates native character $character', (
       tester,
     ) async {

@@ -6,7 +6,6 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
-import 'dart:typed_data';
 import 'dart:ui' as ui;
 
 import 'package:flutter/gestures.dart';
@@ -50,6 +49,12 @@ class BenchmarkApp extends StatefulWidget {
   State<BenchmarkApp> createState() => _BenchmarkAppState();
 }
 
+class _VideoPixels {
+  const _VideoPixels(this.width, this.height, this.rgb);
+  final int width, height;
+  final Uint8List rgb;
+}
+
 class _BenchmarkAppState extends State<BenchmarkApp> {
   final _capture = GlobalKey();
   final _controller = DeviceStreamController();
@@ -57,6 +62,10 @@ class _BenchmarkAppState extends State<BenchmarkApp> {
   DebugTransports? _debug;
   TaskApprovalController? _approvals;
   bool _showApproval = false;
+  VoidCallback? _statsObserver;
+  bool get _connected =>
+      _session?.status.value is StreamConnected &&
+      _session?.stats.value != null;
   Future<void> wait(int ms) => Future<void>.delayed(Duration(milliseconds: ms));
   void check(bool ok, String message) {
     if (!ok) throw StateError(message);
@@ -145,67 +154,81 @@ class _BenchmarkAppState extends State<BenchmarkApp> {
     await wait(300);
   }
 
-  // GPU snapshot of the rendered texture, cropped to the central 70% of the
-  // upright video. Excludes status bar, toolbar and letterbox; no getStats,
-  // device screenshot or outgoing packet is treated as a pixel response.
-  Future<Uint8List> pixels() async {
+  // GPU snapshot cropped to upright video, at quarter video resolution.
+  Future<_VideoPixels> pixels() async {
     await WidgetsBinding.instance.endOfFrame;
     final boundary =
         _capture.currentContext!.findRenderObject()! as RenderRepaintBoundary;
-    const scale = .25;
+    final (g, box) = geometry;
+    final scale = g.videoWidth / g.rect.width * .25;
     final image = await boundary.toImage(pixelRatio: scale);
     try {
       final bytes = (await image.toByteData(
         format: ui.ImageByteFormat.rawRgba,
       ))!;
-      final (g, box) = geometry;
       final origin =
           box.localToGlobal(g.rect.topLeft) -
           boundary.localToGlobal(Offset.zero);
-      final region = Rect.fromLTWH(
-        origin.dx + g.rect.width * .15,
-        origin.dy + g.rect.height * .15,
-        g.rect.width * .7,
-        g.rect.height * .7,
-      );
-      final output = BytesBuilder();
-      for (
-        var y = (region.top * scale).ceil();
-        y < (region.bottom * scale).floor();
-        y++
-      ) {
-        for (
-          var x = (region.left * scale).ceil();
-          x < (region.right * scale).floor();
-          x++
-        ) {
-          final offset = (y * image.width + x) * 4;
-          output.add(bytes.buffer.asUint8List(offset, 3));
+      final left = (origin.dx * scale).ceil(), top = (origin.dy * scale).ceil();
+      final width = (g.rect.width * scale).floor(),
+          height = (g.rect.height * scale).floor();
+      final output = Uint8List(width * height * 3);
+      for (var y = 0; y < height; y++) {
+        for (var x = 0; x < width; x++) {
+          final offset = ((top + y) * image.width + left + x) * 4;
+          final target = (y * width + x) * 3;
+          output.setRange(
+            target,
+            target + 3,
+            bytes.buffer.asUint8List(offset, 3),
+          );
         }
       }
-      return output.takeBytes();
+      return _VideoPixels(width, height, output);
     } finally {
       image.dispose();
     }
   }
 
-  double difference(Uint8List a, Uint8List b) {
-    check(a.length == b.length && a.isNotEmpty, 'pixel geometry changed');
-    var changed = 0;
-    for (var i = 0; i < a.length; i += 3) {
-      if ((a[i] - b[i]).abs() +
-              (a[i + 1] - b[i + 1]).abs() +
-              (a[i + 2] - b[i + 2]).abs() >
-          60) {
-        changed++;
+  // Kotlin's maximum 4x4-tile mean absolute luma difference.
+  double difference(_VideoPixels a, _VideoPixels b, Rect region) {
+    check(a.width == b.width && a.height == b.height, 'pixel geometry changed');
+    final rect = region.intersect(
+      Rect.fromLTWH(0, 0, a.width.toDouble(), a.height.toDouble()),
+    );
+    double luma(Uint8List rgb, int pixel) =>
+        .2126 * rgb[pixel * 3] +
+        .7152 * rgb[pixel * 3 + 1] +
+        .0722 * rgb[pixel * 3 + 2];
+    var maximum = 0.0;
+    for (var y = rect.top.floor(); y < rect.bottom.ceil(); y += 4) {
+      for (var x = rect.left.floor(); x < rect.right.ceil(); x += 4) {
+        var total = 0.0, count = 0;
+        for (var py = y; py < y + 4 && py < rect.bottom.ceil(); py++) {
+          for (var px = x; px < x + 4 && px < rect.right.ceil(); px++) {
+            final pixel = py * a.width + px;
+            total += (luma(a.rgb, pixel) - luma(b.rgb, pixel)).abs();
+            count++;
+          }
+        }
+        final mean = total / count;
+        if (mean > maximum) maximum = mean;
       }
     }
-    return changed / (a.length / 3);
+    return maximum;
   }
 
-  double percentile(List<double> values, double p) {
+  double median(List<double> values) {
     final sorted = [...values]..sort();
-    return sorted[((sorted.length * p).ceil() - 1).clamp(0, sorted.length - 1)];
+    final mid = sorted.length ~/ 2;
+    return sorted.length.isEven
+        ? (sorted[mid - 1] + sorted[mid]) / 2
+        : sorted[mid];
+  }
+
+  double p90(List<double> values) {
+    final sorted = [...values]..sort();
+    return sorted[(sorted.length * .9).ceil() - 1];
   }
 
   String number(double? value) => value?.toStringAsFixed(1) ?? 'n/a';
@@ -224,72 +247,125 @@ class _BenchmarkAppState extends State<BenchmarkApp> {
         _session = session;
         _debug = debug;
       });
+      final samples = <StreamStats>[];
+      var collectSteady = false;
+      void sample() {
+        final value = session.stats.value;
+        if (collectSteady &&
+            value != null &&
+            value.bitrateKbps != null &&
+            samples.length < 10) {
+          samples.add(value);
+        }
+      }
+
+      _statsObserver = sample;
+      session.stats.addListener(sample);
       await WidgetsBinding.instance.endOfFrame;
       session.start();
       await until(
-        () =>
-            session.status.value is StreamConnected &&
-            session.stats.value?.timeToFirstFrameMs != null,
+        () => _connected && session.stats.value!.timeToFirstFrameMs != null,
         'first frame',
       );
-      final samples = <StreamStats>[];
-      void sample() {
-        final s = session.stats.value;
-        if (s != null) samples.add(s);
-      }
-
-      session.stats.addListener(sample);
-      await wait(7000);
-      session.stats.removeListener(sample);
-      check(samples.length >= 4, 'insufficient steady samples');
-      final latency = <double>[];
+      collectSteady = true;
+      await until(
+        () => samples.length == 10,
+        'ten fresh steady samples',
+        seconds: 20,
+      );
+      collectSteady = false;
+      final latency = <double>[], appLaunch = <double>[];
       for (var i = 0; i < 10; i++) {
         _controller.sendSystemKey(DeviceSystemKey.home);
         await wait(1500);
-        final before = await pixels();
-        check(before.toSet().length > 8, 'rendered texture snapshot is blank');
-        await wait(150);
-        check(
-          difference(before, await pixels()) < .02,
-          'baseline video is not settled',
-        );
         final (g, box) = geometry;
-        // Existing input fixture's Settings launcher icon on the test device.
+        final videoTap = Offset(
+          g.videoWidth * 73 / 488,
+          g.videoHeight * 966 / 1080,
+        );
         final target = box.localToGlobal(
           Offset(
             g.rect.left + g.rect.width * 73 / 488,
             g.rect.top + g.rect.height * 966 / 1080,
           ),
         );
+        var before = await pixels();
+        check(
+          before.rgb.toSet().length > 8,
+          'rendered texture snapshot is blank',
+        );
+        final rx = 32 / g.videoWidth * before.width,
+            ry = 32 / g.videoHeight * before.height;
+        final cx = videoTap.dx / g.videoWidth * before.width,
+            cy = videoTap.dy / g.videoHeight * before.height;
+        final tapRegion = Rect.fromLTRB(
+          cx - rx,
+          cy - ry,
+          cx + rx + 1,
+          cy + ry + 1,
+        );
+        final launchRegion = Rect.fromLTRB(
+          before.width * .2,
+          before.height * .2,
+          before.width * .8,
+          before.height * .6,
+        );
+        final settle = Stopwatch()..start();
+        var stable = 0;
+        while (stable < 4) {
+          check(
+            settle.elapsedMilliseconds < 10000,
+            'tap baseline is not settled',
+          );
+          await wait(100);
+          final next = await pixels();
+          stable = difference(before, next, tapRegion) < 1 ? stable + 1 : 0;
+          before = next;
+        }
         final clock = Stopwatch()..start();
         tap(target);
-        var changed = false;
-        while (clock.elapsedMilliseconds < 5000) {
+        double? tapMs, launchMs;
+        while (clock.elapsedMilliseconds < 10000 &&
+            (tapMs == null || launchMs == null)) {
           final after = await pixels();
-          if (difference(before, after) >= .02) {
-            changed = true;
-            break;
+          final elapsed = clock.elapsedMicroseconds / 1000;
+          if (difference(before, after, tapRegion) >= 4) tapMs ??= elapsed;
+          if (difference(before, after, launchRegion) >= 4) {
+            launchMs ??= elapsed;
           }
           await wait(8);
         }
-        check(changed, 'tap did not change rendered pixels');
-        latency.add(clock.elapsedMicroseconds / 1000);
-        log('LATENCY run=$run sample=${i + 1} ms=${number(latency.last)}');
+        check(
+          tapMs != null && launchMs != null,
+          'tap/app launch did not change rendered pixels',
+        );
+        latency.add(tapMs!);
+        appLaunch.add(launchMs!);
+        log(
+          'LATENCY run=$run sample=${i + 1} tapMs=${number(tapMs)} appLaunchMs=${number(launchMs)}',
+        );
         await wait(500);
       }
-      double? median(double? Function(StreamStats) field) {
+      double? mean(double? Function(StreamStats) field) {
         final values = samples.map(field).whereType<double>().toList();
-        return values.isEmpty ? null : percentile(values, .5);
+        return values.isEmpty
+            ? null
+            : values.reduce((a, b) => a + b) / values.length;
       }
 
-      final s = session.stats.value!;
+      final last = samples.last;
+      final candidates =
+          last.localCandidateType == null || last.remoteCandidateType == null
+          ? 'n/a'
+          : '${last.localCandidateType}/${last.remoteCandidateType}';
       rows.add(
-        '| $run | ${number(s.timeToFirstFrameMs)} | ${number(median((s) => s.fps))} | ${number(median((s) => s.bitrateKbps))} | ${number(median((s) => s.rttMs))} | ${s.candidateType ?? 'n/a'} | ${number(percentile(latency, .5))} | ${number(percentile(latency, .9))} |',
+        '| $run | ${number(last.timeToFirstFrameMs)} | ${number(mean((s) => s.fps))} | ${number(mean((s) => s.bitrateKbps))} | ${number(mean((s) => s.rttMs))} | $candidates | ${number(median(latency))} | ${number(p90(latency))} | ${number(median(appLaunch))} | ${number(p90(appLaunch))} |',
       );
       await _writeResults(rows);
       log('RUN $run complete');
       if (run < 5) {
         await session.close();
+        session.stats.removeListener(sample);
         await wait(1000);
       }
     }
@@ -301,15 +377,17 @@ class _BenchmarkAppState extends State<BenchmarkApp> {
       File('${widget.directory.path}/benchmark-results.md').writeAsString(
         '''# Stream benchmark
 
-Five connections, seven seconds of steady stats and ten input samples per connection.
-TTFF is attempt start to the first observed decoded frame (500 ms polling resolution).
-Latency is a tap on the launcher's Settings icon to a change in at least 2% of
-pixels in the central 70% of the rendered video, captured with a GPU snapshot
-at quarter logical resolution. Baselines must be settled and nonblank.
-Times include snapshot/readback overhead; they are observed upper bounds.
+Five connections; arithmetic means of ten fresh one-second steady stats samples each.
+TTFF is attempt start to the first observed decoded frame (50 ms polling interval).
+Tap latency uses a ~64x64 upright-video-pixel region around the input point.
+App launch uses a separate central region (20–80% width, 20–60% height).
+Both use maximum 4x4-tile mean absolute luma difference >=4, after four
+stable tap-region snapshots (<1 difference). GPU snapshots use quarter video resolution.
+Times include GPU snapshot/readback overhead and are observed upper bounds.
+Medians average the middle two of ten samples; p90 uses nearest rank.
 
-| Run | TTFF ms | FPS | Kbit/s | RTT ms | Local/remote | Input median ms | Input p90 ms |
-| --- | --- | --- | --- | --- | --- | --- | --- |
+| Run | TTFF ms | Mean FPS | Mean Kbit/s | Mean RTT ms | Local/remote | Tap median ms | Tap p90 ms | App launch median ms | App launch p90 ms |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 ${rows.join('\n')}
 ''',
       );
@@ -319,7 +397,7 @@ ${rows.join('\n')}
     int? previous;
     while (clock.elapsed.inSeconds < 60) {
       final frames = await _debug!.framesDecoded();
-      if (_session!.status.value is StreamConnected &&
+      if (_connected &&
           frames != null &&
           previous != null &&
           frames > previous) {
@@ -370,12 +448,7 @@ ${rows.join('\n')}
       'socket close',
     );
     await host('shot phone-reconnecting');
-    await until(
-      () =>
-          session.status.value is StreamConnected &&
-          session.stats.value != null,
-      'socket reconnect',
-    );
+    await until(() => _connected, 'socket reconnect');
     _debug!.signalling.failConnections = true;
     _debug!.killSocket();
     for (var i = 0; i < 12 && session.status.value is! StreamUnavailable; i++) {
@@ -389,12 +462,7 @@ ${rows.join('\n')}
     await host('phone');
     _debug!.signalling.failConnections = false;
     await tapLabel('Retry');
-    await until(
-      () =>
-          session.status.value is StreamConnected &&
-          session.stats.value != null,
-      'retry',
-    );
+    await until(() => _connected, 'retry');
     var decided = false, fetches = 0;
     final approvals = TaskApprovalController(
       taskId: 'benchmark',
@@ -436,21 +504,11 @@ ${rows.join('\n')}
     await host('shot tablet-connected');
     await host('phone');
     await host('background');
-    await until(
-      () =>
-          session.status.value is StreamConnected &&
-          session.stats.value != null,
-      'foreground',
-    );
+    await until(() => _connected, 'foreground');
     await _freshVideo('foreground');
     await host('network');
     session.wake();
-    await until(
-      () =>
-          session.status.value is StreamConnected &&
-          session.stats.value != null,
-      'network return',
-    );
+    await until(() => _connected, 'network return');
     await _freshVideo('network return');
     await host('shot phone-network-recovered');
     await host('soak-start');
@@ -459,18 +517,12 @@ ${rows.join('\n')}
     var interruptions = 0, longestRecoveryMs = 0, nextProgress = 60;
     while (soak.elapsed < const Duration(minutes: 10)) {
       await wait(5000);
-      if (session.status.value is! StreamConnected ||
-          session.stats.value == null) {
+      if (!_connected) {
         interruptions++;
         final recovery = Stopwatch()..start();
         log('SOAK interruption $interruptions');
         await (() async {
-          await until(
-            () =>
-                session.status.value is StreamConnected &&
-                session.stats.value != null,
-            'automatic soak recovery',
-          );
+          await until(() => _connected, 'automatic soak recovery');
           await _freshVideo('automatic soak recovery');
         })().timeout(const Duration(seconds: 60));
         final elapsed = recovery.elapsedMilliseconds;
@@ -496,6 +548,7 @@ ${rows.join('\n')}
       'Connection/stats checked every 5s; automatic recovery with fresh video must finish within 60s of detection.\n',
     );
     await session.close();
+    session.stats.removeListener(_statsObserver!);
     check(
       session.stats.value == null &&
           session.videoSize.value == null &&

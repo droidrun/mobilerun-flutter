@@ -1,10 +1,13 @@
 // Copyright 2026 Mobilerun
 // SPDX-License-Identifier: Apache-2.0
 
+import 'package:flutter/foundation.dart' show internal;
+
 /// An immutable inbound-video sample. Unsupported fields and the first sample's
 /// counter rates are null. Reconnecting resets rates and first-frame timing.
 final class StreamStats {
-  /// Creates a sample. Optional named fields allow compatible extensions.
+  /// SDK-created sample. Optional named fields allow compatible extensions.
+  @internal
   const StreamStats({
     this.fps,
     this.width,
@@ -64,45 +67,7 @@ final class StreamStats {
   /// Attempt start to first observed decoded frame, in milliseconds.
   final double? timeToFirstFrameMs;
 
-  /// Selected local/remote types; null unless both are available.
-  String? get candidateType =>
-      localCandidateType == null || remoteCandidateType == null
-      ? null
-      : '$localCandidateType/$remoteCandidateType';
-
-  /// Copies this sample with non-null overrides, retaining omitted fields.
-  StreamStats copyWith({
-    double? fps,
-    int? width,
-    int? height,
-    String? codec,
-    double? bitrateKbps,
-    double? rttMs,
-    double? jitterBufferDelayMs,
-    int? packetsLost,
-    int? framesDropped,
-    int? freezeCount,
-    double? decodeTimeMs,
-    String? localCandidateType,
-    String? remoteCandidateType,
-    double? timeToFirstFrameMs,
-  }) => StreamStats(
-    fps: fps ?? this.fps,
-    width: width ?? this.width,
-    height: height ?? this.height,
-    codec: codec ?? this.codec,
-    bitrateKbps: bitrateKbps ?? this.bitrateKbps,
-    rttMs: rttMs ?? this.rttMs,
-    jitterBufferDelayMs: jitterBufferDelayMs ?? this.jitterBufferDelayMs,
-    packetsLost: packetsLost ?? this.packetsLost,
-    framesDropped: framesDropped ?? this.framesDropped,
-    freezeCount: freezeCount ?? this.freezeCount,
-    decodeTimeMs: decodeTimeMs ?? this.decodeTimeMs,
-    localCandidateType: localCandidateType ?? this.localCandidateType,
-    remoteCandidateType: remoteCandidateType ?? this.remoteCandidateType,
-    timeToFirstFrameMs: timeToFirstFrameMs ?? this.timeToFirstFrameMs,
-  );
-
+  // ValueNotifier deduplicates equal consecutive samples using these values.
   @override
   bool operator ==(Object other) =>
       identical(this, other) ||

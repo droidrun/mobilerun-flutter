@@ -28,6 +28,12 @@ abstract final class SignallingTiming {
   /// How long a screenshot request waits for its reply.
   static const Duration screenshotTimeout = Duration(seconds: 30);
 
+  /// First decoded frame observation interval.
+  static const Duration firstFrameInterval = Duration(milliseconds: 50);
+
+  /// Inbound statistics publishing interval and rate window.
+  static const Duration statsInterval = Duration(seconds: 1);
+
   /// How often the decoded video size is read while a stream is up. An SDK
   /// choice, not part of the conformance timings.
   static const Duration videoSizeInterval = Duration(milliseconds: 500);

@@ -199,6 +199,7 @@ abstract interface class ScheduledTask
 
 abstract interface class Scheduler
   Scheduler()
+  abstract Duration get now
   abstract ScheduledTask schedule(Duration delay, void Function() callback)
 
 final class ScreenshotErrorMessage extends ServerMessage
@@ -244,12 +245,14 @@ final class SignallingStartupException implements Exception
   String toString()
 
 abstract final class SignallingTiming
+  static const Duration firstFrameInterval
   static const Duration iceRestartGrace
   static const Duration keepAliveInterval
   static const int requestFrameCount
   static const Duration requestFrameInterval
   static const Duration rtcConfigTimeout
   static const Duration screenshotTimeout
+  static const Duration statsInterval
   static const Duration videoSizeInterval
   static const Duration wsOpenTimeout
 
@@ -340,9 +343,7 @@ final class StreamSessionException implements Exception
 final class StreamStats
   bool ==(Object other)
   final double? bitrateKbps
-  String? get candidateType
   final String? codec
-  StreamStats copyWith({double? fps, int? width, int? height, String? codec, double? bitrateKbps, double? rttMs, double? jitterBufferDelayMs, int? packetsLost, int? framesDropped, int? freezeCount, double? decodeTimeMs, String? localCandidateType, String? remoteCandidateType, double? timeToFirstFrameMs})
   final double? decodeTimeMs
   final double? fps
   final int? framesDropped
@@ -351,7 +352,6 @@ final class StreamStats
   final int? height
   final double? jitterBufferDelayMs
   final String? localCandidateType
-  const StreamStats({double? fps, int? width, int? height, String? codec, double? bitrateKbps, double? rttMs, double? jitterBufferDelayMs, int? packetsLost, int? framesDropped, int? freezeCount, double? decodeTimeMs, String? localCandidateType, String? remoteCandidateType, double? timeToFirstFrameMs})
   final int? packetsLost
   final String? remoteCandidateType
   final double? rttMs
@@ -461,6 +461,7 @@ final class TaskApprovalState
 
 final class TimerScheduler implements Scheduler
   const TimerScheduler()
+  Duration get now
   ScheduledTask schedule(Duration delay, void Function() callback)
 
 final class VideoSize

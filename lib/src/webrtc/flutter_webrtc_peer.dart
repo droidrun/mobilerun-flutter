@@ -183,7 +183,6 @@ final class _FlutterWebRtcPeer implements PeerTransport {
 
   final RTCPeerConnection _pc;
   final _statsParser = StreamStatsParser();
-  final _clock = Stopwatch()..start();
   bool _muted;
   MediaStreamTrack? _audioTrack;
   MediaStream? _fallbackStream;
@@ -294,34 +293,24 @@ final class _FlutterWebRtcPeer implements PeerTransport {
   }
 
   @override
-  Future<VideoStats?> readVideoStats() async {
-    final reports = await _pc.getStats();
-    final sample = _statsParser.parse([
-      for (final report in reports)
-        {
-          ...report.values.cast<String, Object?>(),
-          'id': report.id,
-          'type': report.type,
-        },
-    ], _clock.elapsedMicroseconds / 1000);
-    for (final report in reports) {
-      if (report.type != 'inbound-rtp') continue;
-      final values = report.values;
-      if ((values['kind'] ?? values['mediaType']) != 'video') continue;
-      final width = values['frameWidth'];
-      final height = values['frameHeight'];
-      if (width is num && height is num && width > 0 && height > 0) {
-        final decoded = values['framesDecoded'];
-        return VideoStats(
-          width: width.toInt(),
-          height: height.toInt(),
-          framesDecoded: decoded is num ? decoded.toInt() : 0,
-          sample: sample,
-        );
-      }
-    }
-    return null;
-  }
+  Future<VideoStats?> readVideoStats({
+    Duration? sampleTime,
+    bool publishStats = false,
+    bool resetRates = false,
+    double? timeToFirstFrameMs,
+  }) async => _statsParser.read(
+    (await _pc.getStats()).map(
+      (report) => {
+        ...report.values.cast<String, Object?>(),
+        'id': report.id,
+        'type': report.type,
+      },
+    ),
+    sampleTime: sampleTime,
+    publishStats: publishStats,
+    resetRates: resetRates,
+    timeToFirstFrameMs: timeToFirstFrameMs,
+  );
 
   @override
   Future<void> close() async {

@@ -23,34 +23,28 @@
       {
         "id": "r2",
         "type": "codec",
-        "transportId": "r0",
         "mimeType": "video/H265"
       },
       {
         "id": "r0",
         "type": "transport",
-        "bytesReceived": 120107,
         "selectedCandidatePairId": "r151"
       },
       {
         "id": "r151",
         "type": "candidate-pair",
-        "transportId": "r0",
         "localCandidateId": "r136",
         "remoteCandidateId": "r150",
-        "bytesReceived": 19065,
         "currentRoundTripTime": 0.019
       },
       {
         "id": "r136",
         "type": "local-candidate",
-        "transportId": "r0",
         "candidateType": "relay"
       },
       {
         "id": "r150",
         "type": "remote-candidate",
-        "transportId": "r0",
         "candidateType": "prflx"
       }
     ]
@@ -79,34 +73,28 @@
       {
         "id": "r2",
         "type": "codec",
-        "transportId": "r0",
         "mimeType": "video/H265"
       },
       {
         "id": "r0",
         "type": "transport",
-        "bytesReceived": 129884,
         "selectedCandidatePairId": "r151"
       },
       {
         "id": "r151",
         "type": "candidate-pair",
-        "transportId": "r0",
         "localCandidateId": "r136",
         "remoteCandidateId": "r150",
-        "bytesReceived": 28842,
         "currentRoundTripTime": 0.019
       },
       {
         "id": "r136",
         "type": "local-candidate",
-        "transportId": "r0",
         "candidateType": "relay"
       },
       {
         "id": "r150",
         "type": "remote-candidate",
-        "transportId": "r0",
         "candidateType": "prflx"
       }
     ]
