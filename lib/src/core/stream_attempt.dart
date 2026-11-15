@@ -14,6 +14,7 @@ import 'stream_config.dart';
 import 'stream_credentials.dart';
 import 'stream_exception.dart';
 import 'stream_status.dart';
+import 'stream_stats.dart';
 import 'stream_transports.dart';
 
 /// What an attempt reports to its session. Callbacks fire only while the
@@ -27,7 +28,11 @@ final class StreamAttemptEvents {
     required this.videoStream,
     required this.videoSize,
     required this.credentialsRejected,
+    required this.stats,
   });
+
+  /// One-second sample, null on a disconnect.
+  final void Function(StreamStats? stats) stats;
 
   /// The peer connection reached connected.
   final void Function() connected;
@@ -97,6 +102,10 @@ final class StreamAttempt {
   final List<ScheduledTask> _timers = [];
   ScheduledTask? _keepAlive;
   ScheduledTask? _sizePoll;
+  bool _polling = false;
+  int _pollTicks = 0;
+  final _clock = Stopwatch()..start();
+  double? _firstFrameMs;
   ScheduledTask? _graceTimer;
   bool _requestedFrames = false;
   bool _visible = true;
@@ -348,6 +357,12 @@ final class StreamAttempt {
   }
 
   void _pollVideoSize() {
+    if (_polling) return;
+    _polling = true;
+    _readVideoSize();
+  }
+
+  void _readVideoSize() {
     final peer = _peer;
     if (!live || peer == null) return;
     unawaited(() async {
@@ -355,6 +370,14 @@ final class StreamAttempt {
         final stats = await peer.readVideoStats();
         if (live && stats != null) {
           events.videoSize(VideoSize(stats.width, stats.height));
+          if (stats.framesDecoded > 0) {
+            _firstFrameMs ??= _clock.elapsedMicroseconds / 1000;
+          }
+          if (_peerState == PeerState.connected && _pollTicks++ % 2 == 0) {
+            events.stats(
+              stats.sample?.copyWith(timeToFirstFrameMs: _firstFrameMs),
+            );
+          }
         }
       } on Object {
         // A failed stats read is retried on the next tick.
@@ -362,7 +385,7 @@ final class StreamAttempt {
       if (live) {
         _sizePoll = scheduler.schedule(
           SignallingTiming.videoSizeInterval,
-          _pollVideoSize,
+          _readVideoSize,
         );
       }
     }());
@@ -390,6 +413,7 @@ final class StreamAttempt {
       _suppressedDip = true;
       return;
     }
+    events.stats(null);
     events.disconnected();
   }
 
@@ -399,6 +423,7 @@ final class StreamAttempt {
       _graceTimer = null;
       if (!live) return;
       if (_suppressedDip && _peerState != PeerState.connected) {
+        events.stats(null);
         events.disconnected();
       }
       _suppressedDip = false;
@@ -535,9 +560,13 @@ final class StreamAttempt {
 
   // ---- teardown -----------------------------------------------------------
 
+  Future<void>? _disposing;
+
   /// Releases the socket, peer connection, timers and subscriptions, and
-  /// fails pending screenshots. Never reports a failure.
-  Future<void> dispose() async {
+  /// fails pending screenshots. Concurrent callers await the same teardown.
+  Future<void> dispose() => _disposing ??= _dispose();
+
+  Future<void> _dispose() async {
     if (!live) return;
     live = false;
     _keepAlive?.cancel();
@@ -557,13 +586,14 @@ final class StreamAttempt {
     // Listeners go first so that closing never reports a failure.
     final socketSubscription = _socketSubscription;
     _socketSubscription = null;
-    await socketSubscription?.cancel();
+    if (socketSubscription != null) await socketSubscription.cancel();
     for (final subscription in _subscriptions) {
       await subscription.cancel();
     }
     _subscriptions.clear();
-    await _connection?.close();
-    await _peer?.close();
+    final connection = _connection, peer = _peer;
+    if (connection != null) await connection.close();
+    if (peer != null) await peer.close();
   }
 }
 

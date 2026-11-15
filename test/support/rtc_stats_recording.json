@@ -1,0 +1,114 @@
+[
+  {
+    "elapsedMs": 200.0,
+    "reports": [
+      {
+        "id": "r272",
+        "type": "inbound-rtp",
+        "kind": "video",
+        "transportId": "r0",
+        "codecId": "r2",
+        "packetsLost": 0,
+        "bytesReceived": 110072,
+        "jitterBufferDelay": 0.097158,
+        "jitterBufferEmittedCount": 127,
+        "frameWidth": 488,
+        "frameHeight": 1080,
+        "framesPerSecond": 60,
+        "framesDecoded": 125,
+        "framesDropped": 2,
+        "totalDecodeTime": 0.574,
+        "freezeCount": 0
+      },
+      {
+        "id": "r2",
+        "type": "codec",
+        "transportId": "r0",
+        "mimeType": "video/H265"
+      },
+      {
+        "id": "r0",
+        "type": "transport",
+        "bytesReceived": 120107,
+        "selectedCandidatePairId": "r151"
+      },
+      {
+        "id": "r151",
+        "type": "candidate-pair",
+        "transportId": "r0",
+        "localCandidateId": "r136",
+        "remoteCandidateId": "r150",
+        "bytesReceived": 19065,
+        "currentRoundTripTime": 0.019
+      },
+      {
+        "id": "r136",
+        "type": "local-candidate",
+        "transportId": "r0",
+        "candidateType": "relay"
+      },
+      {
+        "id": "r150",
+        "type": "remote-candidate",
+        "transportId": "r0",
+        "candidateType": "prflx"
+      }
+    ]
+  },
+  {
+    "elapsedMs": 1216.954,
+    "reports": [
+      {
+        "id": "r272",
+        "type": "inbound-rtp",
+        "kind": "video",
+        "transportId": "r0",
+        "codecId": "r2",
+        "packetsLost": 0,
+        "bytesReceived": 116660,
+        "jitterBufferDelay": 0.10666099999999999,
+        "jitterBufferEmittedCount": 188,
+        "frameWidth": 488,
+        "frameHeight": 1080,
+        "framesPerSecond": 59,
+        "framesDecoded": 185,
+        "framesDropped": 2,
+        "totalDecodeTime": 0.836,
+        "freezeCount": 0
+      },
+      {
+        "id": "r2",
+        "type": "codec",
+        "transportId": "r0",
+        "mimeType": "video/H265"
+      },
+      {
+        "id": "r0",
+        "type": "transport",
+        "bytesReceived": 129884,
+        "selectedCandidatePairId": "r151"
+      },
+      {
+        "id": "r151",
+        "type": "candidate-pair",
+        "transportId": "r0",
+        "localCandidateId": "r136",
+        "remoteCandidateId": "r150",
+        "bytesReceived": 28842,
+        "currentRoundTripTime": 0.019
+      },
+      {
+        "id": "r136",
+        "type": "local-candidate",
+        "transportId": "r0",
+        "candidateType": "relay"
+      },
+      {
+        "id": "r150",
+        "type": "remote-candidate",
+        "transportId": "r0",
+        "candidateType": "prflx"
+      }
+    ]
+  }
+]

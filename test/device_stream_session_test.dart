@@ -865,6 +865,26 @@ void main() {
   });
 
   group('close()', () {
+    test('awaits teardown already started by failure and remount', () async {
+      final h = Harness();
+      await h.connect();
+      final oldPeer = h.peer;
+      final gate = oldPeer.closeGate = Completer<void>();
+      h.ws.serverClose();
+      await pump();
+      h.session.wake();
+      await pump();
+      var closed = false;
+      final closing = h.session.close().then((_) => closed = true);
+      await pump();
+      expect(closed, isFalse);
+      expect(oldPeer.closed, isFalse);
+      gate.complete();
+      await closing;
+      expect(oldPeer.closed, isTrue);
+      expect(h.scheduler.pendingTimers, 0);
+    });
+
     test('releases peer, socket, channels and every timer', () async {
       final h = Harness();
       await h.connect();

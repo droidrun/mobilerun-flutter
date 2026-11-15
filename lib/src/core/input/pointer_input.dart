@@ -21,19 +21,25 @@ final class _Pointer {
 
 /// Stable slots and one MOVE per frame per finger. Call serially on the UI thread.
 final class PointerInput {
-  PointerInput(this.send);
+  PointerInput(this.send, {this.sendHover});
   final void Function(Uint8List) send;
-  final _active = <int, _Pointer>{};
+  final void Function(Uint8List)? sendHover;
+  final _active = <(bool, int), _Pointer>{};
 
-  bool contains(int id) => _active.containsKey(id);
+  (bool, int) _identity(int id, bool mouse) => (mouse, mouse ? 0 : id);
+  bool contains(int id, {bool mouse = false}) =>
+      _active.containsKey(_identity(id, mouse));
 
   bool down(
     int id,
     Offset position,
     InputGeometry geometry, {
     bool mouse = false,
+    int button = 0,
   }) {
-    if (_active.containsKey(id)) return false;
+    if (button != 0) return false;
+    final identity = _identity(id, mouse);
+    if (_active.containsKey(identity)) return false;
     final point = geometry.map(position);
     if (point == null) return false;
     final used = _active.values.map((p) => p.slot).toSet();
@@ -41,14 +47,34 @@ final class PointerInput {
     final slots = free.where((i) => !used.contains(i));
     if (slots.isEmpty) return false;
     final pointer = _Pointer(slots.first, point, geometry);
-    _active[id] = pointer;
+    _active[identity] = pointer;
     _emit(AndroidMotionEvent.actionDown, pointer);
     return true;
   }
 
-  void move(int id, Offset position) {
-    final pointer = _active[id];
-    if (pointer == null) return;
+  void move(
+    int id,
+    Offset position, {
+    bool mouse = false,
+    InputGeometry? geometry,
+    int buttons = 0,
+  }) {
+    final pointer = _active[_identity(id, mouse)];
+    if (pointer == null) {
+      final point = geometry?.map(position);
+      if (mouse && point != null) {
+        sendHover?.call(
+          encodeHover(
+            videoWidth: geometry!.videoWidth,
+            videoHeight: geometry.videoHeight,
+            x: point.dx,
+            y: point.dy,
+            buttons: buttons,
+          ),
+        );
+      }
+      return;
+    }
     final point = pointer.geometry.map(position);
     if (point == null) return;
     pointer.point = point;
@@ -63,8 +89,14 @@ final class PointerInput {
     }
   }
 
-  void up(int id, {bool cancelled = false}) {
-    final pointer = _active.remove(id);
+  void up(
+    int id, {
+    bool cancelled = false,
+    bool mouse = false,
+    int button = 0,
+  }) {
+    if (!cancelled && button != 0) return;
+    final pointer = _active.remove(_identity(id, mouse));
     if (pointer != null) {
       _emit(
         cancelled
@@ -77,7 +109,7 @@ final class PointerInput {
 
   void cancel() {
     for (final id in _active.keys.toList()) {
-      up(id, cancelled: true);
+      up(id.$2, mouse: id.$1, cancelled: true);
     }
   }
 

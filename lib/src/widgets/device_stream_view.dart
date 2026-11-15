@@ -99,6 +99,7 @@ class _DeviceStreamViewState extends State<DeviceStreamView> {
   bool _keyboardRequested = false;
   int? _moveFrame;
   InputGeometry? _geometry;
+  final _keys = KeyInput();
   final _keyCharacters = <PhysicalKeyboardKey, String?>{};
   Offset? _panAnchor;
 
@@ -151,6 +152,7 @@ class _DeviceStreamViewState extends State<DeviceStreamView> {
       _pointers.cancel();
       _textInput.close();
       _keyCharacters.clear();
+      _keys.clear();
       _keyboardRequested = false;
       _panAnchor = null;
     }
@@ -193,6 +195,7 @@ class _DeviceStreamViewState extends State<DeviceStreamView> {
       _pointers.cancel();
       _textInput.close();
       _keyCharacters.clear();
+      _keys.clear();
       _keyboardRequested = false;
     }
   }
@@ -225,11 +228,11 @@ class _DeviceStreamViewState extends State<DeviceStreamView> {
 
   void _move(PointerMoveEvent event) {
     if (!widget.hasControl) return;
-    if (_isMouse(event) && !_pointers.contains(event.pointer)) {
+    if (_isMouse(event) && !_pointers.contains(event.pointer, mouse: true)) {
       _hover(event);
       return;
     }
-    _pointers.move(event.pointer, event.localPosition);
+    _pointers.move(event.pointer, event.localPosition, mouse: _isMouse(event));
     _moveFrame ??= SchedulerBinding.instance.scheduleFrameCallback((_) {
       _moveFrame = null;
       if (mounted && widget.hasControl) _pointers.flushMoves();
@@ -255,19 +258,13 @@ class _DeviceStreamViewState extends State<DeviceStreamView> {
   void _scroll(Offset position, Offset delta, {int buttons = 0}) {
     if (!widget.hasControl) return;
     final geometry = _geometry;
-    final point = geometry?.map(position);
-    if (point == null) return;
-    final ticks = scrollTicks(delta);
-    _send(
-      encodeScroll(
-        videoWidth: geometry!.videoWidth,
-        videoHeight: geometry.videoHeight,
-        x: point.dx,
-        y: point.dy,
-        hscrollTicks: ticks.dx,
-        vscrollTicks: ticks.dy,
-        buttons: buttons,
-      ),
+    if (geometry == null) return;
+    routeScroll(
+      geometry: geometry,
+      position: position,
+      ticks: scrollTicks(delta),
+      send: _send,
+      buttons: buttons,
     );
   }
 
@@ -300,7 +297,7 @@ class _DeviceStreamViewState extends State<DeviceStreamView> {
     final text = down
         ? (_keyCharacters[event.physicalKey] = event.character)
         : _keyCharacters.remove(event.physicalKey);
-    final route = routeKey(
+    final route = _keys.route(
       code: code,
       text: text,
       down: down,
@@ -373,9 +370,13 @@ class _DeviceStreamViewState extends State<DeviceStreamView> {
               behavior: HitTestBehavior.opaque,
               onPointerDown: _down,
               onPointerMove: _move,
-              onPointerUp: (event) => _pointers.up(event.pointer),
-              onPointerCancel: (event) =>
-                  _pointers.up(event.pointer, cancelled: true),
+              onPointerUp: (event) =>
+                  _pointers.up(event.pointer, mouse: _isMouse(event)),
+              onPointerCancel: (event) => _pointers.up(
+                event.pointer,
+                mouse: _isMouse(event),
+                cancelled: true,
+              ),
               onPointerHover: _hover,
               onPointerSignal: _signal,
               onPointerPanZoomStart: (event) =>

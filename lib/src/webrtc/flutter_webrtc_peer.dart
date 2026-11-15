@@ -7,6 +7,7 @@ import 'dart:typed_data';
 import 'package:flutter_webrtc/flutter_webrtc.dart';
 
 import '../core/stream_config.dart';
+import 'stream_stats_parser.dart';
 import '../core/stream_transports.dart';
 import '../core/video_codecs.dart';
 import '../protocol/stream_spec.dart';
@@ -181,6 +182,8 @@ final class _FlutterWebRtcPeer implements PeerTransport {
   }
 
   final RTCPeerConnection _pc;
+  final _statsParser = StreamStatsParser();
+  final _clock = Stopwatch()..start();
   bool _muted;
   MediaStreamTrack? _audioTrack;
   MediaStream? _fallbackStream;
@@ -293,6 +296,14 @@ final class _FlutterWebRtcPeer implements PeerTransport {
   @override
   Future<VideoStats?> readVideoStats() async {
     final reports = await _pc.getStats();
+    final sample = _statsParser.parse([
+      for (final report in reports)
+        {
+          ...report.values.cast<String, Object?>(),
+          'id': report.id,
+          'type': report.type,
+        },
+    ], _clock.elapsedMicroseconds / 1000);
     for (final report in reports) {
       if (report.type != 'inbound-rtp') continue;
       final values = report.values;
@@ -305,6 +316,7 @@ final class _FlutterWebRtcPeer implements PeerTransport {
           width: width.toInt(),
           height: height.toInt(),
           framesDecoded: decoded is num ? decoded.toInt() : 0,
+          sample: sample,
         );
       }
     }

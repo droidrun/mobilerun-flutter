@@ -10,6 +10,8 @@ import 'package:mobilerun_flutter/src/core/input/physical_key_codes.dart';
 import 'package:mobilerun_flutter/src/core/input/scroll_input.dart';
 
 void main() {
+  late KeyInput keys;
+  setUp(() => keys = KeyInput());
   for (final code in keyboardCodeMap.keys) {
     test('USB HID mapping covers fixture $code', () {
       final entry = physicalKeyCodes.entries.singleWhere(
@@ -27,16 +29,16 @@ void main() {
   test('printable characters send text without key-up', () {
     final sent = <Uint8List>[];
     for (final down in [true, false]) {
-      routeKey(code: 'KeyA', text: 'é', down: down, send: sent.add);
+      keys.route(code: 'KeyA', text: 'é', down: down, send: sent.add);
     }
     expect(sent, [encodeText('é')]);
   });
   test('paste precedes control injection, menu sends a complete press', () {
     final sent = <Uint8List>[];
     expect(
-      routeKey(
+      keys.route(
         code: 'KeyV',
-        text: null,
+        text: 'v',
         down: true,
         control: true,
         send: sent.add,
@@ -45,9 +47,9 @@ void main() {
     );
     expect(sent, isEmpty);
     expect(
-      routeKey(
+      keys.route(
         code: 'KeyV',
-        text: '\u0016',
+        text: 'V',
         down: true,
         control: true,
         send: sent.add,
@@ -55,7 +57,7 @@ void main() {
       KeyRoute.paste,
     );
     expect(sent, isEmpty);
-    routeKey(code: 'KeyM', text: 'm', down: true, meta: true, send: sent.add);
+    keys.route(code: 'KeyM', text: 'm', down: true, meta: true, send: sent.add);
     expect(sent, [
       encodeKeycode(action: 0, keycode: 82),
       encodeKeycode(action: 1, keycode: 82),
@@ -83,7 +85,12 @@ void main() {
     test('$code sends down and up keycodes', () {
       final sent = <Uint8List>[];
       for (final down in [true, false]) {
-        routeKey(code: code, text: null, down: down, send: sent.add);
+        keys.route(
+          code: code,
+          text: code == 'NumpadEnter' ? 'Enter' : code,
+          down: down,
+          send: sent.add,
+        );
       }
       expect(sent, [
         encodeKeycode(action: 0, keycode: keyboardCodeMap[code]!),
@@ -93,7 +100,7 @@ void main() {
   }
   test('ctrl combo uses caps XOR shift plus ctrl/alt/meta flags', () {
     final sent = <Uint8List>[];
-    routeKey(
+    keys.route(
       code: 'KeyA',
       text: 'a',
       down: true,
@@ -108,7 +115,7 @@ void main() {
       sent.single,
       encodeKeycode(action: 0, keycode: 29, metaState: 4096 | 2 | 65536),
     );
-    routeKey(
+    keys.route(
       code: 'KeyA',
       text: 'a',
       down: true,
@@ -134,7 +141,12 @@ void main() {
       final sent = <Uint8List>[];
       for (final down in [true, false]) {
         expect(
-          routeKey(code: code, text: null, down: down, send: sent.add),
+          keys.route(
+            code: code,
+            text: code == 'NumpadEnter' ? 'Enter' : code,
+            down: down,
+            send: sent.add,
+          ),
           KeyRoute.ignored,
         );
       }
@@ -144,8 +156,8 @@ void main() {
       final sent = <Uint8List>[];
       for (final down in [true, false]) {
         expect(
-          routeKey(code: code, text: 'x', down: down, send: sent.add),
-          KeyRoute.handled,
+          keys.route(code: code, text: 'x', down: down, send: sent.add),
+          down ? KeyRoute.handled : KeyRoute.ignored,
         );
       }
       expect(sent, [encodeText('x')]);
@@ -165,7 +177,7 @@ void main() {
       () {
         final sent = <Uint8List>[];
         for (final down in [true, false]) {
-          routeKey(code: 'KeyA', text: text, down: down, send: sent.add);
+          keys.route(code: 'KeyA', text: text, down: down, send: sent.add);
         }
         expect(sent, [encodeText(text)]);
       },
@@ -175,7 +187,13 @@ void main() {
     test('mapped $code without text releases its fallback keycode', () {
       final sent = <Uint8List>[];
       for (final down in [true, false]) {
-        routeKey(code: code, text: null, down: down, alt: true, send: sent.add);
+        keys.route(
+          code: code,
+          text: null,
+          down: down,
+          alt: true,
+          send: sent.add,
+        );
       }
       expect(sent, [
         encodeKeycode(action: 0, keycode: keyboardCodeMap[code]!, metaState: 2),

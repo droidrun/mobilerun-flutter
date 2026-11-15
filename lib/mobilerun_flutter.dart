@@ -83,3 +83,5 @@ export 'src/ui/device_stream.dart'
         defaultStreamPlaceholder,
         defaultStreamUnavailable,
         defaultStreamNavigation;
+
+export 'src/core/stream_stats.dart' show StreamStats;

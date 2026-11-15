@@ -17,6 +17,7 @@ import 'stream_config.dart';
 import 'stream_credentials.dart';
 import 'stream_exception.dart';
 import 'stream_status.dart';
+import 'stream_stats.dart';
 import 'stream_transports.dart';
 
 /// A live stream session to one Mobilerun cloud device.
@@ -78,6 +79,7 @@ final class DeviceStreamSession {
   final ValueNotifier<StreamStatus> _status = ValueNotifier(
     const StreamConnecting(),
   );
+  final ValueNotifier<StreamStats?> _stats = ValueNotifier(null);
   final ValueNotifier<VideoSize?> _videoSize = ValueNotifier(null);
   final ValueNotifier<MediaStream?> _videoStream = ValueNotifier(null);
 
@@ -90,11 +92,16 @@ final class DeviceStreamSession {
   bool _credentialsPending = false;
   ScheduledTask? _credentialsTimeout;
   StreamAttempt? _attempt;
+  final _retiredDisposals = <Future<void>>{};
   ScheduledTask? _credentialsPoll;
   bool _visible = true;
 
   /// The connection status. Starts as [StreamConnecting].
   ValueListenable<StreamStatus> get status => _status;
+
+  /// Inbound video statistics sampled every second while connected.
+  /// Null while disconnected or closed; unsupported report fields stay null.
+  ValueListenable<StreamStats?> get stats => _stats;
 
   /// The size of the decoded video, null until the first frame.
   ValueListenable<VideoSize?> get videoSize => _videoSize;
@@ -155,6 +162,7 @@ final class DeviceStreamSession {
     _attempt = null;
     _clearVideo();
     await attempt?.dispose();
+    await Future.wait(_retiredDisposals.toList());
   }
 
   /// Mutes or unmutes the device audio, now and on later connections. The
@@ -194,6 +202,7 @@ final class DeviceStreamSession {
   // ---- attempt lifecycle --------------------------------------------------
 
   void _clearVideo() {
+    _stats.value = null;
     _videoStream.value = null;
     _videoSize.value = null;
   }
@@ -209,7 +218,7 @@ final class DeviceStreamSession {
     if (snapshot.status == ReconnectStatus.unavailable) {
       // The retry budget is spent: nothing of the last attempt may linger, a
       // late peer state must not bring the stream back without retry().
-      unawaited(_attempt?.dispose());
+      _retireAttempt();
       _clearVideo();
     }
   }
@@ -265,11 +274,19 @@ final class DeviceStreamSession {
     }
   }
 
+  void _retireAttempt() {
+    final retired = _attempt;
+    if (retired == null) return;
+    final disposal = retired.dispose();
+    _retiredDisposals.add(disposal);
+    unawaited(disposal.whenComplete(() => _retiredDisposals.remove(disposal)));
+  }
+
   /// Tears down the previous connection and mounts the cached target.
   void _beginAttempt() {
     final resolved = _lastCredentials;
     if (_closed || resolved == null) return;
-    unawaited(_attempt?.dispose());
+    _retireAttempt();
     _clearVideo();
     _activeCredentials = resolved;
     _controller.attemptMounted();
@@ -282,6 +299,8 @@ final class DeviceStreamSession {
       credentials: resolved,
       visible: _visible,
       events: StreamAttemptEvents(
+        stats: (sample) =>
+            _stats.value = _status.value is StreamConnected ? sample : null,
         connected: _controller.handleConnected,
         disconnected: _controller.handleDisconnected,
         failed: () {

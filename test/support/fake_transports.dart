@@ -144,6 +144,8 @@ final class FakePeer implements PeerTransport {
   bool closed = false;
   Object? setIceServersError;
   VideoStats? stats;
+  Completer<VideoStats?>? statsGate;
+  Completer<void>? closeGate;
 
   @override
   Stream<PeerState> get connectionStates => _states.stream;
@@ -187,10 +189,12 @@ final class FakePeer implements PeerTransport {
   void setAudioMuted(bool muted) => this.muted = muted;
 
   @override
-  Future<VideoStats?> readVideoStats() async => stats;
+  Future<VideoStats?> readVideoStats() async =>
+      statsGate == null ? stats : await statsGate!.future;
 
   @override
   Future<void> close() async {
+    await closeGate?.future;
     closed = true;
     calls.add('close');
   }

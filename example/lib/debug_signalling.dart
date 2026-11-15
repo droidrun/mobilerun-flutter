@@ -56,6 +56,7 @@ final class DebugSignalling implements SignallingConnector {
   final SignallingConnector _inner;
   DebugConnection? current;
   int? rejectedStatus;
+  bool failConnections = false;
 
   List<String> get sent => current?.sent ?? const [];
   List<String> get received => current?.received ?? const [];
@@ -63,6 +64,7 @@ final class DebugSignalling implements SignallingConnector {
 
   @override
   Future<SignallingConnection> connect(Uri uri) async {
+    if (failConnections) throw StateError('simulated offline');
     try {
       final connection = DebugConnection(await _inner.connect(uri));
       current = connection;

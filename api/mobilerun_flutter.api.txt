@@ -78,6 +78,7 @@ final class DeviceStreamSession
   void setMuted(bool muted)
   void setVisible(bool visible)
   void start()
+  ValueListenable<StreamStats?> get stats
   ValueListenable<StreamStatus> get status
   ValueListenable<VideoSize?> get videoSize
   void wake()
@@ -335,6 +336,27 @@ final class StreamSessionException implements Exception
   final String message
   const StreamSessionException(String message)
   String toString()
+
+final class StreamStats
+  bool ==(Object other)
+  final double? bitrateKbps
+  String? get candidateType
+  final String? codec
+  StreamStats copyWith({double? fps, int? width, int? height, String? codec, double? bitrateKbps, double? rttMs, double? jitterBufferDelayMs, int? packetsLost, int? framesDropped, int? freezeCount, double? decodeTimeMs, String? localCandidateType, String? remoteCandidateType, double? timeToFirstFrameMs})
+  final double? decodeTimeMs
+  final double? fps
+  final int? framesDropped
+  final int? freezeCount
+  int get hashCode
+  final int? height
+  final double? jitterBufferDelayMs
+  final String? localCandidateType
+  const StreamStats({double? fps, int? width, int? height, String? codec, double? bitrateKbps, double? rttMs, double? jitterBufferDelayMs, int? packetsLost, int? framesDropped, int? freezeCount, double? decodeTimeMs, String? localCandidateType, String? remoteCandidateType, double? timeToFirstFrameMs})
+  final int? packetsLost
+  final String? remoteCandidateType
+  final double? rttMs
+  final double? timeToFirstFrameMs
+  final int? width
 
 sealed class StreamStatus
   const StreamStatus()

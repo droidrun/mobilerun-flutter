@@ -6,6 +6,7 @@ import 'dart:typed_data';
 import 'package:flutter_webrtc/flutter_webrtc.dart' show MediaStream;
 
 import 'stream_config.dart';
+import 'stream_stats.dart';
 
 /// The connection state of a peer connection, as defined by W3C WebRTC.
 enum PeerState {
@@ -50,7 +51,11 @@ final class VideoStats {
     required this.width,
     required this.height,
     required this.framesDecoded,
+    this.sample,
   });
+
+  /// Full inbound sample when supported by the transport.
+  final StreamStats? sample;
 
   /// Frame width in pixels.
   final int width;
