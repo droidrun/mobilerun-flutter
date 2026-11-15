@@ -17,6 +17,7 @@ port="${EMULATOR_PORT:-5584}"
 serial="emulator-$port"
 adb_() { adb -s "$serial" "$@"; }
 mkdir -p "$out/shots"
+: >"$out/benchmark.log"
 cleanup() {
   if [ -n "${logger:-}" ]; then kill "$logger" 2>/dev/null || true; fi
   adb_ shell "run-as $pkg rm -f files/e2e.json files/benchmark-ack" >/dev/null 2>&1 || true
@@ -89,7 +90,11 @@ while [ "$SECONDS" -lt "$deadline" ] && [ "$status" = timeout ]; do
   sleep .2
 done
 for name in benchmark-results.md hardening-results.md; do
-  adb_ exec-out "run-as $pkg cat files/$name" >"$out/$name" 2>/dev/null || true
+  if adb_ exec-out "run-as $pkg cat files/$name" >"$out/$name.tmp" 2>/dev/null; then
+    mv "$out/$name.tmp" "$out/$name"
+  else
+    rm -f "$out/$name.tmp" "$out/$name"
+  fi
 done
 if [ ! -s "$out/benchmark-results.md" ]; then
   printf '# Stream benchmark\n\nNo complete run recorded. Runtime status: %s. See benchmark.log.\n' "$status" >"$out/benchmark-results.md"
