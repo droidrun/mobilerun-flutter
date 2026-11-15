@@ -9,10 +9,12 @@ import 'dart:convert';
 import 'dart:io';
 
 // The scripted run needs the internal transport hook.
-// ignore_for_file: invalid_use_of_internal_member
+// ignore_for_file: invalid_use_of_internal_member, implementation_imports
 import 'package:flutter/material.dart';
 import 'package:flutter_webrtc/flutter_webrtc.dart';
 import 'package:mobilerun_flutter/mobilerun_flutter.dart';
+import 'package:mobilerun_flutter/src/core/device_stream_session.dart'
+    show createDeviceStreamSessionWithTransports;
 import 'package:path_provider/path_provider.dart';
 
 import 'debug_signalling.dart';
@@ -50,10 +52,11 @@ class _E2eAppState extends State<E2eApp> {
   final _controller = DeviceStreamController();
   final _viewKey = GlobalKey();
   bool _rotated = false;
-  late final DeviceStreamSession _session = DeviceStreamSession.withTransports(
-    credentials: () async => widget.credentials,
-    transports: _debug.transports,
-  );
+  late final DeviceStreamSession _session =
+      createDeviceStreamSessionWithTransports(
+        credentials: () async => widget.credentials,
+        transports: _debug.transports,
+      );
 
   @override
   void initState() {

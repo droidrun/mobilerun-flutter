@@ -38,7 +38,7 @@ final class DeviceStreamSession {
   DeviceStreamSession({
     required StreamCredentialsProvider credentials,
     StreamConfig config = const StreamConfig(),
-  }) : this.withTransports(
+  }) : this._withTransports(
          credentials: credentials,
          config: config,
          transports: defaultStreamTransports(),
@@ -46,8 +46,7 @@ final class DeviceStreamSession {
 
   /// Creates a session on custom transports and clock, for tests and debug
   /// tooling that wraps the default transports.
-  @internal
-  DeviceStreamSession.withTransports({
+  DeviceStreamSession._withTransports({
     required StreamCredentialsProvider credentials,
     required StreamTransports transports,
     StreamConfig config = const StreamConfig(),
@@ -305,3 +304,22 @@ final class DeviceStreamSession {
     return '${hex(8)}-${hex(4)}-4${hex(3)}-a${hex(3)}-${hex(12)}';
   }
 }
+
+/// Creates sessions with injected transports for tests and diagnostic examples.
+/// This internal hook is intentionally absent from the package entry point.
+@internal
+DeviceStreamSession createDeviceStreamSessionWithTransports({
+  required StreamCredentialsProvider credentials,
+  required StreamTransports transports,
+  StreamConfig config = const StreamConfig(),
+  Scheduler scheduler = const TimerScheduler(),
+  double Function()? random,
+  String Function()? sessionId,
+}) => DeviceStreamSession._withTransports(
+  credentials: credentials,
+  transports: transports,
+  config: config,
+  scheduler: scheduler,
+  random: random,
+  sessionId: sessionId,
+);

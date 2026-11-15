@@ -6,6 +6,8 @@ import 'dart:async';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mobilerun_flutter/mobilerun_flutter.dart';
+import 'package:mobilerun_flutter/src/core/device_stream_session.dart'
+    show createDeviceStreamSessionWithTransports;
 import 'package:mobilerun_flutter/src/core/stream_transports.dart';
 
 import 'support/fake_scheduler.dart';
@@ -19,7 +21,7 @@ void main() {
     final scheduler = FakeScheduler();
     final connector = FakeConnector(scheduler)
       ..failWith = StateError('offline');
-    final session = DeviceStreamSession.withTransports(
+    final session = createDeviceStreamSessionWithTransports(
       credentials: () async =>
           const StreamCredentials(url: 'wss://example.test/s', token: 'test'),
       transports: StreamTransports(
@@ -65,7 +67,7 @@ void main() {
       final connector = FakeConnector(scheduler)
         ..failWith = StateError('offline');
       var fetches = 0;
-      final session = DeviceStreamSession.withTransports(
+      final session = createDeviceStreamSessionWithTransports(
         credentials: () async {
           fetches++;
           return const StreamCredentials(
@@ -149,7 +151,7 @@ void main() {
     final scheduler = FakeScheduler();
     final connector = FakeConnector(scheduler);
     final peers = FakePeerFactory('offer');
-    final session = DeviceStreamSession.withTransports(
+    final session = createDeviceStreamSessionWithTransports(
       credentials: () async => const StreamCredentials(
         url: 'wss://example.test/stream',
         token: 'test',
@@ -190,7 +192,7 @@ void main() {
       final scheduler = FakeScheduler();
       final connector = FakeConnector(scheduler);
       var calls = 0;
-      final session = DeviceStreamSession.withTransports(
+      final session = createDeviceStreamSessionWithTransports(
         credentials: () async {
           calls++;
           return null;

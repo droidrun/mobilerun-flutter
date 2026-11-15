@@ -4,6 +4,8 @@
 import 'dart:async';
 
 import 'package:mobilerun_flutter/mobilerun_flutter.dart';
+import 'package:mobilerun_flutter/src/core/device_stream_session.dart'
+    show createDeviceStreamSessionWithTransports;
 import 'package:mobilerun_flutter/src/core/stream_transports.dart';
 
 import 'fake_scheduler.dart';
@@ -33,7 +35,7 @@ final class Harness {
     connector = FakeConnector(scheduler);
     final offer = example('client-offer.json')['sdp']! as String;
     peers = FakePeerFactory(offer);
-    session = DeviceStreamSession.withTransports(
+    session = createDeviceStreamSessionWithTransports(
       credentials: () async {
         credentialCalls++;
         return credentials != null
