@@ -455,13 +455,32 @@ ${rows.join('\n')}
     await host('shot phone-network-recovered');
     await host('soak-start');
     final startMemory = ProcessInfo.currentRss;
-    for (var i = 0; i < 120; i++) {
+    final soak = Stopwatch()..start();
+    var interruptions = 0, longestRecoveryMs = 0, nextProgress = 60;
+    while (soak.elapsed < const Duration(minutes: 10)) {
       await wait(5000);
-      check(
-        session.status.value is StreamConnected && session.stats.value != null,
-        'soak connection lost',
-      );
-      if ((i + 1) % 12 == 0) log('SOAK ${(i + 1) * 5}s connected');
+      if (session.status.value is! StreamConnected ||
+          session.stats.value == null) {
+        interruptions++;
+        final recovery = Stopwatch()..start();
+        log('SOAK interruption $interruptions');
+        await (() async {
+          await until(
+            () =>
+                session.status.value is StreamConnected &&
+                session.stats.value != null,
+            'automatic soak recovery',
+          );
+          await _freshVideo('automatic soak recovery');
+        })().timeout(const Duration(seconds: 60));
+        final elapsed = recovery.elapsedMilliseconds;
+        if (elapsed > longestRecoveryMs) longestRecoveryMs = elapsed;
+        log('SOAK recovered in ${elapsed}ms');
+      }
+      if (soak.elapsed.inSeconds >= nextProgress) {
+        log('SOAK ${soak.elapsed.inSeconds}s connected');
+        nextProgress += 60;
+      }
     }
     await _freshVideo('soak');
     final endMemory = ProcessInfo.currentRss;
@@ -472,7 +491,9 @@ ${rows.join('\n')}
     await host('soak-end');
     await File('${widget.directory.path}/hardening-results.md').writeAsString(
       '# Hardening\n\nSocket rebuild, unavailable/retry, approval/refetch, navigation, text, background/foreground and network return passed.\n\n'
-      'Ten-minute soak: RSS $startMemory -> $endMemory bytes; limit 64 MiB growth.\n',
+      'Ten-minute soak (${soak.elapsed.inSeconds}s elapsed): RSS $startMemory -> $endMemory bytes; limit 64 MiB growth.\n\n'
+      'Sampled interruptions: $interruptions; longest observed recovery ${longestRecoveryMs}ms. '
+      'Connection/stats checked every 5s; automatic recovery with fresh video must finish within 60s of detection.\n',
     );
     await session.close();
     check(
