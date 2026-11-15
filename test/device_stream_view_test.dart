@@ -364,24 +364,28 @@ void main() {
     expect(h.peer.controlChannel.sent, press(82));
   });
 
-  testWidgets('clipboard shortcut sends the local text', (tester) async {
-    final controller = DeviceStreamController();
-    final h = await pumpView(tester, controller: controller);
-    controller.showKeyboard();
-    await tester.pump();
-    binding.defaultBinaryMessenger.setMockMethodCallHandler(
-      SystemChannels.platform,
-      (call) async => call.method == 'Clipboard.getData'
-          ? {'text': 'clipboard text'}
-          : null,
-    );
-    await tester.sendKeyDownEvent(LogicalKeyboardKey.controlLeft);
-    await tester.sendKeyEvent(LogicalKeyboardKey.keyV, character: 'v');
-    await tester.sendKeyUpEvent(LogicalKeyboardKey.controlLeft);
-    expect(h.peer.controlChannel.sent.where((b) => b[0] == 9), [
-      encodeSetClipboard(text: 'clipboard text'),
-    ]);
-  });
+  for (final character in ['v', '\u0016']) {
+    testWidgets('clipboard shortcut translates native character $character', (
+      tester,
+    ) async {
+      final controller = DeviceStreamController();
+      final h = await pumpView(tester, controller: controller);
+      controller.showKeyboard();
+      await tester.pump();
+      binding.defaultBinaryMessenger.setMockMethodCallHandler(
+        SystemChannels.platform,
+        (call) async => call.method == 'Clipboard.getData'
+            ? {'text': 'clipboard text'}
+            : null,
+      );
+      await tester.sendKeyDownEvent(LogicalKeyboardKey.controlLeft);
+      await tester.sendKeyEvent(LogicalKeyboardKey.keyV, character: character);
+      await tester.sendKeyUpEvent(LogicalKeyboardKey.controlLeft);
+      expect(h.peer.controlChannel.sent.where((b) => b[0] == 9), [
+        encodeSetClipboard(text: 'clipboard text'),
+      ]);
+    });
+  }
 
   testWidgets('normal IME keyboard supports composition, delete and action', (
     tester,

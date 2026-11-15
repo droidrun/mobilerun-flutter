@@ -133,6 +133,9 @@ class _BenchmarkAppState extends State<BenchmarkApp> {
       if (e.widget case Text(:final data) when data == text) {
         box = e.findRenderObject() as RenderBox?;
       }
+      if (e.widget case Icon(:final semanticLabel) when semanticLabel == text) {
+        box = e.findRenderObject() as RenderBox?;
+      }
       e.visitChildren(visit);
     }
 
@@ -330,10 +333,32 @@ ${rows.join('\n')}
   Future<void> _hardening() async {
     final session = _session!;
     await host('shot phone-connected');
-    // Native text commit through the focused default video view.
+    // Focus Settings search before committing text through the default view.
+    var (g, box) = geometry;
+    tap(
+      box.localToGlobal(
+        Offset(
+          g.rect.left + g.rect.width * .9,
+          g.rect.top + g.rect.height * .065,
+        ),
+      ),
+    );
+    await wait(500);
+    (g, box) = geometry;
+    tap(
+      box.localToGlobal(
+        Offset(
+          g.rect.left + g.rect.width * .45,
+          g.rect.top + g.rect.height * .065,
+        ),
+      ),
+    );
+    await wait(500);
     _controller.showKeyboard();
     await wait(500);
     TextInput.updateEditingValue(const TextEditingValue(text: '\u200bdisplay'));
+    await wait(1000);
+    await host('shot phone-typed');
     _controller.hideKeyboard();
     for (final label in ['Back', 'Home', 'Recent']) {
       await tapLabel(label);

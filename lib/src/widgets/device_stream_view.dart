@@ -294,8 +294,16 @@ class _DeviceStreamViewState extends State<DeviceStreamView> {
         physicalKeyCodes[event.physicalKey.usbHidUsage] ??
         logicalKeyCodes[event.logicalKey.keyId];
     final down = event is! KeyUpEvent;
+    final character = event.character;
+    // Native Ctrl combinations may omit the produced character or report a
+    // C0 control. Recover the layout-aware logical key, never the physical code.
+    final produced =
+        (keyboard.isControlPressed || keyboard.isMetaPressed) &&
+            (character == null || !character.runes.every(isPrintableRune))
+        ? event.logicalKey.keyLabel
+        : character;
     final text = down
-        ? (_keyCharacters[event.physicalKey] = event.character)
+        ? (_keyCharacters[event.physicalKey] = produced)
         : _keyCharacters.remove(event.physicalKey);
     final route = _keys.route(
       code: code,
