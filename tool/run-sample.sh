@@ -43,7 +43,7 @@ if [ "$platform" = --ios ]; then
   sim="$(xcrun simctl create "Mobilerun sample $$" com.apple.CoreSimulator.SimDeviceType.iPhone-17 "$runtime")"
   xcrun simctl boot "$sim"
   xcrun simctl bootstatus "$sim" -b
-  open -a Simulator
+  open -a "$(xcode-select -p)/Applications/Simulator.app"
   xcrun simctl install "$sim" build/ios/iphonesimulator/Runner.app
   container="$(xcrun simctl get_app_container "$sim" "$pkg" data)"
   mkdir -p "$container/Library/Application Support"
