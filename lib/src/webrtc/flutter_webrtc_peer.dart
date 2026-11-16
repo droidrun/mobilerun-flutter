@@ -24,7 +24,7 @@ final class FlutterWebRtcPeerFactory implements PeerTransportFactory {
     required StreamConfig config,
     required bool muted,
   }) async {
-    await webRtcInitializer.ensureInitialized();
+    await ensureWebRtcInitialized();
     final pc = await createPeerConnection({
       ...rtcConfiguration,
       'sdpSemantics': 'unified-plan',

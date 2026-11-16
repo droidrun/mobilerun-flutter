@@ -31,7 +31,7 @@ final class WebSocketSignallingConnector implements SignallingConnector {
 
   // `dart:io` reports a refused upgrade as "..., HTTP status code: 401" and
   // exposes the code only on its own exception type, which this file must not
-  // import (the package also runs on the web). Only the status is read, never
+  // import to inspect the exception text. Only the status is read, never
   // the URL, which carries the token.
   static int? _httpStatus(Object error) {
     final match = RegExp(r'HTTP status code: (\d{3})').firstMatch('$error');

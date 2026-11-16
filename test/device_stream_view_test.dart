@@ -7,8 +7,9 @@ import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter_webrtc/flutter_webrtc.dart' show MediaStream;
 import 'package:mobilerun_flutter/mobilerun_flutter.dart';
-import 'package:mobilerun_flutter/src/protocol/control_messages.dart';
 import 'package:mobilerun_flutter/src/core/stream_transports.dart';
+import 'package:mobilerun_flutter/src/protocol/control_messages.dart';
+import 'package:mobilerun_flutter/src/webrtc/webrtc_initializer.dart';
 
 import 'support/harness.dart';
 
@@ -73,6 +74,7 @@ Future<Harness> pumpView(
   await tester.pumpWidget(
     MaterialApp(home: wrap?.call(view) ?? Center(child: view)),
   );
+  await tester.runAsync(pump);
   await tester.pump();
   await TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
       .handlePlatformMessage(
@@ -90,6 +92,15 @@ Future<Harness> pumpView(
 
 void main() {
   final binding = TestWidgetsFlutterBinding.ensureInitialized();
+  setUpAll(() async {
+    // The cached initialization future must outlive each test's fake async zone.
+    binding.defaultBinaryMessenger.setMockMethodCallHandler(
+      const MethodChannel('FlutterWebRTC.Method'),
+      (_) async => null,
+    );
+    await ensureWebRtcInitialized();
+  });
+
   setUp(() {
     binding.defaultBinaryMessenger.setMockMethodCallHandler(
       const MethodChannel('FlutterWebRTC.Event'),
@@ -110,6 +121,7 @@ void main() {
     final h = await pumpView(tester);
     h.peer.stats = const VideoStats(width: 200, height: 400, framesDecoded: 1);
     await tester.runAsync(() => h.advance(50));
+    // flutter_webrtc reports renderer rotation through didTextureChangeRotation.
     await binding.defaultBinaryMessenger.handlePlatformMessage(
       'FlutterWebRTC/Texture1',
       const StandardMethodCodec().encodeSuccessEnvelope({
@@ -139,7 +151,46 @@ void main() {
     await tester.pump();
     expect(tester.testTextInput.isVisible, isFalse);
     expect(h.peer.controlChannel.sent, isEmpty);
+    await tester.tap(find.byType(DeviceStreamView));
+    expect(h.peer.controlChannel.sent, isEmpty);
     expect(h.session.status.value, const StreamConnected());
+  });
+
+  testWidgets('default navigation disables control after close', (
+    tester,
+  ) async {
+    final h = Harness();
+    await tester.runAsync(h.connect);
+    addTearDown(h.session.close);
+    await tester.pumpWidget(
+      MaterialApp(
+        home: SizedBox(
+          width: 400,
+          height: 500,
+          child: DeviceStream(session: h.session),
+        ),
+      ),
+    );
+    await tester.pump();
+    expect(
+      tester
+          .widget<StreamNavigationBar>(find.byType(StreamNavigationBar))
+          .state
+          .canControl,
+      isTrue,
+    );
+    await tester.runAsync(h.session.close);
+    await tester.pump();
+    expect(
+      tester
+          .widget<StreamNavigationBar>(find.byType(StreamNavigationBar))
+          .state
+          .canControl,
+      isFalse,
+    );
+    await tester.tap(find.byType(DeviceStreamView));
+    expect(h.peer.controlChannel.sent, isEmpty);
+    await tester.pumpWidget(const SizedBox());
   });
 
   testWidgets('two fingers have stable slots, coalesced MOVE and CANCEL', (

@@ -11,7 +11,7 @@ sealed class StreamException implements Exception {
   final String message;
 
   @override
-  String toString() => '$runtimeType: $message';
+  String toString() => 'StreamException: $message';
 }
 
 /// There is no active stream connection.

@@ -86,6 +86,7 @@ final class VideoSize {
   final int height;
 
   /// Clockwise video rotation in degrees.
+  /// Zero unless a DeviceStreamView renders this session.
   final int rotation;
 
   @override

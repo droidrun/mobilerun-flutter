@@ -83,7 +83,7 @@ final class DeviceStreamSession {
   final ValueNotifier<MediaStream?> _videoStream = ValueNotifier(null);
 
   bool _started = false;
-  bool _closed = false;
+  bool get _closed => _closedState.value;
   final ValueNotifier<bool> _closedState = ValueNotifier(false);
   bool _muted;
   StreamCredentials? _lastCredentials;
@@ -170,7 +170,6 @@ final class DeviceStreamSession {
   /// socket and timers. The session cannot be used again.
   Future<void> close() async {
     if (_closed) return;
-    _closed = true;
     _closedState.value = true;
     _credentialsEpoch++;
     _pendingUrl = null;
@@ -221,8 +220,9 @@ final class DeviceStreamSession {
   /// Takes a screenshot of the device and returns the image bytes (PNG).
   ///
   /// Throws a [ScreenshotTimeoutException] when the device does not answer within
-  /// [timeout] and a [StreamException] when the request cannot be sent,
-  /// the device reports an error or the connection is lost meanwhile.
+  /// [timeout], [StreamNotConnectedException] when the request cannot be sent,
+  /// [ScreenshotFailedException] when the device reports an error, or
+  /// [StreamDisconnectedException] when the connection is lost meanwhile.
   Future<Uint8List> screenshot({
     Duration timeout = const Duration(seconds: 30),
   }) =>
@@ -359,7 +359,6 @@ final class DeviceStreamSession {
         credentialsRejected: _requestCredentials,
       ),
     )..start();
-    _flushUrl();
     _updateSampling();
   }
 

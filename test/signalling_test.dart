@@ -1,14 +1,13 @@
 // Copyright 2026 Mobilerun
 // SPDX-License-Identifier: Apache-2.0
 
-import 'package:mobilerun_flutter/src/protocol/stream_timing.dart';
-import 'package:mobilerun_flutter/src/protocol/stream_spec.dart';
-import 'package:mobilerun_flutter/src/protocol/signalling.dart';
-
 import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:mobilerun_flutter/src/protocol/signalling.dart';
+import 'package:mobilerun_flutter/src/protocol/stream_spec.dart';
+import 'package:mobilerun_flutter/src/protocol/stream_timing.dart';
 
 import 'support/fixtures.dart';
 

@@ -4,7 +4,6 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
-import 'package:flutter/foundation.dart' show internal;
 
 import '../core/device_stream_session.dart';
 import '../core/reconnect_policy.dart';
@@ -33,18 +32,16 @@ final class StreamOverlayState {
 
   /// Retry a session which exhausted its attempts.
   final VoidCallback retry;
-
-  /// Connecting or reconnecting text with attempt placeholders replaced.
-  @internal
-  String get label => switch (status) {
-    StreamReconnecting(:final attempt) when attempt > 1 =>
-      labels.reconnectingAttempt
-          .replaceAll('{attempt}', '$attempt')
-          .replaceAll('{max}', '${ReconnectPolicy.maxAttempts}'),
-    StreamReconnecting() => labels.reconnecting,
-    _ => labels.connecting,
-  };
 }
+
+String _overlayLabel(StreamOverlayState state) => switch (state.status) {
+  StreamReconnecting(:final attempt) when attempt > 1 =>
+    state.labels.reconnectingAttempt
+        .replaceAll('{attempt}', '$attempt')
+        .replaceAll('{max}', '${ReconnectPolicy.maxAttempts}'),
+  StreamReconnecting() => state.labels.reconnecting,
+  _ => state.labels.connecting,
+};
 
 /// A replacement overlay slot.
 typedef StreamOverlayBuilder = Widget Function(
@@ -91,7 +88,7 @@ Widget defaultStreamPlaceholder(
   alignment: Alignment.bottomLeft,
   child: Padding(
     padding: const EdgeInsets.all(16),
-    child: StreamStatusPill(label: state.label),
+    child: StreamStatusPill(label: _overlayLabel(state)),
   ),
 );
 

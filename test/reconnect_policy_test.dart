@@ -1,9 +1,9 @@
 // Copyright 2026 Mobilerun
 // SPDX-License-Identifier: Apache-2.0
 
-import 'package:mobilerun_flutter/src/protocol/stream_timing.dart';
-import 'package:mobilerun_flutter/src/core/reconnect_policy.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:mobilerun_flutter/src/core/reconnect_policy.dart';
+import 'package:mobilerun_flutter/src/protocol/stream_timing.dart';
 
 import 'support/fixtures.dart';
 

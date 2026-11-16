@@ -39,7 +39,8 @@ await session.close();
 - `status` is `StreamConnecting`, `StreamConnected`, `StreamReconnecting(attempt)`
   or `StreamUnavailable`; `retry()` starts a new cycle from unavailable.
 - After `close()`, status keeps its last value, stops updating, and controls are disabled.
-- `videoSize` includes decoded width, height and clockwise rotation in degrees; the view uses the renderer
+- `videoSize` includes decoded width, height and clockwise rotation in degrees.
+  Rotation is 0 unless a `DeviceStreamView` renders the session. The view uses the renderer
   dimensions and rotation for displayed video coordinates.
 - Raw channel sends are internal; use `DeviceStreamView` for input mapping.
   Hover never goes over the control channel.
@@ -47,7 +48,8 @@ await session.close();
   `VideoCodec.automatic`). `setMuted` changes audio on the current and later
   connections. `VideoCodec.h264Only` offers H.264 and its auxiliary codecs only.
   The SDK initializes WebRTC with zero playout delay before creating a renderer
-  or peer connection; no plugin setup is needed in the host app.
+  or peer connection; no plugin setup is needed in the host app. An app that
+  initializes `flutter_webrtc` itself first keeps its own initialization options.
 - The signalling socket is the lifetime of the session on the server: a closed
   socket, like a failed peer connection, rebuilds both (exponential backoff,
   unavailable after six attempts).

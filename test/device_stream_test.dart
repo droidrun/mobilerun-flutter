@@ -10,6 +10,7 @@ import 'package:flutter_webrtc/flutter_webrtc.dart'
     show MediaStream, RTCVideoView;
 import 'package:mobilerun_flutter/mobilerun_flutter.dart';
 import 'package:mobilerun_flutter/src/protocol/control_messages.dart';
+import 'package:mobilerun_flutter/src/webrtc/webrtc_initializer.dart';
 
 import 'support/harness.dart';
 
@@ -69,6 +70,7 @@ Future<void> mount(
       ),
     ),
   );
+  await tester.runAsync(pump);
   await tester.pump();
 }
 
@@ -87,6 +89,15 @@ Future<void> exhaust(WidgetTester tester, Harness h) async {
 
 void main() {
   final binding = TestWidgetsFlutterBinding.ensureInitialized();
+  setUpAll(() async {
+    // The cached initialization future must outlive each test's fake async zone.
+    binding.defaultBinaryMessenger.setMockMethodCallHandler(
+      const MethodChannel('FlutterWebRTC.Method'),
+      (_) async => null,
+    );
+    await ensureWebRtcInitialized();
+  });
+
   var rendererCreates = 0;
   setUp(() {
     final semantics = binding.ensureSemantics();
@@ -411,6 +422,8 @@ void main() {
           home: Scaffold(body: SingleChildScrollView(child: card)),
         ),
       );
+      await tester.pump();
+      await tester.runAsync(pump);
       await tester.pump();
       expect(rendererCreates, 1);
       await tester.tap(find.text('Device'));

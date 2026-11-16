@@ -98,7 +98,7 @@ final class StreamConnecting extends StreamStatus
   String toString()
 
 final class StreamCredentials
-  const StreamCredentials({required String url, required String? token})
+  const StreamCredentials({required String url, String? token})
   String toString()
   Uri toWebSocketUri()
   final String? token
@@ -247,7 +247,7 @@ class TaskApprovalCard extends StatefulWidget
 final class TaskApprovalController extends ChangeNotifier
   Future<void> decide(ApprovalDecision decision)
   void dispose()
-  TaskApprovalController({required String? taskId, required Future<PendingApproval?> Function(String) fetchApproval, required Future<void> Function(TaskApprovalRequest) decide, ApprovalSubscribe? subscribe, FutureOr<void> Function(Object)? onError, bool enabled = true})
+  TaskApprovalController({required String? _taskId, required Future<PendingApproval?> Function(String) fetchApproval, required Future<void> Function(TaskApprovalRequest) decide, ApprovalSubscribe? _subscribe, FutureOr<void> Function(Object)? _onError, bool _enabled = true})
   Future<void> refetch()
   TaskApprovalState get state
   void update({required String? taskId, bool? enabled})

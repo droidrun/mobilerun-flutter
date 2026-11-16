@@ -1,100 +1,80 @@
 // Copyright 2026 Mobilerun
 // SPDX-License-Identifier: Apache-2.0
 
-import 'package:mobilerun_flutter/src/core/reconnect_policy.dart';
-
 import 'dart:async';
 import 'dart:convert';
 import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mobilerun_flutter/mobilerun_flutter.dart';
+import 'package:mobilerun_flutter/src/core/reconnect_policy.dart';
 import 'package:mobilerun_flutter/src/core/stream_transports.dart';
 
 import 'support/fake_transports.dart';
 import 'support/harness.dart';
 
 void main() {
-  test(
-    'a URL queued during backoff survives until the next control channel',
-    () async {
-      final h = Harness();
-      await h.connect();
-      h.ws.serverClose();
-      await pump();
-      h.session.openUrl('https://example.test/old');
-      h.session.openUrl('https://example.test/latest');
-      await h.advance(1000);
-      h.ws.receive(example('server-rtc-configuration.json'));
-      await pump();
-      expect(h.ws.ofType('openUrl'), isEmpty);
-      h.peer.controlChannel.setState(ChannelState.open);
-      expect(
-        h.ws.ofType('openUrl').single.json['url'],
-        'https://example.test/latest',
-      );
-      await h.session.close();
-    },
-  );
-
-  test('token refresh after recovery is stored until the next mount', () async {
-    final refreshed = Completer<StreamCredentials?>();
-    final h = Harness(
-      credentials: (call) => call == 1
-          ? const StreamCredentials(
-              url: 'wss://stream.example.test/s',
-              token: 'old',
-            )
-          : refreshed.future,
-    );
-    await h.connect();
-    h.peer.emitState(PeerState.disconnected);
-    h.peer.emitState(PeerState.connected);
-    refreshed.complete(
-      const StreamCredentials(
-        url: 'wss://stream.example.test/s',
-        token: 'fresh',
-      ),
-    );
-    await pump();
-    expect(h.connector.connections, hasLength(1));
-    expect(h.peer.closed, isFalse);
-    h.ws.serverClose();
-    await pump();
-    await h.advance(2000);
-    expect(h.connector.connections, hasLength(2));
-    expect(h.connector.uris.last.queryParameters['token'], 'fresh');
-    await h.session.close();
-  });
-
-  test('URL refresh after recovery remounts a connected stream', () async {
-    final refreshed = Completer<StreamCredentials?>();
-    final h = Harness(
-      credentials: (call) => call == 1
-          ? const StreamCredentials(
-              url: 'wss://stream.example.test/old',
-              token: 'old',
-            )
-          : refreshed.future,
-    );
-    await h.connect();
-    final first = h.peer;
-    h.peer.emitState(PeerState.disconnected);
-    h.peer.emitState(PeerState.connected);
-    refreshed.complete(
-      const StreamCredentials(
-        url: 'wss://stream.example.test/new',
-        token: 'fresh',
-      ),
-    );
-    await pump();
-    expect(h.connector.connections, hasLength(2));
-    expect(h.connector.uris.last.path, '/new');
-    expect(first.closed, isTrue);
-    await h.session.close();
-  });
-
   group('credentials discovery and cached recovery', () {
+    test(
+      'token refresh after recovery is stored until the next mount',
+      () async {
+        final refreshed = Completer<StreamCredentials?>();
+        final h = Harness(
+          credentials: (call) => call == 1
+              ? const StreamCredentials(
+                  url: 'wss://stream.example.test/s',
+                  token: 'old',
+                )
+              : refreshed.future,
+        );
+        await h.connect();
+        h.peer.emitState(PeerState.disconnected);
+        h.peer.emitState(PeerState.connected);
+        refreshed.complete(
+          const StreamCredentials(
+            url: 'wss://stream.example.test/s',
+            token: 'fresh',
+          ),
+        );
+        await pump();
+        expect(h.connector.connections, hasLength(1));
+        expect(h.peer.closed, isFalse);
+        h.ws.serverClose();
+        await pump();
+        await h.advance(2000);
+        expect(h.connector.connections, hasLength(2));
+        expect(h.connector.uris.last.queryParameters['token'], 'fresh');
+        await h.session.close();
+      },
+    );
+
+    test('URL refresh after recovery remounts a connected stream', () async {
+      final refreshed = Completer<StreamCredentials?>();
+      final h = Harness(
+        credentials: (call) => call == 1
+            ? const StreamCredentials(
+                url: 'wss://stream.example.test/old',
+                token: 'old',
+              )
+            : refreshed.future,
+      );
+      await h.connect();
+      final first = h.peer;
+      h.peer.emitState(PeerState.disconnected);
+      h.peer.emitState(PeerState.connected);
+      refreshed.complete(
+        const StreamCredentials(
+          url: 'wss://stream.example.test/new',
+          token: 'fresh',
+        ),
+      );
+      await pump();
+      expect(h.connector.connections, hasLength(2));
+      expect(h.connector.uris.last.path, '/new');
+      expect(first.closed, isTrue);
+      await h.session.close();
+    });
+
     const target = StreamCredentials(
       url: 'wss://stream.example.test/cached',
       token: 'stable',
@@ -309,14 +289,20 @@ void main() {
       ]);
     });
 
-    test(
-      'only the latest URL is sent after the control channel opens',
-      () async {
+    for (final reconnect in [false, true]) {
+      test('latest URL waits for control (reconnect: $reconnect)', () async {
         final h = Harness();
+        addTearDown(h.session.close);
+        if (reconnect) {
+          await h.connect();
+          h.ws.serverClose();
+          await pump();
+        }
         h.session.openUrl('https://example.test/old');
         h.session.start();
         await pump();
-        h.session.openUrl('https://example.test/path?q=a%20b');
+        h.session.openUrl('https://example.test/latest');
+        if (reconnect) await h.advance(1000);
         expect(h.ws.ofType('openUrl'), isEmpty);
         h.ws.receive(example('server-rtc-configuration.json'));
         await pump();
@@ -324,11 +310,11 @@ void main() {
         h.peer.controlChannel.setState(ChannelState.open);
         await pump();
         expect(
-          h.ws.ofType('openUrl').single.json,
-          example('client-open-url.json'),
+          h.ws.ofType('openUrl').single.json['url'],
+          'https://example.test/latest',
         );
-      },
-    );
+      });
+    }
 
     test('reports the video stream and its size', () async {
       final h = Harness();
@@ -841,6 +827,17 @@ void main() {
   });
 
   group('screenshot', () {
+    test('a request that cannot be sent reports not connected', () async {
+      final h = Harness();
+      await h.connect();
+      addTearDown(h.session.close);
+      h.ws.closedByServer = true;
+      await expectLater(
+        h.session.screenshot(),
+        throwsA(isA<StreamNotConnectedException>()),
+      );
+    });
+
     test('returns the decoded image', () async {
       final h = Harness();
       await h.connect();
@@ -1057,7 +1054,10 @@ void main() {
       final h = Harness();
       await h.connect();
       final future = h.session.screenshot();
-      final outcome = expectLater(future, throwsA(isA<StreamException>()));
+      final outcome = expectLater(
+        future,
+        throwsA(isA<StreamDisconnectedException>()),
+      );
       await pump();
       await h.session.close();
       await outcome;

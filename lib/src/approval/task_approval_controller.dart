@@ -1,9 +1,6 @@
 // Copyright 2026 Mobilerun
 // SPDX-License-Identifier: Apache-2.0
 
-// Preserve public parameter names in API documentation.
-// ignore_for_file: prefer_initializing_formals
-
 import 'dart:async';
 
 import 'package:flutter/foundation.dart';
@@ -107,18 +104,17 @@ typedef ApprovalSubscribe = FutureOr<ApprovalUnsubscribe> Function(
 final class TaskApprovalController extends ChangeNotifier {
   /// Creates and starts a controller for [taskId].
   TaskApprovalController({
-    required String? taskId,
+    required this._taskId,
     required Future<PendingApproval?> Function(String taskId) fetchApproval,
     required Future<void> Function(TaskApprovalRequest request) decide,
-    ApprovalSubscribe? subscribe,
-    FutureOr<void> Function(Object error)? onError,
-    bool enabled = true,
-  }) : _taskId = taskId,
+    this._subscribe,
+    this._onError,
+    this._enabled = true,
+  }) : // Preserve the public callback names.
+       // ignore: prefer_initializing_formals
        _fetch = fetchApproval,
-       _sendDecision = decide,
-       _subscribe = subscribe,
-       _onError = onError,
-       _enabled = enabled {
+       // ignore: prefer_initializing_formals
+       _sendDecision = decide {
     _restart();
   }
 

@@ -198,7 +198,7 @@ final class StreamAttempt {
     });
     if (!_send(ScreenshotRequestMessage(id: id))) {
       _screenshots.remove(id)?.timer?.cancel();
-      return Future.error(const ScreenshotFailedException());
+      return Future.error(const StreamNotConnectedException());
     }
     return completer.future;
   }
@@ -344,10 +344,6 @@ final class StreamAttempt {
           }
         }),
       );
-    if (peer.control.state == ChannelState.open) {
-      _requestFrames();
-      events.controlReady();
-    }
   }
 
   /// The control channel opened: request the first frames.

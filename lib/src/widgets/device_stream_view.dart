@@ -127,7 +127,7 @@ class _DeviceStreamViewState extends State<DeviceStreamView> {
   }
 
   Future<void> _initialize() async {
-    await webRtcInitializer.ensureInitialized();
+    await ensureWebRtcInitialized();
     await _renderer.initialize();
     if (!mounted) {
       await _renderer.dispose();
@@ -185,6 +185,7 @@ class _DeviceStreamViewState extends State<DeviceStreamView> {
       );
       widget.session.videoStream.addListener(_syncStream);
       _syncStream();
+      _syncRotation();
     }
     if (sessionChanged || !oldWidget.hasControl && widget.hasControl) {
       _textInput.attach();

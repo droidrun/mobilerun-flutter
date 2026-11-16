@@ -1,12 +1,12 @@
 // Copyright 2026 Mobilerun
 // SPDX-License-Identifier: Apache-2.0
 
-import 'package:flutter/material.dart';
 import 'package:flutter/gestures.dart';
-import 'package:mobilerun_flutter/src/ui/stream_button.dart';
+import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mobilerun_flutter/mobilerun_flutter.dart';
+import 'package:mobilerun_flutter/src/ui/stream_button.dart';
 
 const approval = PendingApproval(
   approvalId: 'a',
@@ -164,6 +164,32 @@ void main() {
     expect(
       approval.copyWith(deviceId: 'd').copyWith(clearDeviceId: true).deviceId,
       isNull,
+    );
+  });
+
+  testWidgets('default buttons and cards use radii 6 and 12', (tester) async {
+    await tester.pumpWidget(
+      host(TaskApprovalCard(approval: approval, onDecide: (_) {})),
+    );
+    final button = tester.widget<TextButton>(
+      find.descendant(
+        of: find.widgetWithText(StreamButton, 'Approve'),
+        matching: find.byType(TextButton),
+      ),
+    );
+    final shape = button.style!.shape!.resolve({})! as RoundedRectangleBorder;
+    expect(shape.borderRadius, BorderRadius.circular(6));
+    final card = tester.widget<DecoratedBox>(
+      find
+          .descendant(
+            of: find.byType(TaskApprovalCard),
+            matching: find.byType(DecoratedBox),
+          )
+          .first,
+    );
+    expect(
+      (card.decoration as BoxDecoration).borderRadius,
+      BorderRadius.circular(12),
     );
   });
 

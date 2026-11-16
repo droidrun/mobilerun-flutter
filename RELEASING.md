@@ -17,9 +17,9 @@ The repository owner must complete all of these steps before automated publishin
 2. Decide repository visibility and confirm the public repository and issue
    tracker links. Uploaded package source is public regardless of repository
    visibility. Confirm the Apache-2.0 license and example are ready to distribute.
-3. Prepare a release PR for `0.1.0`: update the changelog and remove the README's
-   pre-release status and "after first release" installation notes, replacing
-   them with the released installation instructions. Merge after CI passes.
+3. Prepare a release PR for `0.1.0`: update the changelog and follow
+   [Each release](#each-release) step 1 for the first-tag documentation changes.
+   Merge after CI passes.
    From that exact commit, run the checks in [README Development](README.md#development)
    using its pinned Flutter version, then **manually** run `flutter pub publish`.
    Authenticate interactively with the authorized uploader account. New packages
