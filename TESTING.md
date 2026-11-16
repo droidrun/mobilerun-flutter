@@ -36,7 +36,9 @@ Create an AVD before running. SAMPLE_AVD selects it; SAMPLE_EMULATOR_PORT select
 an unused even port (default 5582). Close other instances of that AVD first. The
 script refuses an occupied port and never reuses another running emulator. On
 iOS it creates a temporary iPhone 17 simulator; SAMPLE_IOS_RUNTIME can select an
-installed runtime identifier. Keep the script running while testing; Ctrl-C stops
+installed runtime identifier. A full Xcode installation opens the Simulator window;
+without Simulator.app the simulator runs headlessly (install the full app for
+interactive testing). Keep the script running while testing; Ctrl-C stops
 its emulator or deletes its temporary simulator. Callers sharing a build machine
 should serialize heavy builds and emulator runs with their own lock wrapper.
 
