@@ -23,7 +23,7 @@ Future<StreamCredentials?> consumeCredentials(File file) async {
     return StreamCredentials(url: url.trim(), token: token.trim());
   } catch (_) {
     // Never include decoder input, file contents or transport errors in UI/logs.
-    throw const FormatException('Invalid credentials file. Enter both fields.');
+    throw const FormatException();
   } finally {
     await file.delete();
   }

@@ -25,6 +25,15 @@ Future<void> main() async {
   runApp(ExampleApp(credentials: credentials, error: error));
 }
 
+enum SampleTheme {
+  light('Light'),
+  dark('Dark'),
+  brand('Brand');
+
+  const SampleTheme(this.label);
+  final String label;
+}
+
 class ExampleApp extends StatefulWidget {
   const ExampleApp({super.key, this.credentials, this.error});
   final StreamCredentials? credentials;
@@ -34,12 +43,12 @@ class ExampleApp extends StatefulWidget {
 }
 
 class _ExampleAppState extends State<ExampleApp> {
-  String _theme = 'Light';
+  SampleTheme _theme = SampleTheme.light;
   @override
   Widget build(BuildContext context) {
-    final tokens = _theme == 'Dark'
+    final tokens = _theme == SampleTheme.dark
         ? StreamTokens.dark
-        : _theme == 'Brand'
+        : _theme == SampleTheme.brand
         ? const StreamTokens().copyWith(
             primary: const Color(0xff005b50),
             radius: 12,
@@ -48,7 +57,9 @@ class _ExampleAppState extends State<ExampleApp> {
     return MaterialApp(
       title: 'Mobilerun sample',
       theme: ThemeData(
-        brightness: _theme == 'Dark' ? Brightness.dark : Brightness.light,
+        brightness: _theme == SampleTheme.dark
+            ? Brightness.dark
+            : Brightness.light,
         colorSchemeSeed: const Color(0xff005b50),
         useMaterial3: true,
       ),
@@ -75,8 +86,8 @@ class StreamPage extends StatefulWidget {
   });
   final StreamCredentials? credentials;
   final String? error;
-  final String theme;
-  final ValueChanged<String> onTheme;
+  final SampleTheme theme;
+  final ValueChanged<SampleTheme> onTheme;
   @override
   State<StreamPage> createState() => _StreamPageState();
 }
@@ -131,7 +142,7 @@ class _StreamPageState extends State<StreamPage> {
   @override
   Widget build(BuildContext context) {
     final session = _session;
-    final brand = widget.theme == 'Brand';
+    final brand = widget.theme == SampleTheme.brand;
     return Scaffold(
       appBar: AppBar(title: const Text('Mobilerun sample')),
       body: SafeArea(
@@ -149,9 +160,9 @@ class _StreamPageState extends State<StreamPage> {
                       spacing: 8,
                       crossAxisAlignment: WrapCrossAlignment.center,
                       children: [
-                        for (final mode in ['Light', 'Dark', 'Brand'])
+                        for (final mode in SampleTheme.values)
                           ChoiceChip(
-                            label: Text(mode),
+                            label: Text(mode.label),
                             selected: widget.theme == mode,
                             onSelected: (_) => widget.onTheme(mode),
                           ),
@@ -263,7 +274,8 @@ class _DemoApprovalState extends State<DemoApproval> {
     _controller?.dispose();
     _pending = PendingApproval(
       approvalId: 'demo',
-      kind: 'demo',
+      kind: 'payment_card',
+      details: const {'label': 'Visa 4242', 'targetPackage': 'com.shop'},
       expiresAt: DateTime.now()
           .toUtc()
           .add(const Duration(seconds: 30))
@@ -274,6 +286,7 @@ class _DemoApprovalState extends State<DemoApproval> {
     setState(() {
       _controller = TaskApprovalController(
         taskId: 'local-demo',
+        subscribe: (_, _) => () {},
         fetchApproval: (_) async {
           _fetches++;
           return _pending;

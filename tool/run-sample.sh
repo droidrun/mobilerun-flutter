@@ -18,14 +18,17 @@ pkg=ai.mobilerun.mobilerun_flutter_example
 pid=''
 sim=''
 container=''
+log=''
 adb_() { adb -s "emulator-$port" "$@"; }
 cleanup() {
+  local exit_code=$?
   if [ -n "$pid" ]; then
     adb_ shell run-as "$pkg" rm -f files/sample.json >/dev/null 2>&1 || true
     adb_ emu kill >/dev/null 2>&1 || true
     kill "$pid" 2>/dev/null || true
     wait "$pid" 2>/dev/null || true
   fi
+  if [ "$exit_code" = 0 ] && [ -n "$log" ]; then rm -f "$log"; fi
   if [ -n "$sim" ]; then
     [ -z "$container" ] || rm -f "$container/Library/Application Support/sample.json"
     xcrun simctl shutdown "$sim" >/dev/null 2>&1 || true
@@ -37,14 +40,14 @@ trap 'exit 130' INT TERM
 if [ "$platform" = --ios ]; then
   pkg=ai.mobilerun.mobilerunFlutterExample
   command -v xcrun >/dev/null || { echo 'Install Xcode and an iOS simulator runtime' >&2; exit 2; }
-  flutter build ios --simulator --debug
-  runtime="${SAMPLE_IOS_RUNTIME:-$(xcrun simctl list runtimes | sed -n '/^iOS .* - com.apple.CoreSimulator.SimRuntime.iOS-/s/.* - //p' | head -1)}"
+  runtime="${SAMPLE_IOS_RUNTIME:-$(xcrun simctl list runtimes | sed -n '/unavailable/d; /^iOS .* - com.apple.CoreSimulator.SimRuntime.iOS-/s/.* - //p' | tail -1)}"
   [ -n "$runtime" ] || { echo 'Install an iOS simulator runtime in Xcode first' >&2; exit 2; }
-  sim="$(xcrun simctl create "Mobilerun sample $$" com.apple.CoreSimulator.SimDeviceType.iPhone-17 "$runtime")"
-  xcrun simctl boot "$sim"
-  xcrun simctl bootstatus "$sim" -b
   simulator_app="$(xcode-select -p)/Applications/Simulator.app"
-  if [ -d "$simulator_app" ]; then open -a "$simulator_app"; fi
+  [ -d "$simulator_app" ] || { echo 'Simulator.app is missing; install full Xcode and select it with xcode-select' >&2; exit 2; }
+  sim="$(xcrun simctl create "Mobilerun sample $$" com.apple.CoreSimulator.SimDeviceType.iPhone-17 "$runtime")"
+  flutter build ios --simulator --debug
+  xcrun simctl bootstatus "$sim" -b
+  open -a "$simulator_app"
   xcrun simctl install "$sim" build/ios/iphonesimulator/Runner.app
   container="$(xcrun simctl get_app_container "$sim" "$pkg" data)"
   mkdir -p "$container/Library/Application Support"

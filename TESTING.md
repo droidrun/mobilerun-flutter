@@ -1,10 +1,10 @@
 # Try the Flutter SDK
 
-Use Flutter 3.47.9 (bundled Dart 3.13.7) on PATH. For Android, install JDK 17,
+Tested with Flutter 3.47.9 (bundled Dart 3.13.7); add Flutter to PATH. For Android, install JDK 17,
 Android SDK platform 36, build-tools, platform-tools, the emulator and an API 35+
 AVD through Android Studio. Set JAVA_HOME and ANDROID_HOME and accept the SDK
 licenses (`flutter doctor --android-licenses`). On macOS, iOS additionally needs
-Xcode with an iOS simulator runtime and CocoaPods; verify setup with `flutter doctor`.
+Xcode with an iOS simulator runtime; verify setup with `flutter doctor`.
 
 ## Credentials and launch
 
@@ -36,11 +36,10 @@ Create an AVD before running. SAMPLE_AVD selects it; SAMPLE_EMULATOR_PORT select
 an unused even port (default 5582). Close other instances of that AVD first. The
 script refuses an occupied port and never reuses another running emulator. On
 iOS it creates a temporary iPhone 17 simulator; SAMPLE_IOS_RUNTIME can select an
-installed runtime identifier. A full Xcode installation opens the Simulator window;
-without Simulator.app the simulator runs headlessly (install the full app for
-interactive testing). Keep the script running while testing; Ctrl-C stops
-its emulator or deletes its temporary simulator. Callers sharing a build machine
-should serialize heavy builds and emulator runs with their own lock wrapper.
+installed runtime identifier; otherwise the newest available runtime is selected.
+A full Xcode installation with Simulator.app is required; the script checks this
+before building. Keep the script running while testing; Ctrl-C stops its emulator
+or deletes its temporary simulator.
 
 ## What to try
 
@@ -60,11 +59,11 @@ device persist. Every row gives the expected result.
 | Network off / on | Disable host connectivity and restore it; recovery produces video again. On Simulator, use the host's network controls if available. |
 | Forced reconnect | Tap Reconnect; a new session produces video. |
 | Unavailable / Retry | Connect with an invalid token and wait for attempts to exhaust; Unavailable and Retry appear. Retry tries again. Restore valid credentials using Credentials and Connect. |
-| Themes / labels | Light, Dark and Brand change tokens; Brand uses green controls, rounded corners, Go back / Start / Apps and Allow / Decline labels. |
+| Themes / labels | Light, Dark and Brand change tokens; Brand uses green controls, rounded corners, Allow / Decline approval labels. Stream labels are visible during live testing. |
 | Demo approval | A 30-second countdown appears. Approve or Deny removes the card and shows the decision plus refetch count. Repeat for the other action. No real task is sent. |
 | Stats | Stats shows updating fps, payload kbit/s, RTT, jitter-buffer delay, local/remote ICE candidates and first-frame ms. Unsupported values show —. Hide stats removes it. |
 
-Reference emulator measurements over a relay: first frame 3.7–7.0 s, 41–45 fps, RTT 21–27 ms and median tap-to-pixel 325–364 ms (including snapshot overhead).
+Typical emulator values: first frame about 4–7 seconds, 40–45 fps, network round trip about 20–30 ms and tap response about 350 ms.
 
 ## Automated checks
 
@@ -78,8 +77,9 @@ flutter test
 dart run tool/api_dump.dart --check
 ```
 
-Sample tests cover launch-file validation, one-time deletion and token redaction,
-themes/labels and local approval countdown → decision → refetch. Library suites
+Sample tests cover launch-file validation, one-time deletion, token-field masking,
+themes/approval labels and local approval decisions/refetch. Library tests cover
+credential token redaction and countdown ticking. Library suites
 cover stream lifecycle, input, approvals and UI internals. CI runs both suites
 and builds the Android sample.
 

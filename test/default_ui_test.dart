@@ -387,6 +387,24 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
+  testWidgets('approval card tolerates the initial zero-size native frame', (
+    tester,
+  ) async {
+    tester.view.physicalSize = Size.zero;
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    await tester.pumpWidget(
+      host(TaskApprovalCard(approval: approval, onDecide: (_) {})),
+    );
+    expect(tester.takeException(), isNull);
+    tester.view.physicalSize = const Size(375, 900);
+    await tester.pump();
+    expect(tester.takeException(), isNull);
+    expect(find.text('Approve payment'), findsOneWidget);
+    await tester.pumpWidget(const SizedBox());
+  });
+
   testWidgets('countdown ticks alone and stops at expiry', (tester) async {
     var actionBuilds = 0;
     final soon = approval.copyWith(

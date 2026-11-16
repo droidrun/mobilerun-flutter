@@ -1,24 +1,13 @@
 # mobilerun-flutter
 
-Install from source until the first release: `flutter pub add mobilerun_flutter --git-url https://github.com/droidrun/mobilerun-flutter.git`.
-Your backend supplies stream credentials; never ship an API key in the app.
-
-```dart
-final session = DeviceStreamSession(
-  credentials: () async => StreamCredentials(url: streamUrl, token: streamToken),
-)..start();
-// Inside a bounded area (for example Expanded):
-DeviceStream(session: session, hasControl: true);
-// Close the session when the owning widget is disposed.
-```
-
-See [TESTING.md](TESTING.md) to launch the interactive sample and try every feature.
-
 Flutter package for embedding Mobilerun device streaming and events.
 
-## Installation (after first release)
+## Installation
 
+Install from source until the first release: `flutter pub add mobilerun_flutter --git-url https://github.com/droidrun/mobilerun-flutter.git`.
 After the first release, add `mobilerun_flutter: ^0.1.0` to your dependencies.
+
+See [TESTING.md](TESTING.md) to launch the interactive sample and try every feature.
 
 ## Status: pre-release
 
@@ -34,6 +23,9 @@ final session = DeviceStreamSession(
 );
 session.status.addListener(() => print(session.status.value));
 session.start();
+
+// Inside a bounded area (for example Expanded):
+DeviceStream(session: session);
 
 final png = await session.screenshot();
 

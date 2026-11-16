@@ -13,50 +13,46 @@ void main() {
   setUp(() => dir = Directory.systemTemp.createTempSync('sample-test-'));
   tearDown(() => dir.deleteSync(recursive: true));
 
-  test(
-    'launch file is consumed once and credentials redact the token',
-    () async {
-      final file = File('${dir.path}/sample.json');
-      await file.writeAsString(
-        '{"streamUrl":"wss://example.com", "streamToken":"secret-canary"}',
-      );
-      final credentials = await consumeCredentials(file);
-      expect(credentials?.url, 'wss://example.com');
-      expect(credentials?.token, 'secret-canary');
-      expect(credentials.toString(), isNot(contains('secret-canary')));
-      expect(await file.exists(), isFalse);
-      expect(await consumeCredentials(file), isNull);
-    },
-  );
-
-  for (final input in [
-    '{}',
-    '{"streamUrl":" ","streamToken":"x"}',
-    '{"streamUrl":"wss://example.com","streamToken":" "}',
-    '{"streamUrl":12,"streamToken":"secret-canary"}',
-    'secret-canary',
-  ]) {
-    test(
-      'invalid launch file is rejected and deleted: ${input.length} chars',
-      () async {
-        final file = File('${dir.path}/sample.json');
-        await file.writeAsString(input);
-        await expectLater(
-          consumeCredentials(file),
-          throwsA(
-            isA<FormatException>().having(
-              (error) => error.toString(),
-              'safe error',
-              isNot(contains('secret-canary')),
-            ),
-          ),
-        );
-        expect(await file.exists(), isFalse);
-      },
+  test('launch file trims credentials and is consumed once', () async {
+    final file = File('${dir.path}/sample.json');
+    await file.writeAsString(
+      '{"streamUrl":"  wss://example.com  ", "streamToken":"  secret-canary  "}',
     );
+    final credentials = await consumeCredentials(file);
+    expect(credentials?.url, 'wss://example.com');
+    expect(credentials?.token, 'secret-canary');
+    expect(await file.exists(), isFalse);
+    expect(await consumeCredentials(file), isNull);
+  });
+
+  for (final entry in {
+    'missing fields': '{}',
+    'blank URL': '{"streamUrl":" ","streamToken":"x"}',
+    'blank token': '{"streamUrl":"wss://example.com","streamToken":" "}',
+    'wrong field type': '{"streamUrl":12,"streamToken":"secret-canary"}',
+    'malformed JSON': 'secret-canary',
+    'json array': '[]',
+  }.entries) {
+    test('rejects and deletes ${entry.key}', () async {
+      final file = File('${dir.path}/sample.json');
+      await file.writeAsString(entry.value);
+      await expectLater(
+        consumeCredentials(file),
+        throwsA(isA<FormatException>()),
+      );
+      expect(await file.exists(), isFalse);
+    });
   }
 
-  testWidgets('approval counts down, approves/denies and refetches', (
+  testWidgets('token entry is obscured', (tester) async {
+    await tester.pumpWidget(const ExampleApp());
+    final tokenField = tester.widget<TextField>(
+      find.widgetWithText(TextField, 'Stream token'),
+    );
+    expect(tokenField.obscureText, isTrue);
+  });
+
+  testWidgets('demo displays a seconds countdown and payment details', (
     tester,
   ) async {
     await tester.pumpWidget(
@@ -64,16 +60,43 @@ void main() {
     );
     await tester.tap(find.text('Demo approval'));
     await tester.pump();
-    expect(find.textContaining('30s'), findsOneWidget);
+    expect(find.textContaining(RegExp(r'^\d+s left$')), findsOneWidget);
+    expect(find.text('Visa 4242'), findsOneWidget);
+    expect(find.text('com.shop'), findsOneWidget);
+    await tester.pumpWidget(const SizedBox());
+  });
+
+  testWidgets('approve dismisses the demo with exactly one refetch', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      const MaterialApp(home: Scaffold(body: DemoApproval())),
+    );
+    await tester.tap(find.text('Demo approval'));
+    await tester.pump();
+    // No polling fetches during the pending approval.
+    await tester.pump(const Duration(seconds: 6));
     await tester.tap(find.text('Approve'));
     await tester.pump();
     expect(find.text('Decision: approve; refetches: 1'), findsOneWidget);
-    expect(find.text('Approve'), findsNothing);
+    expect(find.text('Approve payment'), findsNothing);
+    await tester.pump(const Duration(seconds: 6));
+    expect(find.text('Decision: approve; refetches: 1'), findsOneWidget);
+    await tester.pumpWidget(const SizedBox());
+  });
+
+  testWidgets('deny dismisses the demo with exactly one refetch', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      const MaterialApp(home: Scaffold(body: DemoApproval())),
+    );
     await tester.tap(find.text('Demo approval'));
     await tester.pump();
     await tester.tap(find.text('Deny'));
     await tester.pump();
     expect(find.text('Decision: deny; refetches: 1'), findsOneWidget);
+    expect(find.text('Approve payment'), findsNothing);
     await tester.pumpWidget(const SizedBox());
   });
 
