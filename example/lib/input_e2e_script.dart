@@ -211,6 +211,7 @@ final class InputE2eScript {
   Future<void> run() async {
     log('START input');
     session.status.addListener(() => log('status ${session.status.value}'));
+    session.openUrl('https://example.com');
     session.start();
     await until(
       () =>
@@ -218,6 +219,8 @@ final class InputE2eScript {
           session.videoSize.value != null,
       'connected video',
     );
+    await until(() => debug.sent.contains('openUrl'), 'queued URL sent');
+    log('openUrl queued before connect and sent after control opened');
     await wait(3000);
     await shot('01-first-frame');
     // Bring Settings to the foreground before resetting its retained search
