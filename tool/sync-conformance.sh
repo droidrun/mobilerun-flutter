@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
 # Copyright 2026 Mobilerun
 # SPDX-License-Identifier: Apache-2.0
-# Refresh the vendored conformance fixtures from a clone of the shared
-# conformance repository.
+# Refresh the vendored conformance fixtures as a maintainer step from the
+# conformance fixture source.
 #
 # Usage: tool/sync-conformance.sh TAG CONFORMANCE_CLONE_PATH
 #
-# Example: tool/sync-conformance.sh v0.1.0 ../mobilerun-sdk-conformance
+# Example: tool/sync-conformance.sh v0.1.0 PATH_TO_CONFORMANCE_CLONE
 #
 # The copy lives in conformance/fixtures and the pinned tag is recorded in
 # conformance/VERSION. Never track a branch: always pass a release tag.

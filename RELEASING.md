@@ -25,11 +25,11 @@ The repository owner must complete all of these steps before automated publishin
    Authenticate interactively with the authorized uploader account. New packages
    require this manual first upload; automated publishing cannot create them.
    The package initially belongs to the uploader's account. Transfer it to the
-   company publisher on the package Admin page, then verify publisher ownership.
+   company publisher on the package Admin settings, then verify publisher ownership.
 4. Create the GitHub environment `pub-dev` with a required reviewer and deployment
    restrictions allowing only tags matching `v*`. Enable protection against
    self-approval. The upload job already references this environment.
-5. On the package's pub.dev Admin page, enable automated publishing from
+5. On the package's pub.dev Admin settings, enable automated publishing from
    `droidrun/mobilerun-flutter` with tag pattern `v{{version}}`. Enable **Require
    GitHub Actions environment** and require `pub-dev`.
    See [automated publishing](https://dart.dev/tools/pub/automated-publishing).
@@ -40,15 +40,26 @@ The repository owner must complete all of these steps before automated publishin
    environment approvals before releasing.
 
 After the manual upload and setup, create the historical `v0.1.0` tag on that
-release commit. Its automated upload is **expected to fail** because pub.dev
-versions are immutable and `0.1.0` already exists. Do not retry or approve the
-upload expecting a second publication; confirm the existing version on pub.dev.
+release commit. Reject its `pub-dev` environment approval because `0.1.0` is already published
+and versions are immutable. Confirm the existing version on pub.dev; no second
+upload is needed.
 Subsequent tags publish new versions. No upload, tag, account setup or visibility
 change is part of preparing this pipeline.
 
 ## Each release
 
-1. Set a stable `X.Y.Z` version in `pubspec.yaml`, update `CHANGELOG.md` and the
+1. At the first tag, update every pre-release sentence:
+   - README Installation: replace “Install from source until the first release”
+     and “After the first release” with the released installation command.
+   - README Quickstart: remove “The package is not published yet and its
+     API may still change.”
+   - TESTING has no pre-release sentences that need changing.
+   - RELEASING introduction: remove “Nothing has been published yet.”
+   - RELEASING Required one-time setup: mark completed setup as historical,
+     including the manual first upload and historical-tag instructions.
+   - CHANGELOG: change “0.1.0 (unreleased)” to the release version and date.
+
+   Set a stable `X.Y.Z` version in `pubspec.yaml`, update `CHANGELOG.md` and the
    README installation example. For public API changes, run
    `dart run tool/api_dump.dart`, inspect and commit the signature diff.
    The contract covers exports of `lib/mobilerun_flutter.dart`, excluding

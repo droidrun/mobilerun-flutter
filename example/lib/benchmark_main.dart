@@ -12,9 +12,7 @@ import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
-import 'package:flutter_webrtc/flutter_webrtc.dart';
 import 'package:mobilerun_flutter/mobilerun_flutter.dart';
-import 'package:mobilerun_flutter/src/core/device_stream_session.dart';
 import 'package:mobilerun_flutter/src/core/input/input_geometry.dart';
 import 'package:path_provider/path_provider.dart';
 
@@ -22,7 +20,6 @@ import 'debug_signalling.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  await WebRTC.initialize(options: {'zeroPlayoutDelay': true});
   final dir = await getApplicationSupportDirectory();
   final json =
       jsonDecode(await File('${dir.path}/e2e.json').readAsString()) as Map;
@@ -238,7 +235,7 @@ class _BenchmarkAppState extends State<BenchmarkApp> {
     final rows = <String>[];
     for (var run = 1; run <= 5; run++) {
       final debug = DebugTransports();
-      final session = createDeviceStreamSessionWithTransports(
+      final session = DeviceStreamSession.withTransports(
         credentials: () async => widget.credentials,
         transports: debug.transports,
       );
@@ -276,7 +273,7 @@ class _BenchmarkAppState extends State<BenchmarkApp> {
       collectSteady = false;
       final latency = <double>[], appLaunch = <double>[];
       for (var i = 0; i < 10; i++) {
-        _controller.sendSystemKey(DeviceSystemKey.home);
+        _controller.sendSystemKey(SystemKey.home);
         await wait(1500);
         final (g, box) = geometry;
         final videoTap = Offset(
@@ -453,7 +450,7 @@ ${rows.join('\n')}
     _debug!.killSocket();
     for (var i = 0; i < 12 && session.status.value is! StreamUnavailable; i++) {
       await wait(1500);
-      if (session.status.value is! StreamUnavailable) session.wake();
+      if (session.status.value is! StreamUnavailable) session.handleWake();
     }
     await until(() => session.status.value is StreamUnavailable, 'unavailable');
     await host('shot phone-unavailable');
@@ -507,7 +504,7 @@ ${rows.join('\n')}
     await until(() => _connected, 'foreground');
     await _freshVideo('foreground');
     await host('network');
-    session.wake();
+    session.handleWake();
     await until(() => _connected, 'network return');
     await _freshVideo('network return');
     await host('shot phone-network-recovered');

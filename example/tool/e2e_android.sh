@@ -13,8 +13,8 @@
 # again; it never touches argv, the APK or the repository.
 #
 # Needs ANDROID_HOME (cmdline-tools, emulator, platform-tools, an arm64
-# google_apis system image), a debug APK of the scripted entry point
-# (`flutter build apk --debug -t lib/e2e_main.dart` in example/) and python3.
+# google_apis system image), Flutter and python3. Builds the scripted target
+# before installing it.
 # Set AVD to use an existing virtual device.
 #
 # Proof of the picture is in pixels: every emulator screenshot of a live stream
@@ -42,6 +42,7 @@ serial="emulator-$port"
 adb_() { adb -s "$serial" "$@"; }
 
 mkdir -p "$out/shots"
+(cd "$here" && flutter build apk --debug -t lib/e2e_main.dart)
 
 if ! avdmanager list avd 2>/dev/null | grep -q "Name: $avd"; then
   echo no | avdmanager create avd -n "$avd" \

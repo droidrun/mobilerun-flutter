@@ -21,24 +21,6 @@ int? _optionalInt(Map<String, Object?> json, String key) {
   throw FormatException('"$key" must be an integer or null', json);
 }
 
-/// Parses an ICE server entry whose `urls` is a string or a list of strings.
-IceServer _parseIceServer(Map<String, Object?> json) {
-  final urls = json['urls'];
-  final List<String> parsed;
-  if (urls is String) {
-    parsed = [urls];
-  } else if (urls is List && urls.every((url) => url is String)) {
-    parsed = urls.cast<String>();
-  } else {
-    throw FormatException('"urls" must be a string or list of strings', json);
-  }
-  return IceServer._(
-    urls: parsed,
-    username: _optionalString(json, 'username'),
-    credential: _optionalString(json, 'credential'),
-  );
-}
-
 /// A signalling message the client sends to the server as a JSON text frame.
 sealed class ClientMessage {
   const ClientMessage();
@@ -141,7 +123,7 @@ final class ClientCandidateMessage extends ClientMessage {
   };
 }
 
-/// Heartbeat, sent every 10 s while the page is visible and the socket open.
+/// Heartbeat, sent every 10 s while the app is visible and the socket open.
 final class KeepAliveMessage extends ClientMessage {
   /// Creates a heartbeat for [sessionId].
   const KeepAliveMessage({required this.sessionId});
@@ -331,20 +313,6 @@ final class ServerCandidateMessage extends ServerMessage {
   String get type => messageType;
 }
 
-/// An ICE server entry of an [RtcConfigurationMessage].
-final class IceServer {
-  const IceServer._({required this.urls, this.username, this.credential});
-
-  /// STUN and TURN URLs of this server.
-  final List<String> urls;
-
-  /// TURN user name, if any.
-  final String? username;
-
-  /// TURN credential, if any.
-  final String? credential;
-}
-
 /// ICE configuration. The first one is the reply to
 /// [RequestRtcConfigurationMessage]; later ones are mid-session credential
 /// refreshes. Which of the two it is depends on the connection phase, not on
@@ -358,25 +326,6 @@ final class RtcConfigurationMessage extends ServerMessage {
   /// The raw `RTCConfiguration` object, kept as received so that it can be
   /// handed to the peer connection unchanged.
   final Map<String, Object?> rtcConfiguration;
-
-  /// The typed `iceServers` entries, or null when the field is absent (a
-  /// refresh without it is ignored).
-  ///
-  /// Throws a [FormatException] when the field is present but malformed.
-  List<IceServer>? get iceServers {
-    final servers = rtcConfiguration['iceServers'];
-    if (servers == null) return null;
-    if (servers is! List) {
-      throw FormatException('"iceServers" must be a list', rtcConfiguration);
-    }
-    return [
-      for (final server in servers)
-        if (server is Map)
-          _parseIceServer(server.cast<String, Object?>())
-        else
-          throw FormatException('"iceServers" entries must be objects', server),
-    ];
-  }
 
   @override
   String get type => messageType;

@@ -8,6 +8,7 @@ import 'package:flutter_webrtc/flutter_webrtc.dart';
 
 import '../core/stream_config.dart';
 import 'stream_stats_parser.dart';
+import 'webrtc_initializer.dart';
 import '../core/stream_transports.dart';
 import '../core/video_codecs.dart';
 import '../protocol/stream_spec.dart';
@@ -17,34 +18,19 @@ final class FlutterWebRtcPeerFactory implements PeerTransportFactory {
   /// Creates the factory.
   FlutterWebRtcPeerFactory();
 
-  // The plugin is initialised once per process; the first call wins.
-  static Future<void>? _initialization;
-
-  static Future<void> _ensureInitialized(StreamConfig config) =>
-      _initialization ??= () async {
-        try {
-          await WebRTC.initialize(
-            options: {if (config.zeroPlayoutDelay) 'zeroPlayoutDelay': true},
-          );
-        } on Object {
-          // Initialisation is best effort: the plugin falls back to its
-          // defaults on first use.
-        }
-      }();
-
   @override
   Future<PeerTransport> create(
     Map<String, Object?> rtcConfiguration, {
     required StreamConfig config,
     required bool muted,
   }) async {
-    await _ensureInitialized(config);
+    await webRtcInitializer.ensureInitialized();
     final pc = await createPeerConnection({
       ...rtcConfiguration,
       'sdpSemantics': 'unified-plan',
     });
     try {
-      return await _FlutterWebRtcPeer.setUp(pc, muted);
+      return await _FlutterWebRtcPeer.setUp(pc, muted, config.videoCodec);
     } on Object {
       await pc.close();
       await pc.dispose();
@@ -152,6 +138,7 @@ final class _FlutterWebRtcPeer implements PeerTransport {
   static Future<_FlutterWebRtcPeer> setUp(
     RTCPeerConnection pc,
     bool muted,
+    VideoCodec videoCodec,
   ) async {
     await pc.addTransceiver(
       kind: RTCRtpMediaType.RTCRtpMediaTypeAudio,
@@ -164,7 +151,9 @@ final class _FlutterWebRtcPeer implements PeerTransport {
     try {
       final capabilities = await getRtpReceiverCapabilities('video');
       final codecs = capabilities.codecs ?? const <RTCRtpCodecCapability>[];
-      final order = videoCodecOrder([for (final c in codecs) c.mimeType]);
+      final order = videoCodecOrder([
+        for (final c in codecs) c.mimeType,
+      ], preference: videoCodec);
       await video.setCodecPreferences([for (final i in order) codecs[i]]);
     } on Object {
       // Codec preferences are an optimisation: the platform default order is

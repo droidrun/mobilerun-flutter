@@ -24,9 +24,7 @@ final class WebSocketSignallingConnector implements SignallingConnector {
       final status = _httpStatus(error);
       if (status != null) throw SignallingRejectedException(status);
       // The error text can carry the URL, which carries the token.
-      throw const StreamSessionException(
-        'could not open the signalling socket',
-      );
+      throw const StreamNotConnectedException();
     }
     return _WebSocketConnection(channel);
   }

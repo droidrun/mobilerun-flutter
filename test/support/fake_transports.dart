@@ -30,6 +30,7 @@ final class FakeConnection implements SignallingConnection {
   final List<SentFrame> sent = [];
   bool closedByClient = false;
   int? closeCode;
+  Completer<void>? closeGate;
   bool closedByServer = false;
 
   @override
@@ -52,6 +53,7 @@ final class FakeConnection implements SignallingConnection {
   Future<void> close({int code = 1000}) async {
     closeCode = code;
     closedByClient = true;
+    await closeGate?.future;
     if (!_incoming.isClosed) unawaited(_incoming.close());
   }
 

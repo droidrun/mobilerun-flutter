@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import 'package:flutter_test/flutter_test.dart';
+
 import 'support/fixtures.dart';
 import 'support/input_vectors.dart';
 

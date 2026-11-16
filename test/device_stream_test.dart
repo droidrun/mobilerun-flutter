@@ -179,30 +179,29 @@ void main() {
     expect(find.byType(StreamNavigationBar), findsNothing);
   });
 
-  testWidgets(
-    'connected keeps S3 video, navigation sends exact DOWN/UP pairs',
-    (tester) async {
-      final h = Harness();
-      await tester.runAsync(h.connect);
-      await tester.runAsync(() async {
-        h.peer.emitVideo(_Video());
-        await pump();
-      });
-      await mount(tester, h);
-      expect(find.byType(RTCVideoView), findsOneWidget);
-      expect(find.byType(StreamStatusPill), findsNothing);
-      h.peer.controlChannel.sent.clear();
-      for (final label in ['Back', 'Home', 'Recent']) {
-        await tester.tap(find.bySemanticsLabel(label));
-      }
-      expect(h.peer.controlChannel.sent, [
-        for (final code in [4, 3, 187]) ...[
-          encodeKeycode(action: 0, keycode: code),
-          encodeKeycode(action: 1, keycode: code),
-        ],
-      ]);
-    },
-  );
+  testWidgets('connected keeps video, navigation sends exact DOWN/UP pairs', (
+    tester,
+  ) async {
+    final h = Harness();
+    await tester.runAsync(h.connect);
+    await tester.runAsync(() async {
+      h.peer.emitVideo(_Video());
+      await pump();
+    });
+    await mount(tester, h);
+    expect(find.byType(RTCVideoView), findsOneWidget);
+    expect(find.byType(StreamStatusPill), findsNothing);
+    h.peer.controlChannel.sent.clear();
+    for (final label in ['Back', 'Home', 'Recent']) {
+      await tester.tap(find.bySemanticsLabel(label));
+    }
+    expect(h.peer.controlChannel.sent, [
+      for (final code in [4, 3, 187]) ...[
+        encodeKeycode(action: 0, keycode: code),
+        encodeKeycode(action: 1, keycode: code),
+      ],
+    ]);
+  });
 
   testWidgets(
     'display-only keeps video and blocks view, navigation and controller input',
@@ -232,7 +231,7 @@ void main() {
       tester
           .widget<DeviceStreamView>(find.byType(DeviceStreamView))
           .controller!
-          .sendSystemKey(DeviceSystemKey.back);
+          .sendSystemKey(SystemKey.back);
       await tester.tap(find.bySemanticsLabel('Home'));
       await tester.tap(find.byType(DeviceStreamView));
       expect(h.peer.controlChannel.sent, isEmpty);

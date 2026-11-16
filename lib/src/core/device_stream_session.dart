@@ -7,7 +7,6 @@ import 'dart:math';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_webrtc/flutter_webrtc.dart' show MediaStream;
 
-import '../protocol/stream_timing.dart';
 import '../webrtc/default_transports.dart';
 import 'reconnect_controller.dart';
 import 'reconnect_policy.dart';
@@ -39,7 +38,7 @@ final class DeviceStreamSession {
   DeviceStreamSession({
     required StreamCredentialsProvider credentials,
     StreamConfig config = const StreamConfig(),
-  }) : this._withTransports(
+  }) : this.withTransports(
          credentials: credentials,
          config: config,
          transports: defaultStreamTransports(),
@@ -47,16 +46,15 @@ final class DeviceStreamSession {
 
   /// Creates a session on custom transports and clock, for tests and debug
   /// tooling that wraps the default transports.
-  DeviceStreamSession._withTransports({
-    required StreamCredentialsProvider credentials,
-    required StreamTransports transports,
+  @internal
+  DeviceStreamSession.withTransports({
+    required this._credentials,
+    required this._transports,
     StreamConfig config = const StreamConfig(),
     Scheduler scheduler = const TimerScheduler(),
     double Function()? random,
     String Function()? sessionId,
-  }) : _credentials = credentials,
-       _config = config,
-       _transports = transports,
+  }) : _config = config,
        _scheduler = scheduler,
        _sessionId = (sessionId ?? _randomUuid)(),
        _muted = config.muted {
@@ -86,6 +84,7 @@ final class DeviceStreamSession {
 
   bool _started = false;
   bool _closed = false;
+  final ValueNotifier<bool> _closedState = ValueNotifier(false);
   bool _muted;
   StreamCredentials? _lastCredentials;
   StreamCredentials? _activeCredentials;
@@ -96,6 +95,12 @@ final class DeviceStreamSession {
   final _retiredDisposals = <Future<void>>{};
   ScheduledTask? _credentialsPoll;
   bool _visible = true;
+  int _videoRotation = 0;
+  String? _pendingUrl;
+
+  /// Whether this session has been closed, for the SDK views.
+  @internal
+  ValueListenable<bool> get closed => _closedState;
 
   /// The connection status. Starts as [StreamConnecting].
   ValueListenable<StreamStatus> get status => _status;
@@ -111,6 +116,16 @@ final class DeviceStreamSession {
   /// no live connection; it changes on every reconnect.
   @internal
   ValueListenable<MediaStream?> get videoStream => _videoStream;
+
+  /// Updates the decoded rotation reported by the native renderer.
+  @internal
+  void updateVideoRotation(int rotation) {
+    if (_closed) return;
+    _videoRotation = rotation;
+    final size = _videoSize.value;
+    if (size == null || size.rotation == rotation) return;
+    _videoSize.value = VideoSize(size.width, size.height, rotation: rotation);
+  }
 
   /// Starts connecting. A no-op when already started or closed.
   void start() {
@@ -132,7 +147,7 @@ final class DeviceStreamSession {
 
   /// Wakes a pending reconnect wait or restarts an unavailable session.
   /// Call this when the app's existing connectivity source comes back online.
-  void wake() {
+  void handleWake() {
     if (_closed || !_started) return;
     if (_lastCredentials == null) {
       _requestCredentials(replacePending: true);
@@ -148,7 +163,7 @@ final class DeviceStreamSession {
     _visible = visible;
     _attempt?.setVisible(visible);
     _updateSampling();
-    if (visible) wake();
+    if (visible) handleWake();
   }
 
   /// Closes the session and releases the peer connection, streams, channels,
@@ -156,7 +171,9 @@ final class DeviceStreamSession {
   Future<void> close() async {
     if (_closed) return;
     _closed = true;
+    _closedState.value = true;
     _credentialsEpoch++;
+    _pendingUrl = null;
     _credentialsTimeout?.cancel();
     _credentialsPoll?.cancel();
     _controller.dispose();
@@ -186,24 +203,36 @@ final class DeviceStreamSession {
   @internal
   bool sendHover(Uint8List data) => _attempt?.sendHover(data) ?? false;
 
-  /// Asks the device to open [url]. Returns whether the request was sent: it
-  /// is dropped while the signalling socket is not open.
-  bool openUrl(String url) => _attempt?.openUrl(url) ?? false;
+  /// Asks the device to open [url]. Until the control channel opens, only the
+  /// latest URL is queued.
+  void openUrl(String url) {
+    if (_closed) return;
+    _pendingUrl = url;
+    _flushUrl();
+  }
+
+  void _flushUrl() {
+    final url = _pendingUrl;
+    if (!_closed && url != null && (_attempt?.openUrl(url) ?? false)) {
+      _pendingUrl = null;
+    }
+  }
 
   /// Takes a screenshot of the device and returns the image bytes (PNG).
   ///
-  /// Throws a [TimeoutException] when the device does not answer within
-  /// [timeout] and a [StreamSessionException] when the request cannot be sent,
+  /// Throws a [ScreenshotTimeoutException] when the device does not answer within
+  /// [timeout] and a [StreamException] when the request cannot be sent,
   /// the device reports an error or the connection is lost meanwhile.
   Future<Uint8List> screenshot({
-    Duration timeout = SignallingTiming.screenshotTimeout,
+    Duration timeout = const Duration(seconds: 30),
   }) =>
       _attempt?.screenshot(timeout) ??
-      Future.error(const StreamSessionException('stream is not connected'));
+      Future.error(const StreamNotConnectedException());
 
   // ---- attempt lifecycle --------------------------------------------------
 
   void _clearVideo() {
+    _videoRotation = 0;
     _stats.value = null;
     _videoStream.value = null;
     _videoSize.value = null;
@@ -266,13 +295,12 @@ final class DeviceStreamSession {
     }
 
     _credentialsTimeout = _scheduler.schedule(
-      ReconnectPolicy.connectTimeout,
+      InternalReconnectPolicy.connectTimeout,
       () => finish(null),
     );
     unawaited(
-      Future<StreamCredentials?>.sync(
-        _credentials,
-      ).then(finish, onError: (Object _) => finish(null)),
+      Future<StreamCredentials?>.sync(_credentials)
+          .then(finish, onError: (Object _) => finish(null)),
     );
   }
 
@@ -282,7 +310,8 @@ final class DeviceStreamSession {
       return;
     }
     if (_activeCredentials?.url != next.url ||
-        _activeCredentials?.token != next.token) {
+        (_status.value is! StreamConnected &&
+            _activeCredentials?.token != next.token)) {
       _beginAttempt();
     }
   }
@@ -312,6 +341,7 @@ final class DeviceStreamSession {
       credentials: resolved,
       visible: _visible,
       events: StreamAttemptEvents(
+        controlReady: _flushUrl,
         stats: (sample) =>
             _stats.value = _status.value is StreamConnected ? sample : null,
         connected: _controller.handleConnected,
@@ -321,10 +351,15 @@ final class DeviceStreamSession {
           _controller.handleFailure();
         },
         videoStream: (stream) => _videoStream.value = stream,
-        videoSize: (size) => _videoSize.value = size,
+        videoSize: (size) => _videoSize.value = VideoSize(
+          size.width,
+          size.height,
+          rotation: _videoRotation,
+        ),
         credentialsRejected: _requestCredentials,
       ),
     )..start();
+    _flushUrl();
     _updateSampling();
   }
 
@@ -337,25 +372,6 @@ final class DeviceStreamSession {
     return '${hex(8)}-${hex(4)}-4${hex(3)}-a${hex(3)}-${hex(12)}';
   }
 }
-
-/// Creates sessions with injected transports for tests and diagnostic examples.
-/// This internal hook is intentionally absent from the package entry point.
-@internal
-DeviceStreamSession createDeviceStreamSessionWithTransports({
-  required StreamCredentialsProvider credentials,
-  required StreamTransports transports,
-  StreamConfig config = const StreamConfig(),
-  Scheduler scheduler = const TimerScheduler(),
-  double Function()? random,
-  String Function()? sessionId,
-}) => DeviceStreamSession._withTransports(
-  credentials: credentials,
-  transports: transports,
-  config: config,
-  scheduler: scheduler,
-  random: random,
-  sessionId: sessionId,
-);
 
 // Eligibility follows observer changes without adding a public notifier API.
 final class _ObservedStats extends ValueNotifier<StreamStats?> {

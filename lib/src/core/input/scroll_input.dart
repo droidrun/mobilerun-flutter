@@ -6,10 +6,11 @@
 
 import 'dart:ui';
 import 'dart:typed_data';
+
 import 'input_geometry.dart';
 import '../../protocol/control_messages.dart';
 
-/// Flutter scroll deltas are pixels; the S1 encoder applies ticks / 16.
+/// Flutter scroll deltas are pixels; the scroll encoder applies ticks / 16.
 Offset scrollTicks(Offset delta) => delta * -0.01;
 
 /// Routes upright positions and abstract ticks, ignoring invalid/outside points.

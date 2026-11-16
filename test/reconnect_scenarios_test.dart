@@ -1,8 +1,8 @@
 // Copyright 2026 Mobilerun
 // SPDX-License-Identifier: Apache-2.0
 
+import 'package:mobilerun_flutter/src/core/reconnect_controller.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:mobilerun_flutter/mobilerun_flutter.dart';
 
 import 'support/fake_scheduler.dart';
 import 'support/fixtures.dart';

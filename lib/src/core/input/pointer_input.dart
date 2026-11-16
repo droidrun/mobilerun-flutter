@@ -27,9 +27,6 @@ final class PointerInput {
   final _active = <(bool, int), _Pointer>{};
 
   (bool, int) _identity(int id, bool mouse) => (mouse, mouse ? 0 : id);
-  bool contains(int id, {bool mouse = false}) =>
-      _active.containsKey(_identity(id, mouse));
-
   bool down(
     int id,
     Offset position,

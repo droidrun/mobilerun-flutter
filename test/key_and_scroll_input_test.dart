@@ -18,9 +18,8 @@ void main() {
         (e) => e.value == code,
       );
       expect(
-        PhysicalKeyboardKey.findKeyByCode(
-          entry.key,
-        )!.debugName!.replaceAll(' ', ''),
+        PhysicalKeyboardKey.findKeyByCode(entry.key)!.debugName!
+            .replaceAll(' ', ''),
         code,
       );
       expect(logicalKeyCodes.values, contains(code));

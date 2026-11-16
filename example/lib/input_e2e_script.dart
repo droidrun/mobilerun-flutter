@@ -62,15 +62,15 @@ final class InputE2eScript {
     );
   }
 
-  void system(DeviceSystemKey key) {
+  void system(SystemKey key) {
     final begin = sent.length;
     controller.sendSystemKey(key);
     expectFrames(
       begin,
       press(switch (key) {
-        DeviceSystemKey.back => 4,
-        DeviceSystemKey.home => 3,
-        DeviceSystemKey.recent => 187,
+        SystemKey.back => 4,
+        SystemKey.home => 3,
+        SystemKey.recent => 187,
       }),
       'system ${key.name}',
     );
@@ -222,14 +222,14 @@ final class InputE2eScript {
     await shot('01-first-frame');
     // Bring Settings to the foreground before resetting its retained search
     // activity. BACK while the launcher is foreground cannot reset that task.
-    system(DeviceSystemKey.home);
+    system(SystemKey.home);
     await wait(1800);
     await tapSettings();
     for (var i = 0; i < 3; i++) {
-      system(DeviceSystemKey.back);
+      system(SystemKey.back);
       await wait(1000);
     }
-    system(DeviceSystemKey.home);
+    system(SystemKey.home);
     await wait(1800);
     await shot('02-before-tap');
     await tapSettings();
@@ -290,7 +290,7 @@ final class InputE2eScript {
 
     // Rotate the local surface, preserve the cloud orientation, and tap the
     // same known target through a fresh letterboxed geometry.
-    system(DeviceSystemKey.home);
+    system(SystemKey.home);
     await wait(1800);
     await rotateView(true);
     await wait(800);
@@ -300,10 +300,10 @@ final class InputE2eScript {
     await shot('08-rotated-tap');
     await rotateView(false);
     await wait(700);
-    system(DeviceSystemKey.back);
-    system(DeviceSystemKey.recent);
+    system(SystemKey.back);
+    system(SystemKey.recent);
     await shot('09-recent');
-    system(DeviceSystemKey.home);
+    system(SystemKey.home);
     await wait(1500);
     await tapSettings();
     // Settings search field (tap search icon, then the editor).
@@ -385,10 +385,10 @@ final class InputE2eScript {
       ),
     ], 'scroll exact bytes on control channel');
     log('hover/scroll exact bytes on separate channels');
-    system(DeviceSystemKey.home);
+    system(SystemKey.home);
     await shot('12-final-home');
 
-    // Preserve the connection slice's forced-close/rebuild and control proof.
+    // Preserve the connection forced-close/rebuild and control proof.
     final oldPeer = debug.peers.last;
     debug.killSocket();
     await until(
@@ -406,7 +406,7 @@ final class InputE2eScript {
     );
     await wait(2500);
     await shot('14-after-reconnect');
-    system(DeviceSystemKey.home);
+    system(SystemKey.home);
     await wait(1800);
     await shot('15-reconnected-before-tap');
     await tapSettings();

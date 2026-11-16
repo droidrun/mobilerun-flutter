@@ -1,11 +1,14 @@
 // Copyright 2026 Mobilerun
 // SPDX-License-Identifier: Apache-2.0
 
+import 'package:mobilerun_flutter/src/protocol/stream_timing.dart';
+import 'package:mobilerun_flutter/src/protocol/stream_spec.dart';
+import 'package:mobilerun_flutter/src/protocol/signalling.dart';
+
 import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:mobilerun_flutter/mobilerun_flutter.dart';
 
 import 'support/fixtures.dart';
 
@@ -114,31 +117,6 @@ void main() {
         sessionId: 's',
       );
       expect(message.url, 'https://example.test/%zz');
-    });
-  });
-
-  group('typed views', () {
-    final examples = readObjects(
-      'signalling/server-rtc-configuration.json',
-      'examples',
-    );
-
-    test('rtcConfiguration exposes ice servers', () {
-      final message =
-          ServerMessage.fromJson(asObject(examples[0]['json']))
-              as RtcConfigurationMessage;
-      final servers = message.iceServers!;
-      expect(servers, hasLength(2));
-      expect(servers[0].urls, ['stun:stun.example.test:3478']);
-      expect(servers[1].username, '1700000000:user');
-      expect(servers[1].credential, 'cred-example');
-    });
-
-    test('refresh without iceServers has none', () {
-      final message =
-          ServerMessage.fromJson(asObject(examples[1]['json']))
-              as RtcConfigurationMessage;
-      expect(message.iceServers, isNull);
     });
   });
 

@@ -140,27 +140,24 @@ void main() {
       encodeText('two'),
     ]);
   });
-  test(
-    'ordinary characters commit immediately and implicit composition finalization commits once',
-    () {
-      final sent = <Uint8List>[];
-      final input = StreamTextInput(active: () => true, send: sent.add);
-      input.updateEditingValue(const TextEditingValue(text: '\u200ba'));
-      expect(sent, [encodeText('a')]);
-      input.updateEditingValue(const TextEditingValue(text: '\u200bb'));
-      expect(sent, [encodeText('a'), encodeText('b')]);
-      input.updateEditingValue(
-        const TextEditingValue(
-          text: '\u200b日本',
-          composing: TextRange(start: 1, end: 3),
-        ),
-      );
-      input.connectionClosed();
-      input.connectionClosed();
-      expect(sent, [encodeText('a'), encodeText('b'), encodeText('日本')]);
-      expect(input.currentTextEditingValue.text, '\u200b');
-    },
-  );
+  test('ordinary characters commit immediately and implicit composition finalization commits once', () {
+    final sent = <Uint8List>[];
+    final input = StreamTextInput(active: () => true, send: sent.add);
+    input.updateEditingValue(const TextEditingValue(text: '\u200ba'));
+    expect(sent, [encodeText('a')]);
+    input.updateEditingValue(const TextEditingValue(text: '\u200bb'));
+    expect(sent, [encodeText('a'), encodeText('b')]);
+    input.updateEditingValue(
+      const TextEditingValue(
+        text: '\u200b日本',
+        composing: TextRange(start: 1, end: 3),
+      ),
+    );
+    input.connectionClosed();
+    input.connectionClosed();
+    expect(sent, [encodeText('a'), encodeText('b'), encodeText('日本')]);
+    expect(input.currentTextEditingValue.text, '\u200b');
+  });
   test('editor action finalizes marked text before ENTER', () {
     final sent = <Uint8List>[];
     final input = StreamTextInput(active: () => true, send: sent.add);

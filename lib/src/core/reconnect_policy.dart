@@ -13,7 +13,10 @@ abstract final class ReconnectPolicy {
   /// Consecutive failed attempts after which the stream is declared
   /// unavailable.
   static const int maxAttempts = 6;
+}
 
+/// Internal reconnect timings.
+abstract final class InternalReconnectPolicy {
   /// Watchdog for a whole connect attempt. It must exceed
   /// [SignallingTiming.wsOpenTimeout] plus [SignallingTiming.rtcConfigTimeout],
   /// or it would preempt handshakes the connection layer still considers on
@@ -32,16 +35,16 @@ abstract final class ReconnectPolicy {
 
 /// The wait before reconnect attempt number [attempt] (1-based).
 ///
-/// Exponential from [ReconnectPolicy.baseDelay], capped at
-/// [ReconnectPolicy.maxDelay], then scaled by `0.75 + random * 0.5` (±25 %)
+/// Exponential from [InternalReconnectPolicy.baseDelay], capped at
+/// [InternalReconnectPolicy.maxDelay], then scaled by `0.75 + random * 0.5` (±25 %)
 /// and rounded half toward positive infinity. [random] returns a value in
 /// [0, 1) and defaults to a `dart:math` generator.
 Duration reconnectDelay(int attempt, {double Function()? random}) {
   final nextDouble = random ?? math.Random().nextDouble;
   final baseMs = math.min(
-    ReconnectPolicy.baseDelay.inMilliseconds *
+    InternalReconnectPolicy.baseDelay.inMilliseconds *
         math.pow(2.0, math.max(1, attempt) - 1),
-    ReconnectPolicy.maxDelay.inMilliseconds,
+    InternalReconnectPolicy.maxDelay.inMilliseconds,
   );
   return Duration(milliseconds: jsRound(baseMs * (0.75 + nextDouble() * 0.5)));
 }

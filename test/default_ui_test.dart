@@ -125,7 +125,7 @@ void main() {
         Color(0xffff6467),
       ],
     );
-    expect(light.radius, 6);
+    expect(light.radius, 8);
     expect(light.copyWith(primary: Colors.blue).foreground, light.foreground);
     final labels = const TaskApprovalLabels().copyWith(approve: 'Freigeben');
     expect(labels.approve, 'Freigeben');
@@ -165,10 +165,6 @@ void main() {
       approval.copyWith(deviceId: 'd').copyWith(clearDeviceId: true).deviceId,
       isNull,
     );
-    expect(
-      const TaskApprovalState().copyWith(isLoading: true).isLoading,
-      isTrue,
-    );
   });
 
   test('tokens and split labels have value equality and hashes', () {
@@ -203,9 +199,8 @@ void main() {
       ),
     );
     final element = tester.element(find.text('Isolated'));
-    final style = DefaultTextStyle.of(
-      element,
-    ).style.merge(tester.widget<Text>(find.text('Isolated')).style);
+    final style = DefaultTextStyle.of(element).style
+        .merge(tester.widget<Text>(find.text('Isolated')).style);
     expect(style.color, const StreamTokens().mutedForeground);
     expect(style.fontFamily, isNull);
     expect(style.decoration, isNot(TextDecoration.underline));

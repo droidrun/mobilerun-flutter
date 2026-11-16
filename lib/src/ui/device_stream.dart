@@ -4,6 +4,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart' show internal;
 
 import '../core/device_stream_session.dart';
 import '../core/reconnect_policy.dart';
@@ -34,6 +35,7 @@ final class StreamOverlayState {
   final VoidCallback retry;
 
   /// Connecting or reconnecting text with attempt placeholders replaced.
+  @internal
   String get label => switch (status) {
     StreamReconnecting(:final attempt) when attempt > 1 =>
       labels.reconnectingAttempt
@@ -45,8 +47,10 @@ final class StreamOverlayState {
 }
 
 /// A replacement overlay slot.
-typedef StreamOverlayBuilder =
-    Widget Function(BuildContext context, StreamOverlayState state);
+typedef StreamOverlayBuilder = Widget Function(
+  BuildContext context,
+  StreamOverlayState state,
+);
 
 /// One navigation state object shared by the default and custom bar.
 final class StreamNavigationState {
@@ -64,12 +68,14 @@ final class StreamNavigationState {
   final StreamLabels labels;
 
   /// Sends an explicit Back, Home or Recent action.
-  final ValueChanged<DeviceSystemKey> onAction;
+  final ValueChanged<SystemKey> onAction;
 }
 
 /// Builds navigation under the video.
-typedef StreamNavigationBuilder =
-    Widget Function(BuildContext context, StreamNavigationState state);
+typedef StreamNavigationBuilder = Widget Function(
+  BuildContext context,
+  StreamNavigationState state,
+);
 
 /// Default navigation slot.
 Widget defaultStreamNavigation(
@@ -145,9 +151,9 @@ class StreamNavigationBar extends StatelessWidget {
         child: Row(
           children: [
             for (final item in [
-              (DeviceSystemKey.back, Icons.chevron_left, state.labels.back),
-              (DeviceSystemKey.home, Icons.home_outlined, state.labels.home),
-              (DeviceSystemKey.recent, Icons.grid_view, state.labels.recent),
+              (SystemKey.back, Icons.chevron_left, state.labels.back),
+              (SystemKey.home, Icons.home_outlined, state.labels.home),
+              (SystemKey.recent, Icons.grid_view, state.labels.recent),
             ])
               Expanded(
                 child: StreamButton(
@@ -260,11 +266,16 @@ class _DeviceStreamState extends State<DeviceStream> {
     final controller = widget.controller ?? _controller;
     return DefaultTextStyle(
       style: t.typography.copyWith(inherit: false, color: t.foreground),
-      child: ValueListenableBuilder<StreamStatus>(
-        valueListenable: widget.session.status,
-        builder: (context, status, _) {
+      child: ListenableBuilder(
+        listenable: Listenable.merge([
+          widget.session.status,
+          widget.session.closed,
+        ]),
+        builder: (context, _) {
+          final status = widget.session.status.value;
           final unavailable = status is StreamUnavailable;
-          final canControl = widget.hasControl && !unavailable;
+          final canControl =
+              widget.hasControl && !unavailable && !widget.session.closed.value;
           final scope = StreamOverlayState(
             status: status,
             labels: widget.labels,

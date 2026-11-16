@@ -1,6 +1,8 @@
 // Copyright 2026 Mobilerun
 // SPDX-License-Identifier: Apache-2.0
 
+import 'package:mobilerun_flutter/mobilerun_flutter.dart';
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mobilerun_flutter/src/core/video_codecs.dart';
 
@@ -9,6 +11,18 @@ List<String> ordered(List<String> mimeTypes) => [
 ];
 
 void main() {
+  test('h264Only excludes H.265 and VP9 even when available', () {
+    expect(
+      videoCodecOrder([
+        'video/VP9',
+        'video/H265',
+        'video/H264',
+        'video/rtx',
+      ], preference: VideoCodec.h264Only),
+      [2, 3],
+    );
+  });
+
   test('default order is VP9, H.265, H.264, then the rest, stably', () {
     expect(
       ordered([

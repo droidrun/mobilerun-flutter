@@ -57,7 +57,7 @@ final class StreamLifecycle {
     if (_disposed) return;
     final wasOnline = _online;
     _online = online;
-    if (wasOnline == false && online) session.wake();
+    if (wasOnline == false && online) session.handleWake();
   }
 
   /// Detaches this adapter without closing its app-owned session.

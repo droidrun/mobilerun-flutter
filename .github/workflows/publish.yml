@@ -21,7 +21,7 @@ jobs:
       contents: read
       id-token: write
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           fetch-depth: 0
       - name: Verify release commit is on main
@@ -42,7 +42,7 @@ jobs:
             echo '::error::Release tag must match the pubspec version.'
             exit 1
           fi
-      - uses: subosito/flutter-action@v2
+      - uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2
         with:
           flutter-version: 3.47.9
           channel: stable
@@ -50,7 +50,7 @@ jobs:
       - name: Install dependencies
         run: flutter pub get
       # Mint OIDC credentials only after verification and dependency setup.
-      - uses: dart-lang/setup-dart@v1
+      - uses: dart-lang/setup-dart@2286a0c042b44434fe26d292bbce8d34f7ec662b # v1
         with:
           sdk: 3.13.7 # Dart bundled with Flutter 3.47.9
       - name: Publish

@@ -11,9 +11,8 @@ void main(List<String> args) {
   ).readAsStringSync();
   final codes =
       (jsonDecode(
-                File('conformance/fixtures/constants.json').readAsStringSync(),
-              )
-              as Map)['code_map']
+            File('conformance/fixtures/constants.json').readAsStringSync(),
+          ) as Map)['code_map']
           as Map;
   final output = StringBuffer('''// Copyright 2026 Mobilerun
 // SPDX-License-Identifier: Apache-2.0
@@ -41,7 +40,6 @@ void main(List<String> args) {
     }
     output.writeln('};');
   }
-  File(
-    'lib/src/core/input/physical_key_codes.dart',
-  ).writeAsStringSync(output.toString());
+  File('lib/src/core/input/physical_key_codes.dart')
+      .writeAsStringSync(output.toString());
 }
