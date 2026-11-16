@@ -295,7 +295,7 @@ class _TaskApprovalCardState extends State<TaskApprovalCard> {
                                                   ),
                                                   borderRadius:
                                                       BorderRadius.circular(
-                                                        t.radius + 2,
+                                                        t.radius,
                                                       ),
                                                 ),
                                                 child: Column(
@@ -393,7 +393,7 @@ class _Fact extends StatelessWidget {
           DecoratedBox(
             decoration: BoxDecoration(
               color: t.muted,
-              borderRadius: BorderRadius.circular(t.radius),
+              borderRadius: BorderRadius.circular(t.radius * .75),
             ),
             child: SizedBox(
               width: 36,
