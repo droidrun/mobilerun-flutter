@@ -12,6 +12,9 @@ final class FakeScheduler implements Scheduler {
   /// The current fake time in milliseconds.
   int nowMs = 0;
 
+  @override
+  Duration get now => Duration(milliseconds: nowMs);
+
   /// Number of timers still scheduled.
   int get pendingTimers => _timers.length;
 

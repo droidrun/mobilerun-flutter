@@ -185,6 +185,8 @@ void main() {
     );
     expect(sent, [
       encodeText('a'),
+      encodeKeycode(action: 0, keycode: 66),
+      encodeKeycode(action: 1, keycode: 66),
       encodeKeycode(action: 0, keycode: 61),
       encodeKeycode(action: 1, keycode: 61),
       encodeText('b'),

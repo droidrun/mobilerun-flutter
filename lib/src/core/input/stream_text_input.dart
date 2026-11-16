@@ -119,7 +119,7 @@ final class StreamTextInput with TextInputClient, DeltaTextInputClient {
 
     for (final rune in text.replaceAll('\r\n', '\n').runes) {
       final key = switch (rune) {
-        0x0a => AndroidKeys.enter,
+        0x0a || 0x0d => AndroidKeys.enter,
         0x09 => AndroidKeys.keycodeTab,
         _ => null,
       };

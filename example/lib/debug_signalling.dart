@@ -56,6 +56,7 @@ final class DebugSignalling implements SignallingConnector {
   final SignallingConnector _inner;
   DebugConnection? current;
   int? rejectedStatus;
+  bool failConnections = false;
 
   List<String> get sent => current?.sent ?? const [];
   List<String> get received => current?.received ?? const [];
@@ -63,6 +64,7 @@ final class DebugSignalling implements SignallingConnector {
 
   @override
   Future<SignallingConnection> connect(Uri uri) async {
+    if (failConnections) throw StateError('simulated offline');
     try {
       final connection = DebugConnection(await _inner.connect(uri));
       current = connection;
@@ -132,7 +134,7 @@ final class DebugConnection implements SignallingConnection {
   }
 
   @override
-  Future<void> close() => inner.close();
+  Future<void> close({int code = 1000}) => inner.close(code: code);
 }
 
 final class DebugPeers implements PeerTransportFactory {
@@ -187,7 +189,17 @@ final class DebugPeer implements PeerTransport {
   @override
   void setAudioMuted(bool muted) => inner.setAudioMuted(muted);
   @override
-  Future<VideoStats?> readVideoStats() => inner.readVideoStats();
+  Future<VideoStats?> readVideoStats({
+    Duration? sampleTime,
+    bool publishStats = false,
+    bool resetRates = false,
+    double? timeToFirstFrameMs,
+  }) => inner.readVideoStats(
+    sampleTime: sampleTime,
+    publishStats: publishStats,
+    resetRates: resetRates,
+    timeToFirstFrameMs: timeToFirstFrameMs,
+  );
   @override
   Future<void> close() => inner.close();
 }

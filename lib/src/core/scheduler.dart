@@ -13,6 +13,9 @@ abstract interface class ScheduledTask {
 /// its own; it is driven entirely through this interface, so tests can supply
 /// a fake clock.
 abstract interface class Scheduler {
+  /// Monotonic time for measuring durations on this clock.
+  Duration get now;
+
   /// Runs [callback] once after [delay].
   ScheduledTask schedule(Duration delay, void Function() callback);
 }
@@ -21,6 +24,11 @@ abstract interface class Scheduler {
 final class TimerScheduler implements Scheduler {
   /// Creates a scheduler on the current zone's timers.
   const TimerScheduler();
+
+  static final _clock = Stopwatch()..start();
+
+  @override
+  Duration get now => _clock.elapsed;
 
   @override
   ScheduledTask schedule(Duration delay, void Function() callback) =>

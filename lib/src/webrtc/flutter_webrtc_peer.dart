@@ -7,6 +7,7 @@ import 'dart:typed_data';
 import 'package:flutter_webrtc/flutter_webrtc.dart';
 
 import '../core/stream_config.dart';
+import 'stream_stats_parser.dart';
 import '../core/stream_transports.dart';
 import '../core/video_codecs.dart';
 import '../protocol/stream_spec.dart';
@@ -181,6 +182,7 @@ final class _FlutterWebRtcPeer implements PeerTransport {
   }
 
   final RTCPeerConnection _pc;
+  final _statsParser = StreamStatsParser();
   bool _muted;
   MediaStreamTrack? _audioTrack;
   MediaStream? _fallbackStream;
@@ -291,25 +293,24 @@ final class _FlutterWebRtcPeer implements PeerTransport {
   }
 
   @override
-  Future<VideoStats?> readVideoStats() async {
-    final reports = await _pc.getStats();
-    for (final report in reports) {
-      if (report.type != 'inbound-rtp') continue;
-      final values = report.values;
-      if ((values['kind'] ?? values['mediaType']) != 'video') continue;
-      final width = values['frameWidth'];
-      final height = values['frameHeight'];
-      if (width is num && height is num && width > 0 && height > 0) {
-        final decoded = values['framesDecoded'];
-        return VideoStats(
-          width: width.toInt(),
-          height: height.toInt(),
-          framesDecoded: decoded is num ? decoded.toInt() : 0,
-        );
-      }
-    }
-    return null;
-  }
+  Future<VideoStats?> readVideoStats({
+    Duration? sampleTime,
+    bool publishStats = false,
+    bool resetRates = false,
+    double? timeToFirstFrameMs,
+  }) async => _statsParser.read(
+    (await _pc.getStats()).map(
+      (report) => {
+        ...report.values.cast<String, Object?>(),
+        'id': report.id,
+        'type': report.type,
+      },
+    ),
+    sampleTime: sampleTime,
+    publishStats: publishStats,
+    resetRates: resetRates,
+    timeToFirstFrameMs: timeToFirstFrameMs,
+  );
 
   @override
   Future<void> close() async {

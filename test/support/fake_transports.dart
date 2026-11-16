@@ -29,6 +29,7 @@ final class FakeConnection implements SignallingConnection {
   final StreamController<String> _incoming = StreamController<String>();
   final List<SentFrame> sent = [];
   bool closedByClient = false;
+  int? closeCode;
   bool closedByServer = false;
 
   @override
@@ -48,7 +49,8 @@ final class FakeConnection implements SignallingConnection {
   }
 
   @override
-  Future<void> close() async {
+  Future<void> close({int code = 1000}) async {
+    closeCode = code;
     closedByClient = true;
     if (!_incoming.isClosed) unawaited(_incoming.close());
   }
@@ -144,6 +146,12 @@ final class FakePeer implements PeerTransport {
   bool closed = false;
   Object? setIceServersError;
   VideoStats? stats;
+  Completer<VideoStats?>? statsGate;
+  Completer<void>? closeGate;
+  int reads = 0, activeReads = 0, maxActiveReads = 0;
+  final sampleTimes = <Duration>[];
+  double? lastTimeToFirstFrameMs;
+  Object? statsError;
 
   @override
   Stream<PeerState> get connectionStates => _states.stream;
@@ -187,10 +195,36 @@ final class FakePeer implements PeerTransport {
   void setAudioMuted(bool muted) => this.muted = muted;
 
   @override
-  Future<VideoStats?> readVideoStats() async => stats;
+  Future<VideoStats?> readVideoStats({
+    Duration? sampleTime,
+    bool publishStats = false,
+    bool resetRates = false,
+    double? timeToFirstFrameMs,
+  }) async {
+    reads++;
+    activeReads++;
+    if (activeReads > maxActiveReads) maxActiveReads = activeReads;
+    if (publishStats && sampleTime != null) sampleTimes.add(sampleTime);
+    lastTimeToFirstFrameMs = timeToFirstFrameMs;
+    try {
+      if (statsError != null) throw statsError!;
+      final value = statsGate == null ? stats : await statsGate!.future;
+      return value == null
+          ? null
+          : VideoStats(
+              width: value.width,
+              height: value.height,
+              framesDecoded: value.framesDecoded,
+              sample: publishStats ? value.sample : null,
+            );
+    } finally {
+      activeReads--;
+    }
+  }
 
   @override
   Future<void> close() async {
+    await closeGate?.future;
     closed = true;
     calls.add('close');
   }

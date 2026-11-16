@@ -17,6 +17,7 @@ import 'stream_config.dart';
 import 'stream_credentials.dart';
 import 'stream_exception.dart';
 import 'stream_status.dart';
+import 'stream_stats.dart';
 import 'stream_transports.dart';
 
 /// A live stream session to one Mobilerun cloud device.
@@ -59,6 +60,7 @@ final class DeviceStreamSession {
        _scheduler = scheduler,
        _sessionId = (sessionId ?? _randomUuid)(),
        _muted = config.muted {
+    _stats = _ObservedStats(_updateSampling);
     _controller = ReconnectController(
       onRemount: _beginAttempt,
       onSnapshot: _onSnapshot,
@@ -78,6 +80,7 @@ final class DeviceStreamSession {
   final ValueNotifier<StreamStatus> _status = ValueNotifier(
     const StreamConnecting(),
   );
+  late final _ObservedStats _stats;
   final ValueNotifier<VideoSize?> _videoSize = ValueNotifier(null);
   final ValueNotifier<MediaStream?> _videoStream = ValueNotifier(null);
 
@@ -90,11 +93,16 @@ final class DeviceStreamSession {
   bool _credentialsPending = false;
   ScheduledTask? _credentialsTimeout;
   StreamAttempt? _attempt;
+  final _retiredDisposals = <Future<void>>{};
   ScheduledTask? _credentialsPoll;
   bool _visible = true;
 
   /// The connection status. Starts as [StreamConnecting].
   ValueListenable<StreamStatus> get status => _status;
+
+  /// Inbound video statistics sampled every second while connected.
+  /// Null unless connected, visible and observed; unsupported fields stay null.
+  ValueListenable<StreamStats?> get stats => _stats;
 
   /// The size of the decoded video, null until the first frame.
   ValueListenable<VideoSize?> get videoSize => _videoSize;
@@ -139,6 +147,7 @@ final class DeviceStreamSession {
     if (_closed || _visible == visible) return;
     _visible = visible;
     _attempt?.setVisible(visible);
+    _updateSampling();
     if (visible) wake();
   }
 
@@ -155,6 +164,7 @@ final class DeviceStreamSession {
     _attempt = null;
     _clearVideo();
     await attempt?.dispose();
+    await Future.wait(_retiredDisposals.toList());
   }
 
   /// Mutes or unmutes the device audio, now and on later connections. The
@@ -194,6 +204,7 @@ final class DeviceStreamSession {
   // ---- attempt lifecycle --------------------------------------------------
 
   void _clearVideo() {
+    _stats.value = null;
     _videoStream.value = null;
     _videoSize.value = null;
   }
@@ -205,13 +216,24 @@ final class DeviceStreamSession {
       ReconnectStatus.reconnecting => StreamReconnecting(snapshot.attempt),
       ReconnectStatus.unavailable => const StreamUnavailable(),
     };
+    _updateSampling();
     scheduleMicrotask(_applyPendingTarget);
     if (snapshot.status == ReconnectStatus.unavailable) {
       // The retry budget is spent: nothing of the last attempt may linger, a
       // late peer state must not bring the stream back without retry().
-      unawaited(_attempt?.dispose());
+      _retireAttempt();
       _clearVideo();
     }
+  }
+
+  void _updateSampling() {
+    final enabled =
+        !_closed &&
+        _visible &&
+        _stats.observed &&
+        _status.value is StreamConnected;
+    _attempt?.setStatsEnabled(enabled);
+    if (!enabled) _stats.value = null;
   }
 
   // Only initial discovery polls. Recovery mounts always use the latest cached
@@ -265,11 +287,19 @@ final class DeviceStreamSession {
     }
   }
 
+  void _retireAttempt() {
+    final retired = _attempt;
+    if (retired == null) return;
+    final disposal = retired.dispose();
+    _retiredDisposals.add(disposal);
+    unawaited(disposal.whenComplete(() => _retiredDisposals.remove(disposal)));
+  }
+
   /// Tears down the previous connection and mounts the cached target.
   void _beginAttempt() {
     final resolved = _lastCredentials;
     if (_closed || resolved == null) return;
-    unawaited(_attempt?.dispose());
+    _retireAttempt();
     _clearVideo();
     _activeCredentials = resolved;
     _controller.attemptMounted();
@@ -282,6 +312,8 @@ final class DeviceStreamSession {
       credentials: resolved,
       visible: _visible,
       events: StreamAttemptEvents(
+        stats: (sample) =>
+            _stats.value = _status.value is StreamConnected ? sample : null,
         connected: _controller.handleConnected,
         disconnected: _controller.handleDisconnected,
         failed: () {
@@ -293,6 +325,7 @@ final class DeviceStreamSession {
         credentialsRejected: _requestCredentials,
       ),
     )..start();
+    _updateSampling();
   }
 
   static String _randomUuid() {
@@ -323,3 +356,24 @@ DeviceStreamSession createDeviceStreamSessionWithTransports({
   random: random,
   sessionId: sessionId,
 );
+
+// Eligibility follows observer changes without adding a public notifier API.
+final class _ObservedStats extends ValueNotifier<StreamStats?> {
+  _ObservedStats(this.changed) : super(null);
+  final VoidCallback changed;
+  bool get observed => hasListeners;
+
+  @override
+  void addListener(VoidCallback listener) {
+    final before = hasListeners;
+    super.addListener(listener);
+    if (!before) changed();
+  }
+
+  @override
+  void removeListener(VoidCallback listener) {
+    final before = hasListeners;
+    super.removeListener(listener);
+    if (before && !hasListeners) changed();
+  }
+}

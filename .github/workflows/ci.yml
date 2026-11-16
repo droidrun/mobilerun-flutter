@@ -70,3 +70,4 @@ jobs:
           flutter build apk --debug -t lib/e2e_main.dart
           flutter build apk --debug -t lib/ui_gallery_main.dart
           flutter build apk --debug -t lib/ui_stream_gallery_main.dart
+          flutter build apk --debug -t lib/benchmark_main.dart

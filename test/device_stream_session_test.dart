@@ -865,6 +865,28 @@ void main() {
   });
 
   group('close()', () {
+    test('awaits teardown already started by failure and remount', () async {
+      final h = Harness();
+      await h.connect();
+      final oldPeer = h.peer;
+      final oldSocket = h.ws;
+      final gate = oldPeer.closeGate = Completer<void>();
+      h.ws.serverClose();
+      await pump();
+      h.session.wake();
+      await pump();
+      var closed = false;
+      final closing = h.session.close().then((_) => closed = true);
+      await pump();
+      expect(closed, isFalse);
+      expect(oldPeer.closed, isFalse);
+      gate.complete();
+      await closing;
+      expect(oldPeer.closed, isTrue);
+      expect(oldSocket.closeCode, 1000);
+      expect(h.scheduler.pendingTimers, 0);
+    });
+
     test('releases peer, socket, channels and every timer', () async {
       final h = Harness();
       await h.connect();
@@ -873,6 +895,7 @@ void main() {
       await h.session.close();
       expect(h.peer.closed, isTrue);
       expect(h.ws.closedByClient, isTrue);
+      expect(h.ws.closeCode, 1000);
       expect(h.session.videoStream.value, isNull);
       expect(h.session.videoSize.value, isNull);
       expect(h.scheduler.pendingTimers, 0);
@@ -964,6 +987,7 @@ void main() {
         expect(lastPeer.closed, isTrue);
         expect(lastSocket.closedByClient, isTrue);
         expect(h.session.videoStream.value, isNull);
+        expect(h.session.stats.value, isNull);
 
         // A peer event that arrives late changes nothing without retry().
         lastPeer.emitState(PeerState.connected);

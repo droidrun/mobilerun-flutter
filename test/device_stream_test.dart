@@ -22,6 +22,22 @@ class _Video implements MediaStream {
   dynamic noSuchMethod(Invocation invocation) => null;
 }
 
+// Disposal may have started in either the widget clock or runAsync. Drain
+// both zones while waiting instead of blocking one on a future owned by the other.
+Future<void> closeSession(
+  WidgetTester tester,
+  DeviceStreamSession session,
+) async {
+  var closed = false;
+  final closing = session.close().whenComplete(() => closed = true);
+  for (var i = 0; i < 20 && !closed; i++) {
+    await tester.pump();
+    await tester.runAsync(() => Future<void>.delayed(Duration.zero));
+  }
+  expect(closed, isTrue, reason: 'session cleanup must complete');
+  await closing;
+}
+
 Future<void> mount(
   WidgetTester tester,
   Harness h, {
@@ -33,7 +49,7 @@ Future<void> mount(
 }) async {
   addTearDown(() async {
     await tester.pumpWidget(const SizedBox());
-    await tester.runAsync(h.session.close);
+    await closeSession(tester, h.session);
   });
   await tester.pumpWidget(
     MaterialApp(
@@ -87,6 +103,10 @@ void main() {
       },
     );
     binding.defaultBinaryMessenger.setMockMethodCallHandler(
+      const MethodChannel('FlutterWebRTC.Event'),
+      (_) async => null,
+    );
+    binding.defaultBinaryMessenger.setMockMethodCallHandler(
       const MethodChannel('FlutterWebRTC/Texture1'),
       (_) async => null,
     );
@@ -98,7 +118,7 @@ void main() {
       final h = Harness();
       addTearDown(() async {
         await tester.pumpWidget(const SizedBox());
-        await tester.runAsync(h.session.close);
+        await closeSession(tester, h.session);
       });
       await tester.pumpWidget(
         MaterialApp(
@@ -318,8 +338,8 @@ void main() {
       final online = StreamController<bool>.broadcast(sync: true);
       addTearDown(() async {
         await tester.pumpWidget(const SizedBox());
-        await tester.runAsync(old.session.close);
-        await tester.runAsync(next.session.close);
+        await closeSession(tester, old.session);
+        await closeSession(tester, next.session);
         await online.close();
       });
       await tester.runAsync(() async {
@@ -372,7 +392,7 @@ void main() {
       final h = Harness();
       addTearDown(() async {
         await tester.pumpWidget(const SizedBox());
-        await tester.runAsync(h.session.close);
+        await closeSession(tester, h.session);
       });
       tester.view.devicePixelRatio = 1;
       tester.view.physicalSize = const Size(375, 900);

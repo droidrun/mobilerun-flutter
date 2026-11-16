@@ -10,6 +10,8 @@ import 'package:mobilerun_flutter/src/core/input/physical_key_codes.dart';
 import 'package:mobilerun_flutter/src/core/input/scroll_input.dart';
 
 void main() {
+  late KeyInput keys;
+  setUp(() => keys = KeyInput());
   for (final code in keyboardCodeMap.keys) {
     test('USB HID mapping covers fixture $code', () {
       final entry = physicalKeyCodes.entries.singleWhere(
@@ -27,16 +29,16 @@ void main() {
   test('printable characters send text without key-up', () {
     final sent = <Uint8List>[];
     for (final down in [true, false]) {
-      routeKey(code: 'KeyA', text: 'é', down: down, send: sent.add);
+      keys.route(code: 'KeyA', text: 'é', down: down, send: sent.add);
     }
     expect(sent, [encodeText('é')]);
   });
   test('paste precedes control injection, menu sends a complete press', () {
     final sent = <Uint8List>[];
     expect(
-      routeKey(
+      keys.route(
         code: 'KeyV',
-        text: null,
+        text: 'v',
         down: true,
         control: true,
         send: sent.add,
@@ -45,9 +47,9 @@ void main() {
     );
     expect(sent, isEmpty);
     expect(
-      routeKey(
+      keys.route(
         code: 'KeyV',
-        text: '\u0016',
+        text: 'V',
         down: true,
         control: true,
         send: sent.add,
@@ -55,45 +57,44 @@ void main() {
       KeyRoute.paste,
     );
     expect(sent, isEmpty);
-    routeKey(code: 'KeyM', text: 'm', down: true, meta: true, send: sent.add);
+    keys.route(code: 'KeyM', text: 'm', down: true, meta: true, send: sent.add);
     expect(sent, [
       encodeKeycode(action: 0, keycode: 82),
       encodeKeycode(action: 1, keycode: 82),
     ]);
   });
-  for (final code in [
-    'Backspace',
-    'Delete',
-    'Enter',
-    'NumpadEnter',
-    'Tab',
-    'Escape',
-    'Home',
-    'End',
-    'PageUp',
-    'PageDown',
-    'Insert',
-    'ArrowLeft',
-    'F12',
-    'ShiftLeft',
-    'ControlRight',
-    'AltLeft',
-    'MetaRight',
+  for (final (code, text, keycode) in [
+    ('Backspace', 'Backspace', 67),
+    ('Delete', 'Delete', 112),
+    ('Enter', 'Enter', 66),
+    ('NumpadEnter', 'Enter', 160),
+    ('Tab', 'Tab', 61),
+    ('Escape', 'Escape', 111),
+    ('Home', 'Home', 122),
+    ('End', 'End', 123),
+    ('PageUp', 'PageUp', 92),
+    ('PageDown', 'PageDown', 93),
+    ('Insert', 'Insert', 124),
+    ('ArrowLeft', 'ArrowLeft', 21),
+    ('F12', 'F12', 142),
+    ('ShiftLeft', 'ShiftLeft', 59),
+    ('ControlRight', 'ControlRight', 114),
+    ('AltLeft', 'AltLeft', 57),
+    ('MetaRight', 'MetaRight', 118),
   ]) {
     test('$code sends down and up keycodes', () {
       final sent = <Uint8List>[];
-      for (final down in [true, false]) {
-        routeKey(code: code, text: null, down: down, send: sent.add);
-      }
+      keys.route(code: code, text: text, down: true, send: sent.add);
+      keys.route(code: code, text: text, down: false, send: sent.add);
       expect(sent, [
-        encodeKeycode(action: 0, keycode: keyboardCodeMap[code]!),
-        encodeKeycode(action: 1, keycode: keyboardCodeMap[code]!),
+        encodeKeycode(action: 0, keycode: keycode),
+        encodeKeycode(action: 1, keycode: keycode),
       ]);
     });
   }
   test('ctrl combo uses caps XOR shift plus ctrl/alt/meta flags', () {
     final sent = <Uint8List>[];
-    routeKey(
+    keys.route(
       code: 'KeyA',
       text: 'a',
       down: true,
@@ -108,7 +109,7 @@ void main() {
       sent.single,
       encodeKeycode(action: 0, keycode: 29, metaState: 4096 | 2 | 65536),
     );
-    routeKey(
+    keys.route(
       code: 'KeyA',
       text: 'a',
       down: true,
@@ -121,20 +122,20 @@ void main() {
       encodeKeycode(action: 0, keycode: 29, metaState: 4096 | 1),
     );
   });
-  for (final code in [
-    null,
-    'AudioVolumeUp',
-    'MediaPlayPause',
-    'Camera',
-    'GamepadA',
-    'F13',
-    'F123',
+  for (final (code, text) in [
+    (null, null),
+    ('AudioVolumeUp', 'AudioVolumeUp'),
+    ('MediaPlayPause', 'MediaPlayPause'),
+    ('Camera', 'Camera'),
+    ('GamepadA', 'GamepadA'),
+    ('F13', 'F13'),
+    ('F123', 'F123'),
   ]) {
     test('unmapped $code without text is ignored', () {
       final sent = <Uint8List>[];
       for (final down in [true, false]) {
         expect(
-          routeKey(code: code, text: null, down: down, send: sent.add),
+          keys.route(code: code, text: text, down: down, send: sent.add),
           KeyRoute.ignored,
         );
       }
@@ -144,8 +145,8 @@ void main() {
       final sent = <Uint8List>[];
       for (final down in [true, false]) {
         expect(
-          routeKey(code: code, text: 'x', down: down, send: sent.add),
-          KeyRoute.handled,
+          keys.route(code: code, text: 'x', down: down, send: sent.add),
+          down ? KeyRoute.handled : KeyRoute.ignored,
         );
       }
       expect(sent, [encodeText('x')]);
@@ -165,21 +166,32 @@ void main() {
       () {
         final sent = <Uint8List>[];
         for (final down in [true, false]) {
-          routeKey(code: 'KeyA', text: text, down: down, send: sent.add);
+          keys.route(code: 'KeyA', text: text, down: down, send: sent.add);
         }
         expect(sent, [encodeText(text)]);
       },
     );
   }
-  for (final code in ['ContextMenu', 'Numpad1', 'Quote', 'KeyA']) {
+  for (final (code, text, keycode) in [
+    ('ContextMenu', null, 82),
+    ('Numpad1', null, 145),
+    ('Quote', null, 75),
+    ('KeyA', null, 29),
+  ]) {
     test('mapped $code without text releases its fallback keycode', () {
       final sent = <Uint8List>[];
       for (final down in [true, false]) {
-        routeKey(code: code, text: null, down: down, alt: true, send: sent.add);
+        keys.route(
+          code: code,
+          text: text,
+          down: down,
+          alt: true,
+          send: sent.add,
+        );
       }
       expect(sent, [
-        encodeKeycode(action: 0, keycode: keyboardCodeMap[code]!, metaState: 2),
-        encodeKeycode(action: 1, keycode: keyboardCodeMap[code]!, metaState: 2),
+        encodeKeycode(action: 0, keycode: keycode, metaState: 2),
+        encodeKeycode(action: 1, keycode: keycode, metaState: 2),
       ]);
     });
   }

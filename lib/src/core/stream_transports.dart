@@ -6,6 +6,7 @@ import 'dart:typed_data';
 import 'package:flutter_webrtc/flutter_webrtc.dart' show MediaStream;
 
 import 'stream_config.dart';
+import 'stream_stats.dart';
 
 /// The connection state of a peer connection, as defined by W3C WebRTC.
 enum PeerState {
@@ -50,7 +51,11 @@ final class VideoStats {
     required this.width,
     required this.height,
     required this.framesDecoded,
+    this.sample,
   });
+
+  /// Full inbound sample when supported by the transport.
+  final StreamStats? sample;
 
   /// Frame width in pixels.
   final int width;
@@ -92,7 +97,7 @@ abstract interface class SignallingConnection {
   void send(String frame);
 
   /// Closes the socket. Never throws.
-  Future<void> close();
+  Future<void> close({int code = 1000});
 }
 
 /// Thrown by [SignallingConnector.connect] when the server refused the
@@ -173,8 +178,15 @@ abstract interface class PeerTransport {
   /// Applies to a track that arrives later as well.
   void setAudioMuted(bool muted);
 
-  /// Statistics of the decoded video, or null when no frame was decoded yet.
-  Future<VideoStats?> readVideoStats();
+  /// Decoded video size/counter, plus a sample only on publishing ticks.
+  /// Null [sampleTime] skips sampling; [resetRates] discards rate baselines.
+  /// [timeToFirstFrameMs] is measured by the attempt's injected clock.
+  Future<VideoStats?> readVideoStats({
+    Duration? sampleTime,
+    bool publishStats = false,
+    bool resetRates = false,
+    double? timeToFirstFrameMs,
+  });
 
   /// Closes the channels and the connection and releases everything.
   Future<void> close();

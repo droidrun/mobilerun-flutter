@@ -90,7 +90,10 @@ class DeviceStreamView extends StatefulWidget {
 class _DeviceStreamViewState extends State<DeviceStreamView> {
   final _renderer = RTCVideoRenderer();
   final _focus = FocusNode(debugLabel: 'DeviceStreamView');
-  late var _pointers = PointerInput(widget.session.sendControl);
+  late var _pointers = PointerInput(
+    widget.session.sendControl,
+    sendHover: widget.session.sendHover,
+  );
   late final _textInput = StreamTextInput(
     active: () => mounted && widget.hasControl && _focus.hasFocus,
     send: _send,
@@ -99,7 +102,7 @@ class _DeviceStreamViewState extends State<DeviceStreamView> {
   bool _keyboardRequested = false;
   int? _moveFrame;
   InputGeometry? _geometry;
-  final _keyCharacters = <PhysicalKeyboardKey, String?>{};
+  final _keys = KeyInput();
   Offset? _panAnchor;
 
   void _send(Uint8List bytes) {
@@ -150,13 +153,16 @@ class _DeviceStreamViewState extends State<DeviceStreamView> {
       // The pointer sender is bound to the session that received DOWN.
       _pointers.cancel();
       _textInput.close();
-      _keyCharacters.clear();
+      _keys.clear();
       _keyboardRequested = false;
       _panAnchor = null;
     }
     if (sessionChanged) {
       oldWidget.session.videoStream.removeListener(_syncStream);
-      _pointers = PointerInput(widget.session.sendControl);
+      _pointers = PointerInput(
+        widget.session.sendControl,
+        sendHover: widget.session.sendHover,
+      );
       widget.session.videoStream.addListener(_syncStream);
       _syncStream();
     }
@@ -192,7 +198,7 @@ class _DeviceStreamViewState extends State<DeviceStreamView> {
     } else {
       _pointers.cancel();
       _textInput.close();
-      _keyCharacters.clear();
+      _keys.clear();
       _keyboardRequested = false;
     }
   }
@@ -212,12 +218,12 @@ class _DeviceStreamViewState extends State<DeviceStreamView> {
   void _down(PointerDownEvent event) {
     if (!widget.hasControl || _geometry == null) return;
     final mouse = _isMouse(event);
-    if (mouse && event.buttons & kPrimaryMouseButton == 0) return;
     if (_pointers.down(
       event.pointer,
       event.localPosition,
       _geometry!,
       mouse: mouse,
+      button: mouse && event.buttons & kPrimaryMouseButton == 0 ? 1 : 0,
     )) {
       _focus.requestFocus();
     }
@@ -225,11 +231,13 @@ class _DeviceStreamViewState extends State<DeviceStreamView> {
 
   void _move(PointerMoveEvent event) {
     if (!widget.hasControl) return;
-    if (_isMouse(event) && !_pointers.contains(event.pointer)) {
-      _hover(event);
-      return;
-    }
-    _pointers.move(event.pointer, event.localPosition);
+    _pointers.move(
+      event.pointer,
+      event.localPosition,
+      mouse: _isMouse(event),
+      geometry: _geometry,
+      buttons: event.buttons,
+    );
     _moveFrame ??= SchedulerBinding.instance.scheduleFrameCallback((_) {
       _moveFrame = null;
       if (mounted && widget.hasControl) _pointers.flushMoves();
@@ -238,36 +246,19 @@ class _DeviceStreamViewState extends State<DeviceStreamView> {
 
   void _hover(PointerEvent event) {
     if (!widget.hasControl) return;
-    final geometry = _geometry;
-    final point = geometry?.map(event.localPosition);
-    if (point == null) return;
-    widget.session.sendHover(
-      encodeHover(
-        videoWidth: geometry!.videoWidth,
-        videoHeight: geometry.videoHeight,
-        x: point.dx,
-        y: point.dy,
-        buttons: event.buttons,
-      ),
-    );
+    _pointers.hover(event.localPosition, _geometry, buttons: event.buttons);
   }
 
   void _scroll(Offset position, Offset delta, {int buttons = 0}) {
     if (!widget.hasControl) return;
     final geometry = _geometry;
-    final point = geometry?.map(position);
-    if (point == null) return;
-    final ticks = scrollTicks(delta);
-    _send(
-      encodeScroll(
-        videoWidth: geometry!.videoWidth,
-        videoHeight: geometry.videoHeight,
-        x: point.dx,
-        y: point.dy,
-        hscrollTicks: ticks.dx,
-        vscrollTicks: ticks.dy,
-        buttons: buttons,
-      ),
+    if (geometry == null) return;
+    routeScroll(
+      geometry: geometry,
+      position: position,
+      ticks: scrollTicks(delta),
+      send: _send,
+      buttons: buttons,
     );
   }
 
@@ -297,12 +288,20 @@ class _DeviceStreamViewState extends State<DeviceStreamView> {
         physicalKeyCodes[event.physicalKey.usbHidUsage] ??
         logicalKeyCodes[event.logicalKey.keyId];
     final down = event is! KeyUpEvent;
-    final text = down
-        ? (_keyCharacters[event.physicalKey] = event.character)
-        : _keyCharacters.remove(event.physicalKey);
-    final route = routeKey(
+    final raw = event.character;
+    final character = raw != null && raw.runes.every(isPrintableRune)
+        ? raw
+        : null;
+    // Native Ctrl combinations may omit the produced character or report a
+    // C0 control. Recover the layout-aware logical key, never the physical code.
+    final produced =
+        (keyboard.isControlPressed || keyboard.isMetaPressed) &&
+            (character == null || !character.runes.every(isPrintableRune))
+        ? event.logicalKey.keyLabel
+        : character;
+    final route = _keys.route(
       code: code,
-      text: text,
+      text: produced,
       down: down,
       send: _send,
       shift: keyboard.isShiftPressed,
@@ -373,9 +372,13 @@ class _DeviceStreamViewState extends State<DeviceStreamView> {
               behavior: HitTestBehavior.opaque,
               onPointerDown: _down,
               onPointerMove: _move,
-              onPointerUp: (event) => _pointers.up(event.pointer),
-              onPointerCancel: (event) =>
-                  _pointers.up(event.pointer, cancelled: true),
+              onPointerUp: (event) =>
+                  _pointers.up(event.pointer, mouse: _isMouse(event)),
+              onPointerCancel: (event) => _pointers.up(
+                event.pointer,
+                mouse: _isMouse(event),
+                cancelled: true,
+              ),
               onPointerHover: _hover,
               onPointerSignal: _signal,
               onPointerPanZoomStart: (event) =>

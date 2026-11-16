@@ -78,6 +78,7 @@ final class DeviceStreamSession
   void setMuted(bool muted)
   void setVisible(bool visible)
   void start()
+  ValueListenable<StreamStats?> get stats
   ValueListenable<StreamStatus> get status
   ValueListenable<VideoSize?> get videoSize
   void wake()
@@ -198,6 +199,7 @@ abstract interface class ScheduledTask
 
 abstract interface class Scheduler
   Scheduler()
+  abstract Duration get now
   abstract ScheduledTask schedule(Duration delay, void Function() callback)
 
 final class ScreenshotErrorMessage extends ServerMessage
@@ -243,12 +245,14 @@ final class SignallingStartupException implements Exception
   String toString()
 
 abstract final class SignallingTiming
+  static const Duration firstFrameInterval
   static const Duration iceRestartGrace
   static const Duration keepAliveInterval
   static const int requestFrameCount
   static const Duration requestFrameInterval
   static const Duration rtcConfigTimeout
   static const Duration screenshotTimeout
+  static const Duration statsInterval
   static const Duration videoSizeInterval
   static const Duration wsOpenTimeout
 
@@ -335,6 +339,24 @@ final class StreamSessionException implements Exception
   final String message
   const StreamSessionException(String message)
   String toString()
+
+final class StreamStats
+  bool ==(Object other)
+  final double? bitrateKbps
+  final String? codec
+  final double? decodeTimeMs
+  final double? fps
+  final int? framesDropped
+  final int? freezeCount
+  int get hashCode
+  final int? height
+  final double? jitterBufferDelayMs
+  final String? localCandidateType
+  final int? packetsLost
+  final String? remoteCandidateType
+  final double? rttMs
+  final double? timeToFirstFrameMs
+  final int? width
 
 sealed class StreamStatus
   const StreamStatus()
@@ -439,6 +461,7 @@ final class TaskApprovalState
 
 final class TimerScheduler implements Scheduler
   const TimerScheduler()
+  Duration get now
   ScheduledTask schedule(Duration delay, void Function() callback)
 
 final class VideoSize
