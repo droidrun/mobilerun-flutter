@@ -23,6 +23,7 @@ final class StreamAttemptEvents {
   /// Creates the callback set.
   const StreamAttemptEvents({
     required this.connected,
+    required this.controlReady,
     required this.disconnected,
     required this.failed,
     required this.videoStream,
@@ -30,6 +31,9 @@ final class StreamAttemptEvents {
     required this.credentialsRejected,
     required this.stats,
   });
+
+  /// The control channel can now accept queued requests.
+  final void Function() controlReady;
 
   /// One-second sample, null on a disconnect.
   final void Function(StreamStats? stats) stats;
@@ -53,9 +57,8 @@ final class StreamAttemptEvents {
   final void Function() credentialsRejected;
 }
 
-/// One connect attempt of a stream: the counterpart of `start()` in
-/// `use-webrtc-connection.ts` and everything it owns (socket, peer
-/// connection, timers). Disposing it releases all of it.
+/// One connect attempt and its socket, peer connection and timers.
+/// Disposing it releases all resources.
 final class StreamAttempt {
   /// Creates an attempt. Nothing happens before [start].
   StreamAttempt({
@@ -66,9 +69,8 @@ final class StreamAttempt {
     required this.muted,
     required this.credentials,
     required this.events,
-    bool visible = true,
-  }) : _visible = visible,
-       _startedAt = scheduler.now;
+    this._visible = true,
+  }) : _startedAt = scheduler.now;
 
   /// The streaming session id sent with every message.
   final String sessionId;
@@ -135,13 +137,13 @@ final class StreamAttempt {
 
   bool get _signallingOpen => live && _connection != null;
 
-  /// Arms the keepAlive timer (at mount, like the web client) and connects.
+  /// Arms the keepAlive timer and connects.
   void start() {
     if (_visible) _scheduleKeepAlive();
     unawaited(_run());
   }
 
-  /// Mirrors tab visibility: hidden apps stop sending keepAlive messages.
+  /// Hidden apps stop sending keepAlive messages.
   void setVisible(bool visible) {
     if (_visible == visible || !live) return;
     _visible = visible;
@@ -170,9 +172,9 @@ final class StreamAttempt {
     }
   }
 
-  /// Asks the device to open [url]; false while the socket is not open.
+  /// Sends a URL only after the control channel opens.
   bool openUrl(String url) {
-    if (!_signallingOpen) return false;
+    if (_peer?.control.state != ChannelState.open) return false;
     return _send(OpenUrlMessage.fromInput(input: url, sessionId: sessionId));
   }
 
@@ -182,9 +184,7 @@ final class StreamAttempt {
   /// Requests a screenshot, see `DeviceStreamSession.screenshot`.
   Future<Uint8List> screenshot(Duration timeout) {
     if (!_signallingOpen) {
-      return Future.error(
-        const StreamSessionException('stream is not connected'),
-      );
+      return Future.error(const StreamNotConnectedException());
     }
     final id =
         'ui-ss-${DateTime.now().millisecondsSinceEpoch}-'
@@ -194,15 +194,11 @@ final class StreamAttempt {
     _screenshots[id] = pending;
     pending.timer = scheduler.schedule(timeout, () {
       if (_screenshots.remove(id) == null) return;
-      completer.completeError(
-        TimeoutException('screenshot request timed out', timeout),
-      );
+      completer.completeError(const ScreenshotTimeoutException());
     });
     if (!_send(ScreenshotRequestMessage(id: id))) {
       _screenshots.remove(id)?.timer?.cancel();
-      return Future.error(
-        const StreamSessionException('could not send screenshot request'),
-      );
+      return Future.error(const StreamNotConnectedException());
     }
     return completer.future;
   }
@@ -342,7 +338,10 @@ final class StreamAttempt {
       )
       ..add(
         peer.control.states.listen((state) {
-          if (state == ChannelState.open) _requestFrames();
+          if (state == ChannelState.open) {
+            _requestFrames();
+            events.controlReady();
+          }
         }),
       );
   }
@@ -499,16 +498,14 @@ final class StreamAttempt {
         try {
           pending.completer.complete(_decodeDataUri(message.dataUri));
         } on FormatException {
-          pending.completer.completeError(
-            const StreamSessionException('screenshot is not valid base64'),
-          );
+          pending.completer.completeError(const ScreenshotFailedException());
         }
       case ScreenshotErrorMessage():
         final pending = _screenshots.remove(message.id);
         if (pending == null) return;
         pending.timer?.cancel();
         pending.completer.completeError(
-          StreamSessionException(message.message),
+          ScreenshotFailedException(message.message),
         );
     }
   }
@@ -610,15 +607,16 @@ final class StreamAttempt {
     _timers.clear();
     for (final pending in _screenshots.values) {
       pending.timer?.cancel();
-      pending.completer.completeError(
-        const StreamSessionException('connection lost'),
-      );
+      pending.completer.completeError(const StreamDisconnectedException());
     }
     _screenshots.clear();
     // live is already false: close normally before cancellation so that the
     // channel can send its close frame without subscription teardown racing it.
     final connection = _connection, peer = _peer;
-    if (connection != null) await connection.close(code: 1000);
+    await Future.wait([
+      if (connection != null) connection.close(code: 1000),
+      if (peer != null) peer.close(),
+    ]);
     final socketSubscription = _socketSubscription;
     _socketSubscription = null;
     if (socketSubscription != null) await socketSubscription.cancel();
@@ -626,7 +624,6 @@ final class StreamAttempt {
       await subscription.cancel();
     }
     _subscriptions.clear();
-    if (peer != null) await peer.close();
   }
 }
 

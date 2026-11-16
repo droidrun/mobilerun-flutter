@@ -35,8 +35,10 @@ final class ApprovalActionsState {
 }
 
 /// Builds a replacement for the approval action buttons.
-typedef ApprovalActionsBuilder =
-    Widget Function(BuildContext context, ApprovalActionsState state);
+typedef ApprovalActionsBuilder = Widget Function(
+  BuildContext context,
+  ApprovalActionsState state,
+);
 
 /// Default approve and deny actions, also usable inside a custom slot.
 Widget defaultApprovalActions(
@@ -71,7 +73,7 @@ Widget defaultApprovalActions(
 
 /// White-label approval card. Expiry is display-only; the backend decides.
 ///
-/// The optional device remains mounted across mobile tabs and the 768 pixel
+/// The optional device remains mounted across mobile view switches and the 768 pixel
 /// breakpoint. Only the countdown's small subtree rebuilds each second.
 class TaskApprovalCard extends StatefulWidget {
   /// Creates a card; null approvals render nothing.
@@ -198,7 +200,7 @@ class _TaskApprovalCardState extends State<TaskApprovalCard> {
         decoration: BoxDecoration(
           color: t.card,
           border: Border.all(color: t.border),
-          borderRadius: BorderRadius.circular(t.radius * 2),
+          borderRadius: BorderRadius.circular(t.radius + 4),
         ),
         child: LayoutBuilder(
           builder: (context, constraints) {
@@ -293,7 +295,7 @@ class _TaskApprovalCardState extends State<TaskApprovalCard> {
                                                   ),
                                                   borderRadius:
                                                       BorderRadius.circular(
-                                                        t.radius + 2,
+                                                        t.radius,
                                                       ),
                                                 ),
                                                 child: Column(
@@ -339,7 +341,7 @@ class _TaskApprovalCardState extends State<TaskApprovalCard> {
                                   ),
                                 ),
                                 SizedBox(width: wide && hasDevice ? 24 : 0),
-                                // Keep the same keyed slot across tabs and Flex directions.
+                                // Keep the same keyed slot across view switches and Flex directions.
                                 Offstage(
                                   key: const ValueKey('approval-device'),
                                   offstage:
@@ -391,7 +393,7 @@ class _Fact extends StatelessWidget {
           DecoratedBox(
             decoration: BoxDecoration(
               color: t.muted,
-              borderRadius: BorderRadius.circular(t.radius),
+              borderRadius: BorderRadius.circular(t.radius * .75),
             ),
             child: SizedBox(
               width: 36,

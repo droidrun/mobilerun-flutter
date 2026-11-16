@@ -5,7 +5,6 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
-import 'package:flutter_webrtc/flutter_webrtc.dart';
 import 'package:mobilerun_flutter/mobilerun_flutter.dart';
 import 'package:path_provider/path_provider.dart';
 
@@ -13,7 +12,6 @@ import 'sample_credentials.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  await WebRTC.initialize(options: {'zeroPlayoutDelay': true});
   StreamCredentials? credentials;
   String? error;
   try {
@@ -108,7 +106,7 @@ class _StreamPageState extends State<StreamPage> {
     final credentials = widget.credentials;
     if (credentials != null) {
       _url.text = credentials.url;
-      _token.text = credentials.token;
+      _token.text = credentials.token ?? '';
       _connect();
     }
   }

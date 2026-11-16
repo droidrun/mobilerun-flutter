@@ -10,6 +10,7 @@ import 'pending_approval.dart';
 /// A backend decision request; no credentials or API keys belong here.
 final class TaskApprovalRequest {
   /// Creates a request.
+  @internal
   const TaskApprovalRequest({
     required this.taskId,
     required this.approvalId,
@@ -24,22 +25,12 @@ final class TaskApprovalRequest {
 
   /// Requested decision.
   final ApprovalDecision decision;
-
-  /// Copies this request with selected replacements.
-  TaskApprovalRequest copyWith({
-    String? taskId,
-    String? approvalId,
-    ApprovalDecision? decision,
-  }) => TaskApprovalRequest(
-    taskId: taskId ?? this.taskId,
-    approvalId: approvalId ?? this.approvalId,
-    decision: decision ?? this.decision,
-  );
 }
 
 /// Immutable state exposed by [TaskApprovalController].
 final class TaskApprovalState {
   /// Creates a state snapshot.
+  @internal
   const TaskApprovalState({
     this.approval,
     this.isLoading = false,
@@ -64,7 +55,7 @@ final class TaskApprovalState {
   final Object? error;
 
   /// Copies a snapshot; clear flags explicitly remove nullable fields.
-  TaskApprovalState copyWith({
+  TaskApprovalState _copyWith({
     PendingApproval? approval,
     bool? isLoading,
     bool? isDeciding,
@@ -99,33 +90,31 @@ final class TaskApprovalState {
 typedef ApprovalUnsubscribe = FutureOr<void> Function();
 
 /// Subscribes to change hints. The backend fetch remains the source of truth.
-typedef ApprovalSubscribe =
-    FutureOr<ApprovalUnsubscribe> Function(
-      String taskId,
-      VoidCallback onChange,
-    );
+typedef ApprovalSubscribe = FutureOr<ApprovalUnsubscribe> Function(
+  String taskId,
+  VoidCallback onChange,
+);
 
 /// Loads approvals and forwards decisions through integrator callbacks.
 ///
-/// Starts immediately, polls every three seconds only without [subscribe],
+/// Starts immediately, polls every three seconds without [subscribe] or when subscribing fails,
 /// ignores stale fetches and refetches after every decision, including failures.
 /// All callback failures (including timeouts) are ordinary errors. Disposal
 /// invalidates outstanding work without notifying listeners.
 final class TaskApprovalController extends ChangeNotifier {
   /// Creates and starts a controller for [taskId].
   TaskApprovalController({
-    required String? taskId,
+    required this._taskId,
     required Future<PendingApproval?> Function(String taskId) fetchApproval,
     required Future<void> Function(TaskApprovalRequest request) decide,
-    ApprovalSubscribe? subscribe,
-    FutureOr<void> Function(Object error)? onError,
-    bool enabled = true,
-  }) : _taskId = taskId,
+    this._subscribe,
+    this._onError,
+    this._enabled = true,
+  }) : // Preserve the public callback names.
+       // ignore: prefer_initializing_formals
        _fetch = fetchApproval,
-       _sendDecision = decide,
-       _subscribe = subscribe,
-       _onError = onError,
-       _enabled = enabled {
+       // ignore: prefer_initializing_formals
+       _sendDecision = decide {
     _restart();
   }
 
@@ -140,6 +129,7 @@ final class TaskApprovalController extends ChangeNotifier {
   int _latest = 0;
   Timer? _poll;
   ApprovalUnsubscribe? _unsubscribe;
+  bool _subscriptionFailed = false;
   Object? _fetchError;
   Object? _decideError;
   TaskApprovalState _state = const TaskApprovalState();
@@ -185,6 +175,7 @@ final class TaskApprovalController extends ChangeNotifier {
   void _restart() {
     final epoch = ++_epoch;
     _latest++;
+    _subscriptionFailed = false;
     _poll?.cancel();
     final unsubscribe = _unsubscribe;
     _unsubscribe = null;
@@ -210,8 +201,10 @@ final class TaskApprovalController extends ChangeNotifier {
       }
     } on Object catch (error) {
       if (!_current(epoch)) return;
+      _subscriptionFailed = true;
+      _schedulePoll();
       _fetchError = error;
-      _emit(_state.copyWith(error: _decideError ?? error));
+      _emit(_state._copyWith(error: _decideError ?? error));
       unawaited(_report(error));
     }
   }
@@ -228,7 +221,7 @@ final class TaskApprovalController extends ChangeNotifier {
       if (!current()) return;
       _fetchError = null;
       _emit(
-        _state.copyWith(
+        _state._copyWith(
           isLoading: false,
           approval: next,
           clearApproval: next == null,
@@ -239,13 +232,18 @@ final class TaskApprovalController extends ChangeNotifier {
     } on Object catch (error) {
       if (!current()) return;
       _fetchError = error;
-      _emit(_state.copyWith(isLoading: false, error: _decideError ?? error));
+      _emit(_state._copyWith(isLoading: false, error: _decideError ?? error));
       unawaited(_report(error));
     } finally {
-      if (current() && _subscribe == null) {
-        _poll = Timer(const Duration(seconds: 3), () => unawaited(refetch()));
+      if (current() && (_subscribe == null || _subscriptionFailed)) {
+        _schedulePoll();
       }
     }
+  }
+
+  void _schedulePoll() {
+    _poll?.cancel();
+    _poll = Timer(const Duration(seconds: 3), () => unawaited(refetch()));
   }
 
   /// Sends a decision once, then refetches even when the backend rejects it.
@@ -256,7 +254,7 @@ final class TaskApprovalController extends ChangeNotifier {
     final taskId = _taskId;
     _decideError = null;
     _emit(
-      _state.copyWith(
+      _state._copyWith(
         isDeciding: true,
         decision: decision,
         error: _fetchError,
@@ -279,7 +277,7 @@ final class TaskApprovalController extends ChangeNotifier {
     } finally {
       if (_current(epoch)) {
         _emit(
-          _state.copyWith(
+          _state._copyWith(
             isDeciding: false,
             error: _decideError ?? _fetchError,
             clearError: _decideError == null && _fetchError == null,

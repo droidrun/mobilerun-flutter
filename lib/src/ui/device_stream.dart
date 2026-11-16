@@ -32,21 +32,22 @@ final class StreamOverlayState {
 
   /// Retry a session which exhausted its attempts.
   final VoidCallback retry;
-
-  /// Connecting or reconnecting text with attempt placeholders replaced.
-  String get label => switch (status) {
-    StreamReconnecting(:final attempt) when attempt > 1 =>
-      labels.reconnectingAttempt
-          .replaceAll('{attempt}', '$attempt')
-          .replaceAll('{max}', '${ReconnectPolicy.maxAttempts}'),
-    StreamReconnecting() => labels.reconnecting,
-    _ => labels.connecting,
-  };
 }
 
+String _overlayLabel(StreamOverlayState state) => switch (state.status) {
+  StreamReconnecting(:final attempt) when attempt > 1 =>
+    state.labels.reconnectingAttempt
+        .replaceAll('{attempt}', '$attempt')
+        .replaceAll('{max}', '${ReconnectPolicy.maxAttempts}'),
+  StreamReconnecting() => state.labels.reconnecting,
+  _ => state.labels.connecting,
+};
+
 /// A replacement overlay slot.
-typedef StreamOverlayBuilder =
-    Widget Function(BuildContext context, StreamOverlayState state);
+typedef StreamOverlayBuilder = Widget Function(
+  BuildContext context,
+  StreamOverlayState state,
+);
 
 /// One navigation state object shared by the default and custom bar.
 final class StreamNavigationState {
@@ -64,12 +65,14 @@ final class StreamNavigationState {
   final StreamLabels labels;
 
   /// Sends an explicit Back, Home or Recent action.
-  final ValueChanged<DeviceSystemKey> onAction;
+  final ValueChanged<SystemKey> onAction;
 }
 
 /// Builds navigation under the video.
-typedef StreamNavigationBuilder =
-    Widget Function(BuildContext context, StreamNavigationState state);
+typedef StreamNavigationBuilder = Widget Function(
+  BuildContext context,
+  StreamNavigationState state,
+);
 
 /// Default navigation slot.
 Widget defaultStreamNavigation(
@@ -85,7 +88,7 @@ Widget defaultStreamPlaceholder(
   alignment: Alignment.bottomLeft,
   child: Padding(
     padding: const EdgeInsets.all(16),
-    child: StreamStatusPill(label: state.label),
+    child: StreamStatusPill(label: _overlayLabel(state)),
   ),
 );
 
@@ -145,9 +148,9 @@ class StreamNavigationBar extends StatelessWidget {
         child: Row(
           children: [
             for (final item in [
-              (DeviceSystemKey.back, Icons.chevron_left, state.labels.back),
-              (DeviceSystemKey.home, Icons.home_outlined, state.labels.home),
-              (DeviceSystemKey.recent, Icons.grid_view, state.labels.recent),
+              (SystemKey.back, Icons.chevron_left, state.labels.back),
+              (SystemKey.home, Icons.home_outlined, state.labels.home),
+              (SystemKey.recent, Icons.grid_view, state.labels.recent),
             ])
               Expanded(
                 child: StreamButton(
@@ -260,11 +263,16 @@ class _DeviceStreamState extends State<DeviceStream> {
     final controller = widget.controller ?? _controller;
     return DefaultTextStyle(
       style: t.typography.copyWith(inherit: false, color: t.foreground),
-      child: ValueListenableBuilder<StreamStatus>(
-        valueListenable: widget.session.status,
-        builder: (context, status, _) {
+      child: ListenableBuilder(
+        listenable: Listenable.merge([
+          widget.session.status,
+          widget.session.closed,
+        ]),
+        builder: (context, _) {
+          final status = widget.session.status.value;
           final unavailable = status is StreamUnavailable;
-          final canControl = widget.hasControl && !unavailable;
+          final canControl =
+              widget.hasControl && !unavailable && !widget.session.closed.value;
           final scope = StreamOverlayState(
             status: status,
             labels: widget.labels,

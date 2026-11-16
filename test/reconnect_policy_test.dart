@@ -2,9 +2,8 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:mobilerun_flutter/mobilerun_flutter.dart';
-import 'package:mobilerun_flutter/src/core/reconnect_policy.dart'
-    show reconnectDelay;
+import 'package:mobilerun_flutter/src/core/reconnect_policy.dart';
+import 'package:mobilerun_flutter/src/protocol/stream_timing.dart';
 
 import 'support/fixtures.dart';
 
@@ -16,31 +15,37 @@ void main() {
     final backoff = asObject(policy['backoff']);
     expect(ReconnectPolicy.maxAttempts, policy['max_attempts']);
     expect(
-      ReconnectPolicy.connectTimeout.inMilliseconds,
+      InternalReconnectPolicy.connectTimeout.inMilliseconds,
       policy['connect_timeout_ms'],
     );
-    expect(ReconnectPolicy.stability.inMilliseconds, policy['stability_ms']);
-    expect(ReconnectPolicy.baseDelay.inMilliseconds, backoff['base_delay_ms']);
-    expect(ReconnectPolicy.maxDelay.inMilliseconds, backoff['max_delay_ms']);
+    expect(
+      InternalReconnectPolicy.stability.inMilliseconds,
+      policy['stability_ms'],
+    );
+    expect(
+      InternalReconnectPolicy.baseDelay.inMilliseconds,
+      backoff['base_delay_ms'],
+    );
+    expect(
+      InternalReconnectPolicy.maxDelay.inMilliseconds,
+      backoff['max_delay_ms'],
+    );
   });
 
-  test(
-    'invariant: connect_timeout_ms > ws_open_timeout_ms + rtc_config_timeout_ms',
-    () {
-      expect(
-        (policy['invariants']! as List).single,
-        startsWith(
-          'connect_timeout_ms > ws_open_timeout_ms + rtc_config_timeout_ms',
-        ),
-      );
-      expect(
-        ReconnectPolicy.connectTimeout,
-        greaterThan(
-          SignallingTiming.wsOpenTimeout + SignallingTiming.rtcConfigTimeout,
-        ),
-      );
-    },
-  );
+  test('invariant: connect_timeout_ms > ws_open_timeout_ms + rtc_config_timeout_ms', () {
+    expect(
+      (policy['invariants']! as List).single,
+      startsWith(
+        'connect_timeout_ms > ws_open_timeout_ms + rtc_config_timeout_ms',
+      ),
+    );
+    expect(
+      InternalReconnectPolicy.connectTimeout,
+      greaterThan(
+        SignallingTiming.wsOpenTimeout + SignallingTiming.rtcConfigTimeout,
+      ),
+    );
+  });
 
   group('delay_cases', () {
     test('has fixture cases', () => expect(delayCases, isNotEmpty));

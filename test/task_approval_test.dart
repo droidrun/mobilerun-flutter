@@ -19,6 +19,38 @@ const approval = PendingApproval(
 );
 
 void main() {
+  testWidgets(
+    'failed subscribe reports its error and polls every three seconds',
+    (tester) async {
+      var fetches = 0;
+      final errors = <Object>[];
+      final failure = StateError('subscription failed');
+      final controller = TaskApprovalController(
+        taskId: 'task',
+        fetchApproval: (_) async {
+          fetches++;
+          return null;
+        },
+        decide: (_) async {},
+        subscribe: (_, _) async => throw failure,
+        onError: errors.add,
+      );
+      addTearDown(controller.dispose);
+      await tester.pump();
+      expect(errors, [failure]);
+      expect(fetches, 1);
+      await tester.pump(const Duration(milliseconds: 2999));
+      expect(fetches, 1);
+      await tester.pump(const Duration(milliseconds: 1));
+      expect(fetches, 2);
+      await tester.pump(const Duration(seconds: 3));
+      expect(fetches, 3);
+      controller.dispose();
+      await tester.pump(const Duration(seconds: 3));
+      expect(fetches, 3);
+    },
+  );
+
   test('approval and state have structural equality and consistent hashes', () {
     final copy = PendingApproval(
       approvalId: approval.approvalId,
@@ -66,7 +98,16 @@ void main() {
     );
     expect(state, same);
     expect(state.hashCode, same.hashCode);
-    expect(state, isNot(state.copyWith(isLoading: true)));
+    expect(
+      state,
+      isNot(
+        TaskApprovalState(
+          approval: approval,
+          decision: ApprovalDecision.approve,
+          isLoading: true,
+        ),
+      ),
+    );
   });
 
   testWidgets(

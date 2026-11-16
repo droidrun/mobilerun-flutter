@@ -50,8 +50,8 @@ device persist. Every row gives the expected result.
 |---|---|
 | Connect / first frame | Connecting gives way to live video with preserved aspect ratio. |
 | Tap | The remote control responds, including near the picture's edges. |
-| Swipe | A scrollable remote page scrolls in the drag direction. |
-| Two fingers | A zoomable page zooms. Use the emulator's multitouch controls or its pinch modifier. Simulator gesture support depends on the host. |
+| Swipe | A scrollable remote screen scrolls in the drag direction. |
+| Two fingers | Zoomable content zooms. Use the emulator's multitouch controls or its pinch modifier. Simulator gesture support depends on the host. |
 | Type Latin, emoji and CJK | Focus a remote editor, tap the picture and use Keyboard. Latin text arrives; composition commits as text. **Known limitation:** emoji and some CJK may not arrive; see below. |
 | Back / Home / Recent | Each navigation button performs its remote Android action, including from the iOS host. |
 | Rotate | Rotate the host emulator/simulator; video stays fitted and taps remain aligned. Rotate the remote app too if it supports rotation. |
@@ -75,18 +75,19 @@ dart format --set-exit-if-changed .
 flutter test
 (cd example && flutter test && flutter build apk --debug)
 dart run tool/api_dump.dart --check
+flutter pub publish --dry-run
 ```
 
 Sample tests cover launch-file validation, one-time deletion, token-field masking,
 themes/approval labels and local approval decisions/refetch. Library tests cover
-credential token redaction and countdown ticking. Library suites
-cover stream lifecycle, input, approvals and UI internals. CI runs both suites
-and builds the Android sample.
+stream lifecycle, input, approvals, credential redaction, statistics and default UI.
+CI runs both suites and builds the Android sample.
+
+Maintainers can run `example/tool/e2e_android.sh CREDENTIALS_JSON OUT_DIR` for
+scripted Android input, reconnect and screenshot checks, or `tool/benchmark.sh`
+for the [benchmark procedure](tool/BENCHMARK.md).
 
 ## Known limitations
 
-Events subscription awaits the backend token contract. Publishing has not happened;
-install from source as described in README. Emulator multitouch and IME support
-depend on host configuration. Emoji and some CJK may not arrive on Cloud Android
-devices via text injection yet; the device-side fix is pending and affects every
-client. This checklist item is a known limitation, rather than a passing delivery check.
+Emulator multitouch and IME support depend on host configuration.
+Some emoji and CJK characters may not arrive on Cloud Android devices through text injection.

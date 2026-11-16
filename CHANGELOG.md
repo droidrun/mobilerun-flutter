@@ -1,8 +1,9 @@
-## 0.1.0
+## 0.1.0 (unreleased)
 
-Initial release.
-
-- Device streaming sessions with WebRTC video, credential discovery and reconnection.
-- Touch, mouse, hardware keyboard and IME input through `DeviceStreamView`.
-- Optional stream controls, theme tokens, localized labels and task approval widgets.
-- Headless task approval controller with backend-owned approval decisions.
+- Device streaming with WebRTC video, credential discovery and reconnection.
+- Touch, mouse, hardware keyboard, IME and explicit system-key input.
+- Default stream and approval UI with theme tokens and localized labels.
+- Task approvals through authenticated backend callbacks.
+- Read-only stream statistics and decoded video dimensions and rotation.
+- App visibility and connectivity lifecycle integration.
+- PNG screenshots with typed failure and timeout errors.

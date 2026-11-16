@@ -1,6 +1,8 @@
 // Copyright 2026 Mobilerun
 // SPDX-License-Identifier: Apache-2.0
 
+import 'package:flutter/foundation.dart';
+
 /// A human approval returned by the integrator's backend.
 final class PendingApproval {
   /// Creates an approval. Unknown kinds are intentionally accepted.
@@ -69,6 +71,7 @@ enum ApprovalDecision {
 /// Validated display fields for a payment card approval.
 final class PaymentCardDetails {
   /// Creates display values.
+  @internal
   const PaymentCardDetails({
     required this.card,
     required this.targetPackage,
@@ -83,18 +86,6 @@ final class PaymentCardDetails {
 
   /// Optional target domain.
   final String? targetHost;
-
-  /// Copies these values with selected replacements.
-  PaymentCardDetails copyWith({
-    String? card,
-    String? targetPackage,
-    String? targetHost,
-    bool clearTargetHost = false,
-  }) => PaymentCardDetails(
-    card: card ?? this.card,
-    targetPackage: targetPackage ?? this.targetPackage,
-    targetHost: clearTargetHost ? null : targetHost ?? this.targetHost,
-  );
 }
 
 String? _string(Object? value) =>

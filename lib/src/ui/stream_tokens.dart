@@ -21,7 +21,7 @@ final class StreamTokens {
     this.accent = const Color(0xFFF5F5F5),
     this.accentForeground = const Color(0xFF171717),
     this.destructive = const Color(0xFFE7000B),
-    this.radius = 6,
+    this.radius = 8,
     this.typography = const TextStyle(fontSize: 14),
   });
 
@@ -64,7 +64,7 @@ final class StreamTokens {
   /// destructive semantic color.
   final Color destructive;
 
-  /// Button corner radius in logical pixels.
+  /// Base corner radius: buttons use 0.75 times this value, cards add 4.
   final double radius;
 
   /// Base typography; components derive their sizes from it.

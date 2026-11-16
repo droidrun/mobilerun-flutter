@@ -14,11 +14,9 @@ import 'support/fake_transports.dart';
 import 'support/harness.dart';
 
 List<Map<String, Object?>> reports(int index) {
-  final snapshots =
-      jsonDecode(
-            File('test/support/rtc_stats_recording.json').readAsStringSync(),
-          )
-          as List;
+  final snapshots = jsonDecode(
+    File('test/support/rtc_stats_recording.json').readAsStringSync(),
+  ) as List;
   return (snapshots[index]['reports'] as List)
       .map((r) => (r as Map).cast<String, Object?>())
       .toList();
@@ -208,7 +206,7 @@ void main() {
     h.peer.emitState(PeerState.failed);
     await pump();
     for (final _ in const [1, 2, 3, 4, 5, 6]) {
-      h.session.wake();
+      h.session.handleWake();
       await pump();
     }
     expect(h.session.status.value, const StreamUnavailable());

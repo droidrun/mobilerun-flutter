@@ -1,5 +1,5 @@
 name: mobilerun_flutter
-description: Flutter package for embedding Mobilerun device streaming and events.
+description: Flutter package for embedding Mobilerun device streaming, remote input and task approvals.
 version: 0.1.0
 repository: https://github.com/droidrun/mobilerun-flutter
 issue_tracker: https://github.com/droidrun/mobilerun-flutter/issues
@@ -9,14 +9,18 @@ topics:
   - android
   - remote-control
 
+platforms:
+  android:
+  ios:
+
 environment:
-  sdk: ^3.8.0
-  flutter: ">=3.32.0"
+  sdk: ^3.13.7
+  flutter: ">=3.47.9"
 
 dependencies:
   flutter:
     sdk: flutter
-  flutter_webrtc: ^1.6.0
+  flutter_webrtc: ^1.6.3
   web_socket_channel: ^3.0.3
 
 dev_dependencies:

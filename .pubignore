@@ -1,0 +1,14 @@
+.dart_tool/
+.packages
+build/
+pubspec.lock
+.idea/
+*.iml
+.DS_Store
+!example/pubspec.lock
+
+example/lib/e2e_main.dart
+example/lib/benchmark_main.dart
+example/lib/debug_signalling.dart
+example/lib/input_e2e_script.dart
+example/tool/

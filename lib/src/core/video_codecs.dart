@@ -1,6 +1,8 @@
 // Copyright 2026 Mobilerun
 // SPDX-License-Identifier: Apache-2.0
 
+import 'stream_config.dart';
+
 bool _isH265(String mimeType) {
   final mime = mimeType.toLowerCase();
   return mime.contains('h265') || mime.contains('hevc');
@@ -36,10 +38,18 @@ int _priority(String mimeType) {
 /// When the receiver has no H.265 decoder the offer shrinks to H.264 plus the
 /// auxiliary entries (rtx, red, ulpfec, flexfec), the one other hardware
 /// accelerated codec every platform has. If there is no H.264 either, the
-/// default order is kept.
-List<int> videoCodecOrder(List<String> mimeTypes) {
+/// default order is kept. [preference] can restrict the offer to H.264; when
+/// H.264 is unavailable, that preference keeps the platform default order.
+List<int> videoCodecOrder(
+  List<String> mimeTypes, {
+  VideoCodec preference = VideoCodec.automatic,
+}) {
   final indices = List<int>.generate(mimeTypes.length, (i) => i);
-  if (!mimeTypes.any(_isH265) && mimeTypes.any(_isH264)) {
+  if (preference == VideoCodec.h264Only && !mimeTypes.any(_isH264)) {
+    return indices;
+  }
+  if (preference == VideoCodec.h264Only ||
+      (!mimeTypes.any(_isH265) && mimeTypes.any(_isH264))) {
     return [
       for (final i in indices)
         if (_isH264(mimeTypes[i]) || _isAuxiliary(mimeTypes[i])) i,

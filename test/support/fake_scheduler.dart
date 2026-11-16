@@ -1,7 +1,7 @@
 // Copyright 2026 Mobilerun
 // SPDX-License-Identifier: Apache-2.0
 
-import 'package:mobilerun_flutter/mobilerun_flutter.dart';
+import 'package:mobilerun_flutter/src/core/scheduler.dart';
 
 /// A fake clock starting at 0 ms. Timers fire in due-time order; timers due at
 /// the same time fire in the order they were scheduled.

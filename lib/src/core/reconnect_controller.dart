@@ -62,7 +62,7 @@ final class ReconnectSnapshot {
 /// Policy: a failed attempt schedules the next one with exponential backoff
 /// (1 s to 30 s, ±25 % jitter). After [ReconnectPolicy.maxAttempts]
 /// consecutive failures the stream is unavailable and retries stop. Holding a
-/// connection for [ReconnectPolicy.stability] refills the retry budget.
+/// connection for [InternalReconnectPolicy.stability] refills the retry budget.
 /// [handleWake] short-circuits a pending backoff and starts a fresh cycle when
 /// unavailable.
 ///
@@ -79,16 +79,12 @@ final class ReconnectController {
   /// [random] feeds the backoff jitter and defaults to a `dart:math`
   /// generator.
   ReconnectController({
-    required void Function() onRemount,
-    required void Function(ReconnectSnapshot snapshot) onSnapshot,
-    required void Function() onHeal,
-    Scheduler scheduler = const TimerScheduler(),
-    double Function()? random,
-  }) : _onRemount = onRemount,
-       _onSnapshot = onSnapshot,
-       _onHeal = onHeal,
-       _scheduler = scheduler,
-       _random = random;
+    required this._onRemount,
+    required this._onSnapshot,
+    required this._onHeal,
+    this._scheduler = const TimerScheduler(),
+    this._random,
+  });
 
   final void Function() _onRemount;
   final void Function(ReconnectSnapshot snapshot) _onSnapshot;
@@ -198,10 +194,13 @@ final class ReconnectController {
       _status = ReconnectStatus.connecting;
       _emit();
     }
-    _watchdogTimer = _scheduler.schedule(ReconnectPolicy.connectTimeout, () {
-      _watchdogTimer = null;
-      _countFailure();
-    });
+    _watchdogTimer = _scheduler.schedule(
+      InternalReconnectPolicy.connectTimeout,
+      () {
+        _watchdogTimer = null;
+        _countFailure();
+      },
+    );
   }
 
   /// There is no stream target anymore: stops all timers and resets counters.
@@ -233,15 +232,18 @@ final class ReconnectController {
       _emit();
     }
     _stabilityTimer = _clear(_stabilityTimer);
-    _stabilityTimer = _scheduler.schedule(ReconnectPolicy.stability, () {
-      _stabilityTimer = null;
-      // The cycle is over: the next failure run heals anew.
-      _healedThisCycle = false;
-      if (_attempt != 0) {
-        _attempt = 0;
-        _emit();
-      }
-    });
+    _stabilityTimer = _scheduler.schedule(
+      InternalReconnectPolicy.stability,
+      () {
+        _stabilityTimer = null;
+        // The cycle is over: the next failure run heals anew.
+        _healedThisCycle = false;
+        if (_attempt != 0) {
+          _attempt = 0;
+          _emit();
+        }
+      },
+    );
   }
 
   /// The peer connection left the connected state. Only counts as a failure

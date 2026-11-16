@@ -10,6 +10,7 @@ import 'package:flutter/widgets.dart';
 import 'package:flutter_webrtc/flutter_webrtc.dart';
 
 import '../core/device_stream_session.dart';
+import '../webrtc/webrtc_initializer.dart';
 import '../core/input/input_geometry.dart';
 import '../core/input/key_input.dart';
 import '../core/input/physical_key_codes.dart';
@@ -20,7 +21,7 @@ import '../protocol/constants.dart';
 import '../protocol/control_messages.dart';
 
 /// Explicit device navigation. Host OS back gestures are never forwarded.
-enum DeviceSystemKey {
+enum SystemKey {
   /// Android BACK.
   back(AndroidKeys.keycodeBack),
 
@@ -30,7 +31,7 @@ enum DeviceSystemKey {
   /// Android recent apps.
   recent(AndroidKeys.keycodeAppSwitch);
 
-  const DeviceSystemKey(this._keycode);
+  const SystemKey(this._keycode);
   final int _keycode;
 }
 
@@ -47,7 +48,7 @@ final class DeviceStreamController {
   void hideKeyboard() => _state?._hideKeyboard();
 
   /// Sends one DOWN/UP pair for an explicit navigation action.
-  void sendSystemKey(DeviceSystemKey key) {
+  void sendSystemKey(SystemKey key) {
     final state = _state;
     if (state != null) {
       pressKey(key._keycode, state._send);
@@ -95,7 +96,7 @@ class _DeviceStreamViewState extends State<DeviceStreamView> {
     sendHover: widget.session.sendHover,
   );
   late final _textInput = StreamTextInput(
-    active: () => mounted && widget.hasControl && _focus.hasFocus,
+    active: () => mounted && _canControl && _focus.hasFocus,
     send: _send,
   );
   bool _ready = false;
@@ -105,15 +106,19 @@ class _DeviceStreamViewState extends State<DeviceStreamView> {
   final _keys = KeyInput();
   Offset? _panAnchor;
 
+  bool get _canControl => widget.hasControl && !widget.session.closed.value;
+
   void _send(Uint8List bytes) {
-    if (mounted && widget.hasControl) widget.session.sendControl(bytes);
+    if (mounted && _canControl) widget.session.sendControl(bytes);
   }
 
   @override
   void initState() {
     super.initState();
     _attachController();
+    widget.session.closed.addListener(_syncClosed);
     widget.session.videoStream.addListener(_syncStream);
+    _renderer.addListener(_syncRotation);
     unawaited(_initialize());
   }
 
@@ -122,6 +127,7 @@ class _DeviceStreamViewState extends State<DeviceStreamView> {
   }
 
   Future<void> _initialize() async {
+    await ensureWebRtcInitialized();
     await _renderer.initialize();
     if (!mounted) {
       await _renderer.dispose();
@@ -130,6 +136,18 @@ class _DeviceStreamViewState extends State<DeviceStreamView> {
     _ready = true;
     _syncStream();
     setState(() {});
+  }
+
+  void _syncClosed() {
+    if (!widget.session.closed.value) return;
+    _pointers.cancel();
+    _textInput.close();
+    _keys.clear();
+    _keyboardRequested = false;
+  }
+
+  void _syncRotation() {
+    widget.session.updateVideoRotation(_renderer.value.rotation);
   }
 
   void _syncStream() {
@@ -158,6 +176,8 @@ class _DeviceStreamViewState extends State<DeviceStreamView> {
       _panAnchor = null;
     }
     if (sessionChanged) {
+      oldWidget.session.closed.removeListener(_syncClosed);
+      widget.session.closed.addListener(_syncClosed);
       oldWidget.session.videoStream.removeListener(_syncStream);
       _pointers = PointerInput(
         widget.session.sendControl,
@@ -165,6 +185,7 @@ class _DeviceStreamViewState extends State<DeviceStreamView> {
       );
       widget.session.videoStream.addListener(_syncStream);
       _syncStream();
+      _syncRotation();
     }
     if (sessionChanged || !oldWidget.hasControl && widget.hasControl) {
       _textInput.attach();
@@ -204,7 +225,7 @@ class _DeviceStreamViewState extends State<DeviceStreamView> {
   }
 
   void _showKeyboard() {
-    if (!widget.hasControl) return;
+    if (!_canControl) return;
     _keyboardRequested = true;
     _focus.requestFocus();
     _textInput.attach(show: true);
@@ -216,7 +237,7 @@ class _DeviceStreamViewState extends State<DeviceStreamView> {
   }
 
   void _down(PointerDownEvent event) {
-    if (!widget.hasControl || _geometry == null) return;
+    if (!_canControl || _geometry == null) return;
     final mouse = _isMouse(event);
     if (_pointers.down(
       event.pointer,
@@ -230,7 +251,7 @@ class _DeviceStreamViewState extends State<DeviceStreamView> {
   }
 
   void _move(PointerMoveEvent event) {
-    if (!widget.hasControl) return;
+    if (!_canControl) return;
     _pointers.move(
       event.pointer,
       event.localPosition,
@@ -240,17 +261,17 @@ class _DeviceStreamViewState extends State<DeviceStreamView> {
     );
     _moveFrame ??= SchedulerBinding.instance.scheduleFrameCallback((_) {
       _moveFrame = null;
-      if (mounted && widget.hasControl) _pointers.flushMoves();
+      if (mounted && _canControl) _pointers.flushMoves();
     });
   }
 
   void _hover(PointerEvent event) {
-    if (!widget.hasControl) return;
+    if (!_canControl) return;
     _pointers.hover(event.localPosition, _geometry, buttons: event.buttons);
   }
 
   void _scroll(Offset position, Offset delta, {int buttons = 0}) {
-    if (!widget.hasControl) return;
+    if (!_canControl) return;
     final geometry = _geometry;
     if (geometry == null) return;
     routeScroll(
@@ -267,7 +288,7 @@ class _DeviceStreamViewState extends State<DeviceStreamView> {
       event.kind == PointerDeviceKind.trackpad;
 
   void _signal(PointerSignalEvent event) {
-    if (widget.hasControl &&
+    if (_canControl &&
         event is PointerScrollEvent &&
         _geometry?.map(event.localPosition) != null) {
       GestureBinding.instance.pointerSignalResolver.register(event, (_) {
@@ -278,7 +299,7 @@ class _DeviceStreamViewState extends State<DeviceStreamView> {
   }
 
   KeyEventResult _key(FocusNode node, KeyEvent event) {
-    if (!widget.hasControl) return KeyEventResult.ignored;
+    if (!_canControl) return KeyEventResult.ignored;
     // The host OS back action belongs to the embedding application.
     if (event.logicalKey == LogicalKeyboardKey.goBack) {
       return KeyEventResult.ignored;
@@ -296,7 +317,7 @@ class _DeviceStreamViewState extends State<DeviceStreamView> {
     // C0 control. Recover the layout-aware logical key, never the physical code.
     final produced =
         (keyboard.isControlPressed || keyboard.isMetaPressed) &&
-            (character == null || !character.runes.every(isPrintableRune))
+            character == null
         ? event.logicalKey.keyLabel
         : character;
     final route = _keys.route(
@@ -335,7 +356,9 @@ class _DeviceStreamViewState extends State<DeviceStreamView> {
   @override
   void dispose() {
     if (widget.controller?._state == this) widget.controller?._state = null;
+    widget.session.closed.removeListener(_syncClosed);
     widget.session.videoStream.removeListener(_syncStream);
+    _renderer.removeListener(_syncRotation);
     _pointers.cancel();
     if (_moveFrame != null) {
       SchedulerBinding.instance.cancelFrameCallbackWithId(_moveFrame!);
@@ -364,8 +387,9 @@ class _DeviceStreamViewState extends State<DeviceStreamView> {
                     _DeviceGestureRecognizer
                   >(
                     _DeviceGestureRecognizer.new,
-                    (recognizer) => recognizer.accepts = (position) =>
-                        widget.hasControl && _geometry?.map(position) != null,
+                    (recognizer) =>
+                        recognizer.accepts = (position) =>
+                            _canControl && _geometry?.map(position) != null,
                   ),
             },
             child: Listener(

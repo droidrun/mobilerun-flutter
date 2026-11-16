@@ -7,6 +7,7 @@ import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mobilerun_flutter/mobilerun_flutter.dart';
+import 'package:mobilerun_flutter/src/core/reconnect_policy.dart';
 import 'package:mobilerun_flutter/src/core/stream_transports.dart';
 
 import 'support/fake_transports.dart';
@@ -14,6 +15,66 @@ import 'support/harness.dart';
 
 void main() {
   group('credentials discovery and cached recovery', () {
+    test(
+      'token refresh after recovery is stored until the next mount',
+      () async {
+        final refreshed = Completer<StreamCredentials?>();
+        final h = Harness(
+          credentials: (call) => call == 1
+              ? const StreamCredentials(
+                  url: 'wss://stream.example.test/s',
+                  token: 'old',
+                )
+              : refreshed.future,
+        );
+        await h.connect();
+        h.peer.emitState(PeerState.disconnected);
+        h.peer.emitState(PeerState.connected);
+        refreshed.complete(
+          const StreamCredentials(
+            url: 'wss://stream.example.test/s',
+            token: 'fresh',
+          ),
+        );
+        await pump();
+        expect(h.connector.connections, hasLength(1));
+        expect(h.peer.closed, isFalse);
+        h.ws.serverClose();
+        await pump();
+        await h.advance(2000);
+        expect(h.connector.connections, hasLength(2));
+        expect(h.connector.uris.last.queryParameters['token'], 'fresh');
+        await h.session.close();
+      },
+    );
+
+    test('URL refresh after recovery remounts a connected stream', () async {
+      final refreshed = Completer<StreamCredentials?>();
+      final h = Harness(
+        credentials: (call) => call == 1
+            ? const StreamCredentials(
+                url: 'wss://stream.example.test/old',
+                token: 'old',
+              )
+            : refreshed.future,
+      );
+      await h.connect();
+      final first = h.peer;
+      h.peer.emitState(PeerState.disconnected);
+      h.peer.emitState(PeerState.connected);
+      refreshed.complete(
+        const StreamCredentials(
+          url: 'wss://stream.example.test/new',
+          token: 'fresh',
+        ),
+      );
+      await pump();
+      expect(h.connector.connections, hasLength(2));
+      expect(h.connector.uris.last.path, '/new');
+      expect(first.closed, isTrue);
+      await h.session.close();
+    });
+
     const target = StreamCredentials(
       url: 'wss://stream.example.test/cached',
       token: 'stable',
@@ -56,7 +117,7 @@ void main() {
         );
         h.session.start();
         await pump();
-        await h.advance(ReconnectPolicy.connectTimeout.inMilliseconds);
+        await h.advance(InternalReconnectPolicy.connectTimeout.inMilliseconds);
         expect(h.session.status.value, const StreamConnecting());
         expect(h.credentialCalls, 1);
         await h.advance(2999);
@@ -90,7 +151,7 @@ void main() {
           if (retry) {
             h.session.retry();
           } else {
-            h.session.wake();
+            h.session.handleWake();
           }
           await pump();
           expect(h.credentialCalls, 2);
@@ -115,7 +176,7 @@ void main() {
         h.connector.failWith = StateError('offline');
         h.ws.serverClose();
         await pump();
-        h.session.wake();
+        h.session.handleWake();
         await pump();
         expect(h.connector.uris, hasLength(2));
         expect(h.credentialCalls, 2);
@@ -228,20 +289,32 @@ void main() {
       ]);
     });
 
-    test(
-      'openUrl decodes percent-encoding and is dropped while offline',
-      () async {
+    for (final reconnect in [false, true]) {
+      test('latest URL waits for control (reconnect: $reconnect)', () async {
         final h = Harness();
-        expect(h.session.openUrl('https://example.test'), isFalse);
+        addTearDown(h.session.close);
+        if (reconnect) {
+          await h.connect();
+          h.ws.serverClose();
+          await pump();
+        }
+        h.session.openUrl('https://example.test/old');
         h.session.start();
         await pump();
-        expect(h.session.openUrl('https://example.test/path?q=a%20b'), isTrue);
+        h.session.openUrl('https://example.test/latest');
+        if (reconnect) await h.advance(1000);
+        expect(h.ws.ofType('openUrl'), isEmpty);
+        h.ws.receive(example('server-rtc-configuration.json'));
+        await pump();
+        expect(h.ws.ofType('openUrl'), isEmpty);
+        h.peer.controlChannel.setState(ChannelState.open);
+        await pump();
         expect(
-          h.ws.ofType('openUrl').single.json,
-          example('client-open-url.json'),
+          h.ws.ofType('openUrl').single.json['url'],
+          'https://example.test/latest',
         );
-      },
-    );
+      });
+    }
 
     test('reports the video stream and its size', () async {
       final h = Harness();
@@ -739,7 +812,32 @@ void main() {
     });
   });
 
+  test('peer closes while the signalling close is still pending', () async {
+    final h = Harness();
+    await h.connect();
+    final gate = Completer<void>();
+    h.ws.closeGate = gate;
+    final closing = h.session.close();
+    await pump();
+    final peerClosed = h.peer.closed;
+    gate.complete();
+    await closing;
+    expect(peerClosed, isTrue);
+    expect(h.ws.closeCode, 1000);
+  });
+
   group('screenshot', () {
+    test('a request that cannot be sent reports not connected', () async {
+      final h = Harness();
+      await h.connect();
+      addTearDown(h.session.close);
+      h.ws.closedByServer = true;
+      await expectLater(
+        h.session.screenshot(),
+        throwsA(isA<StreamNotConnectedException>()),
+      );
+    });
+
     test('returns the decoded image', () async {
       final h = Harness();
       await h.connect();
@@ -768,7 +866,7 @@ void main() {
       await expectLater(
         future,
         throwsA(
-          isA<StreamSessionException>().having(
+          isA<ScreenshotFailedException>().having(
             (e) => e.message,
             'message',
             'device busy',
@@ -797,7 +895,10 @@ void main() {
       final h = Harness();
       await h.connect();
       final future = h.session.screenshot();
-      final outcome = expectLater(future, throwsA(isA<TimeoutException>()));
+      final outcome = expectLater(
+        future,
+        throwsA(isA<ScreenshotTimeoutException>()),
+      );
       await h.advance(29999);
       await h.advance(1);
       await outcome;
@@ -837,7 +938,10 @@ void main() {
       final h = Harness();
       await h.connect();
       final future = h.session.screenshot(timeout: const Duration(seconds: 2));
-      final outcome = expectLater(future, throwsA(isA<TimeoutException>()));
+      final outcome = expectLater(
+        future,
+        throwsA(isA<ScreenshotTimeoutException>()),
+      );
       await h.advance(2000);
       await outcome;
     });
@@ -846,7 +950,7 @@ void main() {
       final h = Harness();
       await expectLater(
         h.session.screenshot(),
-        throwsA(isA<StreamSessionException>()),
+        throwsA(isA<StreamNotConnectedException>()),
       );
     });
 
@@ -856,7 +960,7 @@ void main() {
       final future = h.session.screenshot();
       final outcome = expectLater(
         future,
-        throwsA(isA<StreamSessionException>()),
+        throwsA(isA<StreamDisconnectedException>()),
       );
       await pump();
       h.ws.serverClose();
@@ -873,7 +977,7 @@ void main() {
       final gate = oldPeer.closeGate = Completer<void>();
       h.ws.serverClose();
       await pump();
-      h.session.wake();
+      h.session.handleWake();
       await pump();
       var closed = false;
       final closing = h.session.close().then((_) => closed = true);
@@ -904,7 +1008,8 @@ void main() {
       await h.advance(60000);
       expect(h.ws.sent.length, sentBefore);
       expect(h.session.sendControl(Uint8List(1)), isFalse);
-      expect(h.session.openUrl('https://example.test'), isFalse);
+      h.session.openUrl('https://example.test');
+      expect(h.ws.sent.length, sentBefore);
     });
 
     test('is silent: closing never counts as a failure', () async {
@@ -951,7 +1056,7 @@ void main() {
       final future = h.session.screenshot();
       final outcome = expectLater(
         future,
-        throwsA(isA<StreamSessionException>()),
+        throwsA(isA<StreamDisconnectedException>()),
       );
       await pump();
       await h.session.close();

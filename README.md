@@ -1,15 +1,19 @@
 # mobilerun-flutter
 
-Flutter package for embedding Mobilerun device streaming and events.
+Flutter package for embedding Mobilerun device streaming, remote input and task approvals for Android and iOS.
 
 ## Installation
 
 Install from source until the first release: `flutter pub add mobilerun_flutter --git-url https://github.com/droidrun/mobilerun-flutter.git`.
 After the first release, add `mobilerun_flutter: ^0.1.0` to your dependencies.
 
+The host Android app needs `<uses-permission android:name="android.permission.INTERNET" />`
+in `android/app/src/main/AndroidManifest.xml`, including release builds. Set
+`uses-material-design: true` under `flutter:` in the host's `pubspec.yaml` for the default UI icons.
+
 See [TESTING.md](TESTING.md) to launch the interactive sample and try every feature.
 
-## Status: pre-release
+## Quickstart
 
 The package connects to a Mobilerun cloud device and recovers from failures,
 exactly like `@mobilerun/react`. The package is not published yet and its
@@ -34,14 +38,18 @@ await session.close();
 
 - `status` is `StreamConnecting`, `StreamConnected`, `StreamReconnecting(attempt)`
   or `StreamUnavailable`; `retry()` starts a new cycle from unavailable.
-- `videoSize` is the decoded frame size; the view uses the renderer
+- After `close()`, status keeps its last value, stops updating, and controls are disabled.
+- `videoSize` includes decoded width, height and clockwise rotation in degrees.
+  Rotation is 0 unless a `DeviceStreamView` renders the session. The view uses the renderer
   dimensions and rotation for displayed video coordinates.
 - Raw channel sends are internal; use `DeviceStreamView` for input mapping.
   Hover never goes over the control channel.
-- `StreamConfig` starts the audio muted (`setMuted` changes it) and asks for
-  zero playout delay. That setting is process-wide: call
-  `WebRTC.initialize(options: {'zeroPlayoutDelay': true})` in `main()` before
-  the first video renderer, see the example.
+- `StreamConfig` has `muted` (default `true`) and `videoCodec` (default
+  `VideoCodec.automatic`). `setMuted` changes audio on the current and later
+  connections. `VideoCodec.h264Only` offers H.264 and its auxiliary codecs only.
+  The SDK initializes WebRTC with zero playout delay before creating a renderer
+  or peer connection; no plugin setup is needed in the host app. An app that
+  initializes `flutter_webrtc` itself first keeps its own initialization options.
 - The signalling socket is the lifetime of the session on the server: a closed
   socket, like a failed peer connection, rebuilds both (exponential backoff,
   unavailable after six attempts).
@@ -58,7 +66,7 @@ DeviceStreamView(session: session, hasControl: true, controller: view);
 
 view.showKeyboard();
 view.hideKeyboard();
-view.sendSystemKey(DeviceSystemKey.back); // also home and recent
+view.sendSystemKey(SystemKey.back); // also home and recent
 ```
 
 The view renders video with contain fit and transparent letterboxing. It
@@ -70,8 +78,7 @@ use the same pixel-to-tick conversion as the React SDK.
 
 Click or tap the picture to focus hardware input. Printable keys send text;
 control/navigation keys send Android keycodes. Cmd/Ctrl+V pastes the local
-clipboard through SET_CLIPBOARD; Cmd/Ctrl+M sends MENU. The optional controller
-opens a soft keyboard: marked IME text stays local until committed; deletion
+clipboard through SET_CLIPBOARD; Cmd/Ctrl+M sends MENU. Only an explicit `showKeyboard()` call opens the soft keyboard: marked IME text stays local until committed; deletion
 and enter send DEL and ENTER pairs. Suggestions and autocorrection are disabled;
 CJK composition and emoji remain available.
 Hiding the keyboard finalizes composition only when the view owns the input;
@@ -89,24 +96,17 @@ an explicit back action with `PopScope` (choose whether the host route pops):
 PopScope(
   canPop: false,
   onPopInvokedWithResult: (didPop, result) {
-    if (!didPop) view.sendSystemKey(DeviceSystemKey.back);
+    if (!didPop) view.sendSystemKey(SystemKey.back);
   },
   child: DeviceStreamView(session: session, hasControl: true, controller: view),
 );
 ```
 
-Layout:
-
-- `lib/src/protocol/`: constants, the binary control message encoders and the
-  typed signalling messages.
-- `lib/src/core/`: the session, one connect attempt and the reconnect
-  controller. They run on small transport interfaces and an injectable
-  `Scheduler`, so they are tested with fake transports and a virtual clock.
-- `lib/src/webrtc/`: the `web_socket_channel` and `flutter_webrtc`
-  implementations of those interfaces.
-- `example/`: a sample app, plus `example/tool/e2e_android.sh`, a scripted
-  emulator run against a cloud device (video pixels, widget touch/swipe,
-  two-finger input, keyboard/IME, navigation and rotated-view mapping).
+Use `session.openUrl(url)` to open a URL on the remote device. Until the control
+channel opens, the session queues only the latest URL. The method returns nothing.
+`session.screenshot()` returns PNG bytes or throws a `StreamException` subtype:
+`StreamNotConnectedException`, `StreamDisconnectedException`,
+`ScreenshotFailedException`, or `ScreenshotTimeoutException`.
 
 Behaviour is checked against the shared conformance fixtures vendored in
 `conformance/fixtures` (the pinned tag is in `conformance/VERSION`).
@@ -129,16 +129,17 @@ flutter pub publish --dry-run
 Protocol tests use the shared fixtures. Input tests cover geometry, pointer
 slots, scroll, key routing, IME composition and widget-level event routing.
 
-### Updating the fixtures
+### Updating the fixtures (maintainers)
 
 ```sh
 tool/sync-conformance.sh TAG PATH_TO_CONFORMANCE_CLONE
 dart run tool/generate_constants.dart
+dart run tool/generate_key_codes.dart
 ```
 
 The first command replaces `conformance/fixtures` with the copy at the given
 release tag. The second regenerates `lib/src/protocol/constants.dart` from
-`constants.json`. Always pin a tag, never a branch.
+`constants.json`; the third regenerates keyboard mappings. Always pin a tag, never a branch.
 
 ## Default UI and approvals
 
@@ -173,8 +174,8 @@ DOWN/UP pairs (4/3/187); it never handles host back implicitly.
 The app still owns `session.start()` and `session.close()`. By default the view
 attaches `StreamLifecycle`; set `observeLifecycle: false` if your app already
 owns one. Initial online/foreground snapshots and visible focus changes do not
-wake reconnects. App background pauses keepAlive; foreground/network return
-wakes pending reconnects.
+wake reconnects. App background pauses keepAlive; foreground wakes pending reconnects. Network
+return wakes pending reconnects when you provide the app's `connectivity` stream.
 
 Every slot has its default builder as an explicit default value:
 
@@ -234,7 +235,8 @@ approvals.dispose();
 ```
 
 The controller fetches immediately, then three seconds after each completed
-fetch when no subscription is supplied. With a subscription it only fetches on
+fetch when no subscription is supplied or subscribing fails. A subscription
+failure is reported through the controller error output. With a working subscription it fetches on
 change hints, explicit `refetch()`, and after decisions. Newer overlapping
 fetches win; task changes, disabling and disposal invalidate older results.
 Both decision buttons are disabled only while deciding. The backend decides
@@ -275,7 +277,8 @@ StreamTheme(
 Every token is individually overridable: `background`, `foreground`, `card`,
 `cardForeground`, `muted`, `mutedForeground`, `border`, `ring`, `primary`,
 `primaryForeground`, `accent`, `accentForeground`, `destructive`, `radius`,
-and `typography`. Default button radius is 6 logical pixels. Disabled buttons
+and `typography`. `radius` is a base radius, default 8 logical pixels: buttons
+use `radius × 0.75` and cards use `radius + 4` (6 and 12 by default). Disabled buttons
 dim as a whole. `StreamTokens.dark` mirrors React's `.dark` palette.
 
 Colors are converted once from React's OKLCH tokens: OKLCH → OKLab → linear
@@ -295,10 +298,9 @@ rendered as supplied; the card accepts a `String?` error so the app can map
 and localize the controller's raw error. Changed error text is announced once,
 assertively. Identical poll results do not notify listeners.
 
-Tokens, labels, approval models and controller snapshots use value equality.
-Their named constructors require identity fields, with optional defaults for
-extensions and `copyWith` for overrides. SDK-produced slot state objects are
-read-only snapshots passed to builders.
+Tokens, labels, pending approvals and controller snapshots use value equality.
+Tokens, labels and integrator-supplied `PendingApproval` values support `copyWith`.
+SDK-created values and slot state are read-only snapshots.
 
 ### Credentials and app lifecycle
 
@@ -316,11 +318,15 @@ final session = DeviceStreamSession(
 
 The session owns credentials discovery. Before the first target, null, throwing
 and timed-out provider calls poll again after 3,000 ms without consuming the
-reconnect budget. Each call is bounded by `ReconnectPolicy.connectTimeout`;
-wake/retry can supersede a pending initial call. After discovery, remounts reuse
+reconnect budget. Each call is bounded by 45 seconds;
+`handleWake()`/`retry()` can supersede a pending initial call. After discovery, remounts reuse
 the cached target while a heal refreshes credentials in the background. A null
 or failed refresh retains that target, so connection failures still exhaust
-the retry budget and show Unavailable + Retry. Closing cancels timers and
+the retry budget and show Unavailable + Retry. A token-only credential change
+while connected is cached for the next mount; a URL change, or any credential
+change while not connected, remounts when the current backoff permits it.
+An empty or null token leaves the URL unchanged; other tokens are percent-encoded.
+Credential debug descriptions redact both URL and token. Closing cancels timers and
 ignores late provider results.
 
 For a custom UI, create a `StreamLifecycle(session: session)` once and dispose
@@ -328,8 +334,9 @@ it with the UI. It uses `AppLifecycleListener` to pause keepAlive while hidden
 and wake pending reconnects on foreground transitions. Optionally pass your
 app's existing `Stream<bool>` as `connectivity`; only lost → available wakes,
 never the initial online snapshot. Use `updateConnectivity` to replace the
-source while retaining its last online state. No connectivity dependency is required.
-You can instead call `session.setVisible(false/true)` and `session.wake()`
+source while retaining its last online state. The SDK adds no connectivity dependency: network-return wake needs your app's
+existing connectivity stream.
+You can instead call `session.setVisible(false/true)` and `session.handleWake()`
 from your existing lifecycle/network integration. The app owns session
 `start()` and `close()`.
 

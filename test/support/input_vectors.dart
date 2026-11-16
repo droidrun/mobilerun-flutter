@@ -9,6 +9,7 @@ import 'package:mobilerun_flutter/src/core/input/pointer_input.dart';
 import 'package:mobilerun_flutter/src/core/input/scroll_input.dart';
 import 'package:mobilerun_flutter/src/core/input/stream_text_input.dart';
 import 'package:mobilerun_flutter/src/protocol/control_messages.dart';
+
 import 'fixtures.dart';
 
 typedef Send = void Function(Uint8List);

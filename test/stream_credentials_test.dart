@@ -11,6 +11,10 @@ void main() {
       token: 'abc+/=',
     );
     final uri = credentials.toWebSocketUri();
+    expect(
+      uri.toString(),
+      'wss://stream.example.test/v1/devices/d/stream?token=abc%2B%2F%3D',
+    );
     expect(uri.scheme, 'wss');
     expect(uri.path, '/v1/devices/d/stream');
     expect(uri.queryParameters, {'token': 'abc+/='});
@@ -35,11 +39,21 @@ void main() {
     expect(credentials.toWebSocketUri().toString(), credentials.url);
   });
 
-  test('toString never shows the token', () {
+  test('toString redacts both URL and token', () {
     const credentials = StreamCredentials(
       url: 'wss://x.test/s',
       token: 'secret',
     );
-    expect(credentials.toString(), isNot(contains('secret')));
+    expect(
+      credentials.toString(),
+      'StreamCredentials(url: <redacted>, token: <redacted>)',
+    );
+  });
+  test('a null token leaves the URL unchanged', () {
+    const credentials = StreamCredentials(
+      url: 'wss://x.test/s?token=old',
+      token: null,
+    );
+    expect(credentials.toWebSocketUri().toString(), 'wss://x.test/s?token=old');
   });
 }

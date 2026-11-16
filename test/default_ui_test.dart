@@ -1,12 +1,12 @@
 // Copyright 2026 Mobilerun
 // SPDX-License-Identifier: Apache-2.0
 
-import 'package:flutter/material.dart';
 import 'package:flutter/gestures.dart';
-import 'package:mobilerun_flutter/src/ui/stream_button.dart';
+import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mobilerun_flutter/mobilerun_flutter.dart';
+import 'package:mobilerun_flutter/src/ui/stream_button.dart';
 
 const approval = PendingApproval(
   approvalId: 'a',
@@ -125,7 +125,7 @@ void main() {
         Color(0xffff6467),
       ],
     );
-    expect(light.radius, 6);
+    expect(light.radius, 8);
     expect(light.copyWith(primary: Colors.blue).foreground, light.foreground);
     final labels = const TaskApprovalLabels().copyWith(approve: 'Freigeben');
     expect(labels.approve, 'Freigeben');
@@ -165,9 +165,31 @@ void main() {
       approval.copyWith(deviceId: 'd').copyWith(clearDeviceId: true).deviceId,
       isNull,
     );
+  });
+
+  testWidgets('default buttons and cards use radii 6 and 12', (tester) async {
+    await tester.pumpWidget(
+      host(TaskApprovalCard(approval: approval, onDecide: (_) {})),
+    );
+    final button = tester.widget<TextButton>(
+      find.descendant(
+        of: find.widgetWithText(StreamButton, 'Approve'),
+        matching: find.byType(TextButton),
+      ),
+    );
+    final shape = button.style!.shape!.resolve({})! as RoundedRectangleBorder;
+    expect(shape.borderRadius, BorderRadius.circular(6));
+    final card = tester.widget<DecoratedBox>(
+      find
+          .descendant(
+            of: find.byType(TaskApprovalCard),
+            matching: find.byType(DecoratedBox),
+          )
+          .first,
+    );
     expect(
-      const TaskApprovalState().copyWith(isLoading: true).isLoading,
-      isTrue,
+      (card.decoration as BoxDecoration).borderRadius,
+      BorderRadius.circular(12),
     );
   });
 
@@ -203,9 +225,8 @@ void main() {
       ),
     );
     final element = tester.element(find.text('Isolated'));
-    final style = DefaultTextStyle.of(
-      element,
-    ).style.merge(tester.widget<Text>(find.text('Isolated')).style);
+    final style = DefaultTextStyle.of(element).style
+        .merge(tester.widget<Text>(find.text('Isolated')).style);
     expect(style.color, const StreamTokens().mutedForeground);
     expect(style.fontFamily, isNull);
     expect(style.decoration, isNot(TextDecoration.underline));

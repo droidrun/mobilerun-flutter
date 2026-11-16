@@ -9,9 +9,8 @@ abstract interface class ScheduledTask {
   void cancel();
 }
 
-/// Runs callbacks after a delay. The reconnect controller owns no timers of
-/// its own; it is driven entirely through this interface, so tests can supply
-/// a fake clock.
+/// Runs callbacks after a delay. Stream components schedule through this
+/// interface so tests can supply a fake clock.
 abstract interface class Scheduler {
   /// Monotonic time for measuring durations on this clock.
   Duration get now;

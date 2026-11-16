@@ -68,7 +68,7 @@ class StreamButton extends StatelessWidget {
           ),
           shape: WidgetStatePropertyAll(
             RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(ghost ? 0 : t.radius),
+              borderRadius: BorderRadius.circular(ghost ? 0 : t.radius * .75),
               side: outline ? BorderSide(color: t.border) : BorderSide.none,
             ),
           ),
