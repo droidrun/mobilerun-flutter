@@ -1,5 +1,19 @@
 # mobilerun-flutter
 
+Install from source until the first release: `flutter pub add mobilerun_flutter --git-url https://github.com/droidrun/mobilerun-flutter.git`.
+Your backend supplies stream credentials; never ship an API key in the app.
+
+```dart
+final session = DeviceStreamSession(
+  credentials: () async => StreamCredentials(url: streamUrl, token: streamToken),
+)..start();
+// Inside a bounded area (for example Expanded):
+DeviceStream(session: session, hasControl: true);
+// Close the session when the owning widget is disposed.
+```
+
+See [TESTING.md](TESTING.md) to launch the interactive sample and try every feature.
+
 Flutter package for embedding Mobilerun device streaming and events.
 
 ## Installation (after first release)
@@ -327,19 +341,8 @@ You can instead call `session.setVisible(false/true)` and `session.wake()`
 from your existing lifecycle/network integration. The app owns session
 `start()` and `close()`.
 
-The offline gallery demonstrates themes, label overrides, countdowns and a
-fake approval backend, including approve/deny → refetch and decision errors:
-
-```sh
-cd example
-flutter run -t lib/ui_gallery_main.dart
-```
-
-The stream chrome gallery uses initial null discovery and an offline failing
-signalling transport to exercise
-connecting, reconnecting, unavailable/retry, custom slots and themes without
-opening a cloud device: `flutter run -t lib/ui_stream_gallery_main.dart` from
-`example/`. It does not simulate connected video.
+The default [sample](example/lib/main.dart) combines stream controls, themes,
+labels, stats and a local approval demo. See [TESTING.md](TESTING.md).
 
 ## Stream statistics
 

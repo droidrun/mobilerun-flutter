@@ -34,6 +34,10 @@ jobs:
       - name: Check formatting
         run: dart format --set-exit-if-changed .
 
+      - name: Test sample
+        working-directory: example
+        run: flutter test
+
       - name: Check public API
         run: dart run tool/api_dump.dart --check
 
@@ -68,6 +72,4 @@ jobs:
           flutter pub get
           flutter build apk --debug
           flutter build apk --debug -t lib/e2e_main.dart
-          flutter build apk --debug -t lib/ui_gallery_main.dart
-          flutter build apk --debug -t lib/ui_stream_gallery_main.dart
           flutter build apk --debug -t lib/benchmark_main.dart
