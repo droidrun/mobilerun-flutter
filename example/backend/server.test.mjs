@@ -1,3 +1,6 @@
+// Copyright 2026 Mobilerun
+// SPDX-License-Identifier: Apache-2.0
+
 import assert from 'node:assert/strict';
 import { once } from 'node:events';
 import { request } from 'node:http';
