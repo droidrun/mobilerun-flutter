@@ -5,6 +5,8 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:typed_data';
 
+import 'package:flutter/foundation.dart' show DebugPrintCallback, debugPrint;
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mobilerun_flutter/mobilerun_flutter.dart';
 import 'package:mobilerun_flutter/src/core/reconnect_policy.dart';
@@ -15,6 +17,16 @@ import 'support/harness.dart';
 
 void main() {
   group('per-socket token provider', () {
+    late List<String> diagnostics;
+    late DebugPrintCallback previousDebugPrint;
+    setUp(() {
+      diagnostics = [];
+      previousDebugPrint = debugPrint;
+      debugPrint = (message, {wrapWidth}) {
+        if (message != null) diagnostics.add(message);
+      };
+    });
+    tearDown(() => debugPrint = previousDebugPrint);
     test(
       'token provider per socket including failed upgrade and wake',
       () async {
@@ -70,6 +82,12 @@ void main() {
         expect(h.connector.uris, isEmpty);
         expect(h.session.status.value, const StreamReconnecting(1));
         expect(h.statuses, [const StreamReconnecting(1)]);
+        await pump();
+        final expected =
+            entry.key.contains('throw') || entry.key == 'failed Future'
+            ? '[mobilerun.stream] Token provider error: StateError'
+            : '[mobilerun.stream] Token provider blank key';
+        expect(diagnostics, [expected]);
         await h.session.close();
         expect(h.scheduler.pendingTimers, 0);
       });
@@ -107,6 +125,7 @@ void main() {
           expect(h.connector.uris, isEmpty);
           expect(h.statuses, [const StreamReconnecting(1)]);
           expect(calls, 1);
+          expect(diagnostics, ['[mobilerun.stream] Token provider timeout']);
           await h.session.close();
           expect(h.scheduler.pendingTimers, 0);
         },

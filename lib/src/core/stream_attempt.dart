@@ -3,9 +3,9 @@
 
 import 'dart:async';
 import 'dart:convert';
-import 'dart:developer' as developer;
 import 'dart:typed_data';
 
+import 'package:flutter/foundation.dart' show debugPrint;
 import 'package:flutter_webrtc/flutter_webrtc.dart' show MediaStream;
 
 import '../protocol/signalling.dart';
@@ -264,14 +264,11 @@ final class StreamAttempt {
     return completer.future;
   }
 
-  Future<StreamCredentials?> _socketCredentials() async {
-    final provider = credentials.tokenProvider;
-    if (provider == null) return credentials;
+  Future<StreamCredentials?> _socketCredentials(
+    StreamTokenProvider provider,
+  ) async {
     if (!credentials.allowsTokenProvider) {
-      developer.log(
-        'Token provider destination rejected',
-        name: 'mobilerun.stream',
-      );
+      debugPrint('[mobilerun.stream] Token provider destination rejected');
       _fail();
       return null;
     }
@@ -282,22 +279,30 @@ final class StreamAttempt {
         'Token provider timeout',
       );
       if (!live) return null;
-      if (key.trim().isEmpty) throw const FormatException();
-      return StreamCredentials(url: credentials.url, token: key);
-    } on Object {
+      if (key.trim().isNotEmpty) {
+        return StreamCredentials(url: credentials.url, token: key);
+      }
+      debugPrint('[mobilerun.stream] Token provider blank key');
+    } on TimeoutException {
       if (!live) return null;
-      developer.log('Token provider failed', name: 'mobilerun.stream');
-      _fail();
-      return null;
+      debugPrint('[mobilerun.stream] Token provider timeout');
+    } on Object catch (error) {
+      if (!live) return null;
+      debugPrint(
+        '[mobilerun.stream] Token provider error: ${error.runtimeType}',
+      );
     }
+    _fail();
+    return null;
   }
 
   Future<void> _run() async {
     try {
       // Static startup retains its existing synchronous allocation boundary.
-      final resolved = credentials.tokenProvider == null
+      final provider = credentials.tokenProvider;
+      final resolved = provider == null
           ? credentials
-          : await _socketCredentials();
+          : await _socketCredentials(provider);
       if (!live || resolved == null) return;
       final connecting = transports.signalling.connect(
         resolved.toWebSocketUri(),

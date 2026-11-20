@@ -32,11 +32,11 @@ void main() {
     await file.writeAsString(
       '{"streamUrl":"  wss://example.com  ", "streamToken":"  secret-canary  "}',
     );
-    final credentials = await consumeCredentials(file);
+    final credentials = (await consumeLaunch(file))?.credentials;
     expect(credentials?.url, 'wss://example.com');
     expect(credentials?.token, 'secret-canary');
     expect(await file.exists(), isFalse);
-    expect(await consumeCredentials(file), isNull);
+    expect(await consumeLaunch(file), isNull);
   });
 
   for (final entry in {
@@ -51,14 +51,31 @@ void main() {
         '{"helperBaseUrl":"file:///tmp/helper","deviceId":"a"}',
     'helper credentials':
         '{"helperBaseUrl":"http://key@localhost:3001","deviceId":"a"}',
+    'LAN helper HTTP':
+        '{"helperBaseUrl":"http://192.168.1.2:3001","deviceId":"a"}',
   }.entries) {
     test('rejects and deletes ${entry.key}', () async {
       final file = File('${dir.path}/sample.json');
       await file.writeAsString(entry.value);
-      await expectLater(
-        consumeCredentials(file),
-        throwsA(isA<FormatException>()),
+      await expectLater(consumeLaunch(file), throwsA(isA<FormatException>()));
+      expect(await file.exists(), isFalse);
+    });
+  }
+
+  for (final base in [
+    'http://localhost:3001',
+    'http://127.0.0.1:3001',
+    'http://[::1]:3001',
+    'https://backend.example.com',
+  ]) {
+    test('helper launch accepts $base', () async {
+      final file = File('${dir.path}/sample.json');
+      await file.writeAsString(
+        jsonEncode({'helperBaseUrl': base, 'deviceId': 'a'}),
       );
+      final launch = (await consumeLaunch(file))!;
+      expect(launch.backend!.baseUrl.toString(), base);
+      expect(launch.credentials, isNull);
       expect(await file.exists(), isFalse);
     });
   }
@@ -115,6 +132,37 @@ void main() {
       ]);
     },
   );
+
+  testWidgets('helper timeout closes the client after ten seconds', (
+    tester,
+  ) async {
+    final client = _PendingHttpClient();
+    final backend = SampleBackend(
+      baseUrl: Uri.parse('http://localhost:3001'),
+      deviceId: 'a',
+    );
+    final result = HttpOverrides.runZoned(
+      backend.credentials,
+      createHttpClient: (_) => client,
+    );
+    final failed = expectLater(
+      result,
+      throwsA(
+        isA<FormatException>().having(
+          (error) => error.message,
+          'message',
+          'Backend request failed',
+        ),
+      ),
+    );
+    await tester.pump(const Duration(milliseconds: 9999));
+    final closedBeforeDeadline = client.closed;
+    await tester.pump(const Duration(milliseconds: 1));
+    await failed;
+    expect(client.connectionTimeout, const Duration(seconds: 10));
+    expect(closedBeforeDeadline, isFalse);
+    expect(client.closed, isTrue);
+  });
 
   test('helper errors never expose upstream response text', () async {
     final previousOverrides = HttpOverrides.current;
@@ -314,4 +362,21 @@ void main() {
     expect(card.labels.deny, 'Decline');
     await tester.pumpWidget(const SizedBox());
   });
+}
+
+final class _PendingHttpClient implements HttpClient {
+  @override
+  Duration? connectionTimeout;
+
+  bool closed = false;
+
+  @override
+  Future<HttpClientRequest> openUrl(String method, Uri url) =>
+      Completer<HttpClientRequest>().future;
+
+  @override
+  void close({bool force = false}) => closed = force;
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }

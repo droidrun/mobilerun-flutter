@@ -34,7 +34,7 @@ keyId or expiresAt in app configuration.
 The runner copies launch bytes to app-private storage. The app reads and deletes that
 file once, including invalid input. Android uses an owned emulator with an `adb reverse`
 port mapping, removed during cleanup; the helper still binds only `127.0.0.1`.
-Sample-only local networking exceptions do not relax stream WSS enforcement.
+The helper rejects foreign Host headers and all Origin or Sec-Fetch-Site headers (403/no-store).
 
 The manual form and old `{"streamUrl":"wss://…","streamToken":"…"}` file remain
 **legacy diagnostics**. The token entry is obscured. This static path reuses its token;
@@ -43,8 +43,9 @@ a pasted single-use key cannot reconnect. E2E/benchmark launch formats remain st
 Provider callbacks must be non-blocking (offload blocking/CPU work with `compute` or
 `Isolate.run`). Pending Futures time out at 10 seconds without fallback. The 45-second
 connect watchdog and 15-second handshake phase budgets start at socket allocation.
-Close1001 immediately clears media, peer, channels, timers and screenshots, then schedules
-bounded reconnect; other Flutter closes retain their existing rebuild behaviour.
+Close 1001 immediately clears media, peer, channels, timers and screenshots in every mode,
+then schedules bounded reconnect with a fresh provider key (static mode reuses its token);
+other Flutter closes retain their existing rebuild behaviour.
 
 Create an AVD before running. SAMPLE_AVD selects it; SAMPLE_EMULATOR_PORT selects
 an unused even port (default 5582). Close other instances of that AVD first. The

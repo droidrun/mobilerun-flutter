@@ -15,10 +15,6 @@ final class SampleLaunch {
   final StreamCredentials? credentials;
 }
 
-/// Legacy diagnostic entry point.
-Future<StreamCredentials?> consumeCredentials(File file) async =>
-    (await consumeLaunch(file))?.credentials;
-
 /// Consumes the launch file once, including when its contents are invalid.
 Future<SampleLaunch?> consumeLaunch(File file) async {
   if (!await file.exists()) return null;
@@ -32,7 +28,12 @@ Future<SampleLaunch?> consumeLaunch(File file) async {
         throw const FormatException();
       }
       final uri = Uri.parse(helper);
-      final validScheme = uri.scheme == 'http' || uri.scheme == 'https';
+      final loopback =
+          uri.host == 'localhost' ||
+          uri.host == '127.0.0.1' ||
+          uri.host == '::1';
+      final validScheme =
+          uri.scheme == 'https' || (uri.scheme == 'http' && loopback);
       final validBase =
           validScheme && uri.host.isNotEmpty && uri.userInfo.isEmpty;
       if (!validBase || uri.hasQuery || uri.hasFragment) {

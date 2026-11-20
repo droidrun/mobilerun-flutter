@@ -46,6 +46,8 @@ The existing manual static form/file is a legacy diagnostic path. A pasted singl
 cannot support reconnect. `e2e_main.dart` and `benchmark_main.dart` retain their static
 launch formats. Pending provider Futures have a 10-second deadline and cannot delay
 teardown; callbacks must not block the Dart isolate (offload blocking/CPU work themselves).
-The socket watchdog starts after minting, and close1001 releases media before reconnect.
+The socket watchdog starts after minting. Close 1001 immediately tears down media in every
+mode and reconnects with a fresh provider key (static mode reuses its token); other closes
+keep this SDK's existing rebuild behaviour.
 
 Test the helper with `npm test` in `backend`; test the sample with `flutter test` here.
