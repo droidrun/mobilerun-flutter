@@ -9,18 +9,25 @@ import 'package:mobilerun_flutter/mobilerun_flutter.dart';
 import 'package:path_provider/path_provider.dart';
 
 import 'sample_credentials.dart';
+import 'sample_backend.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  StreamCredentials? credentials;
+  SampleLaunch? launch;
   String? error;
   try {
     final dir = await getApplicationSupportDirectory();
-    credentials = await consumeCredentials(File('${dir.path}/sample.json'));
+    launch = await consumeLaunch(File('${dir.path}/sample.json'));
   } catch (_) {
     error = 'Could not load credentials. Enter both fields.';
   }
-  runApp(ExampleApp(credentials: credentials, error: error));
+  runApp(
+    ExampleApp(
+      credentials: launch?.credentials,
+      backend: launch?.backend,
+      error: error,
+    ),
+  );
 }
 
 enum SampleTheme {
@@ -33,8 +40,9 @@ enum SampleTheme {
 }
 
 class ExampleApp extends StatefulWidget {
-  const ExampleApp({super.key, this.credentials, this.error});
+  const ExampleApp({super.key, this.credentials, this.backend, this.error});
   final StreamCredentials? credentials;
+  final SampleBackend? backend;
   final String? error;
   @override
   State<ExampleApp> createState() => _ExampleAppState();
@@ -65,6 +73,7 @@ class _ExampleAppState extends State<ExampleApp> {
         tokens: tokens,
         child: StreamPage(
           credentials: widget.credentials,
+          backend: widget.backend,
           error: widget.error,
           theme: _theme,
           onTheme: (value) => setState(() => _theme = value),
@@ -78,11 +87,13 @@ class StreamPage extends StatefulWidget {
   const StreamPage({
     super.key,
     this.credentials,
+    this.backend,
     this.error,
     required this.theme,
     required this.onTheme,
   });
   final StreamCredentials? credentials;
+  final SampleBackend? backend;
   final String? error;
   final SampleTheme theme;
   final ValueChanged<SampleTheme> onTheme;
@@ -95,6 +106,7 @@ class _StreamPageState extends State<StreamPage> {
   final _token = TextEditingController();
   final _view = DeviceStreamController();
   DeviceStreamSession? _session;
+  SampleBackend? _helper;
   bool _stats = false;
   bool _form = true;
   String? _error;
@@ -103,6 +115,11 @@ class _StreamPageState extends State<StreamPage> {
   void initState() {
     super.initState();
     _error = widget.error;
+    _helper = widget.backend;
+    if (_helper != null) {
+      _start(_helper!.credentials);
+      return;
+    }
     final credentials = widget.credentials;
     if (credentials != null) {
       _url.text = credentials.url;
@@ -118,14 +135,26 @@ class _StreamPageState extends State<StreamPage> {
       setState(() => _error = 'Enter both stream URL and token.');
       return;
     }
+    _helper = null;
+    _start(() async => StreamCredentials(url: url, token: token));
+  }
+
+  void _reconnect() {
+    final helper = _helper;
+    if (helper != null) {
+      _start(helper.credentials);
+      return;
+    }
+    _connect();
+  }
+
+  void _start(StreamCredentialsProvider credentials) {
     FocusManager.instance.primaryFocus?.unfocus();
     unawaited(_session?.close());
     setState(() {
       _error = null;
       _form = false;
-      _session = DeviceStreamSession(
-        credentials: () async => StreamCredentials(url: url, token: token),
-      )..start();
+      _session = DeviceStreamSession(credentials: credentials)..start();
     });
   }
 
@@ -173,7 +202,7 @@ class _StreamPageState extends State<StreamPage> {
                           child: Text(_stats ? 'Hide stats' : 'Stats'),
                         ),
                         TextButton(
-                          onPressed: session == null ? null : _connect,
+                          onPressed: session == null ? null : _reconnect,
                           child: const Text('Reconnect'),
                         ),
                         IconButton(

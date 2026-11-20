@@ -178,7 +178,7 @@ final class ReconnectController {
   }
 
   /// The stream (re)mounted: arms the connect watchdog.
-  void attemptMounted() {
+  void attemptMounted({bool startWatchdog = true}) {
     if (_disposed) return;
     _enabled = true;
     // A mount during a wait is stale: the scheduled attempt owns the next
@@ -194,6 +194,7 @@ final class ReconnectController {
       _status = ReconnectStatus.connecting;
       _emit();
     }
+    if (!startWatchdog) return;
     _watchdogTimer = _scheduler.schedule(
       InternalReconnectPolicy.connectTimeout,
       () {

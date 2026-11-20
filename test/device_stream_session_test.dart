@@ -5,6 +5,8 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:typed_data';
 
+import 'package:flutter/foundation.dart' show DebugPrintCallback, debugPrint;
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mobilerun_flutter/mobilerun_flutter.dart';
 import 'package:mobilerun_flutter/src/core/reconnect_policy.dart';
@@ -14,6 +16,420 @@ import 'support/fake_transports.dart';
 import 'support/harness.dart';
 
 void main() {
+  group('per-socket token provider', () {
+    late List<String> diagnostics;
+    late DebugPrintCallback previousDebugPrint;
+    setUp(() {
+      diagnostics = [];
+      previousDebugPrint = debugPrint;
+      debugPrint = (message, {wrapWidth}) {
+        if (message != null) diagnostics.add(message);
+      };
+    });
+    tearDown(() => debugPrint = previousDebugPrint);
+    test(
+      'token provider per socket including failed upgrade and wake',
+      () async {
+        var calls = 0;
+        final h = Harness(
+          credentials: (_) => StreamCredentials(
+            url: 'wss://stream.test/s?token=embedded&x=1',
+            token: 'static',
+            tokenProvider: () async => ' key-${++calls} +&= ',
+          ),
+        );
+        h.connector.failWith = const SignallingRejectedException(401);
+        h.session.start();
+        await pump();
+        expect(calls, 1);
+        expect(h.connector.uris.single.queryParameters, {
+          'token': ' key-1 +&= ',
+          'x': '1',
+        });
+        h.connector.failWith = null;
+        await h.advance(1000);
+        expect(calls, 2);
+        expect(h.ws.uri.queryParameters['token'], ' key-2 +&= ');
+        h.ws.serverClose();
+        await pump();
+        h.session.handleWake();
+        await pump();
+        expect(calls, 3);
+        expect(h.ws.uri.queryParameters['token'], ' key-3 +&= ');
+        expect(h.credentialCalls, 2);
+        await h.session.close();
+      },
+    );
+
+    final failures = <String, StreamTokenProvider>{
+      'synchronous throw': () => throw StateError('private-canary'),
+      'failed Future': () => Future.error(StateError('private-canary')),
+      'empty': () async => '',
+      'blank': () async => ' \t\n',
+      'unicode blank': () async => '\u2003\u00a0',
+    };
+    for (final entry in failures.entries) {
+      test('token provider errors never fall back: ${entry.key}', () async {
+        final h = Harness(
+          credentials: (_) => StreamCredentials(
+            url: 'wss://stream.test/s?token=embedded',
+            token: 'static',
+            tokenProvider: entry.value,
+          ),
+        );
+        h.session.start();
+        await pump();
+        expect(h.connector.uris, isEmpty);
+        expect(h.session.status.value, const StreamReconnecting(1));
+        expect(h.statuses, [const StreamReconnecting(1)]);
+        await pump();
+        final expected =
+            entry.key.contains('throw') || entry.key == 'failed Future'
+            ? '[mobilerun.stream] Token provider error: StateError'
+            : '[mobilerun.stream] Token provider blank key';
+        expect(diagnostics, [expected]);
+        await h.session.close();
+        expect(h.scheduler.pendingTimers, 0);
+      });
+    }
+
+    for (final reject in [false, true]) {
+      test(
+        'token provider 10000ms deadline; late ${reject ? "rejection" : "success"} is silent',
+        () async {
+          final key = Completer<String>();
+          var calls = 0;
+          final h = Harness(
+            credentials: (_) => StreamCredentials(
+              url: 'wss://stream.test/s?token=embedded',
+              token: 'static',
+              tokenProvider: () {
+                calls++;
+                return key.future;
+              },
+            ),
+          );
+          h.session.start();
+          await pump();
+          await h.advance(9999);
+          expect(h.session.status.value, const StreamConnecting());
+          expect(h.connector.uris, isEmpty);
+          await h.advance(1);
+          expect(h.session.status.value, const StreamReconnecting(1));
+          if (reject) {
+            key.completeError(StateError('private-canary'));
+          } else {
+            key.complete('late');
+          }
+          await pump();
+          expect(h.connector.uris, isEmpty);
+          expect(h.statuses, [const StreamReconnecting(1)]);
+          expect(calls, 1);
+          expect(diagnostics, ['[mobilerun.stream] Token provider timeout']);
+          await h.session.close();
+          expect(h.scheduler.pendingTimers, 0);
+        },
+      );
+    }
+
+    test(
+      'unresolved provider does not delay teardown or retain timers',
+      () async {
+        final key = Completer<String>();
+        final h = Harness(
+          credentials: (_) => StreamCredentials(
+            url: 'wss://stream.test/s',
+            tokenProvider: () => key.future,
+          ),
+        );
+        h.session.start();
+        await pump();
+        await h.session.close();
+        expect(key.isCompleted, isFalse);
+        expect(h.scheduler.pendingTimers, 0);
+        key.completeError(StateError('late'));
+        await h.advance(60000);
+        expect(h.connector.uris, isEmpty);
+        expect(h.statuses, isEmpty);
+      },
+    );
+
+    test('late successful token after close opens nothing', () async {
+      final key = Completer<String>();
+      final h = Harness(
+        credentials: (_) => StreamCredentials(
+          url: 'wss://stream.test/s',
+          tokenProvider: () => key.future,
+        ),
+      );
+      h.session.start();
+      await pump();
+      await h.session.close();
+      key.complete('late');
+      await h.advance(60000);
+      expect(h.connector.uris, isEmpty);
+      expect(h.statuses, isEmpty);
+      expect(h.scheduler.pendingTimers, 0);
+    });
+
+    test('provider closing its session synchronously opens nothing', () async {
+      late Harness h;
+      h = Harness(
+        credentials: (_) => StreamCredentials(
+          url: 'wss://stream.test/s',
+          tokenProvider: () {
+            unawaited(h.session.close());
+            return Completer<String>().future;
+          },
+        ),
+      );
+      h.session.start();
+      await pump();
+      expect(h.connector.uris, isEmpty);
+      expect(h.statuses, isEmpty);
+      expect(h.scheduler.pendingTimers, 0);
+    });
+
+    test('WebSocket open budget starts after provider completion', () async {
+      final key = Completer<String>();
+      final socket = Completer<void>();
+      final h = Harness(
+        credentials: (_) => StreamCredentials(
+          url: 'wss://stream.test/s',
+          tokenProvider: () => key.future,
+        ),
+      );
+      h.connector.gate = socket;
+      h.session.start();
+      await pump();
+      await h.advance(9000);
+      key.complete('key');
+      await pump();
+      await h.advance(14999);
+      expect(h.session.status.value, const StreamConnecting());
+      await h.advance(1);
+      expect(h.session.status.value, const StreamReconnecting(1));
+      socket.complete();
+      await pump();
+      expect(h.ws.closedByClient, isTrue);
+      await h.session.close();
+    });
+
+    test('late token after target switch opens nothing', () async {
+      final discovery = Completer<StreamCredentials?>();
+      final oldKey = Completer<String>();
+      var calls = 0;
+      final h = Harness(
+        credentials: (call) => call == 1
+            ? StreamCredentials(
+                url: 'wss://stream.test/a',
+                tokenProvider: () {
+                  calls++;
+                  return calls == 1 ? Future.value('first') : oldKey.future;
+                },
+              )
+            : discovery.future,
+      );
+      h.session.start();
+      await pump();
+      h.ws.serverClose();
+      await pump();
+      await h.advance(1000);
+      expect(calls, 2);
+      discovery.complete(
+        StreamCredentials(
+          url: 'wss://stream.test/b',
+          tokenProvider: () async => 'key-b',
+        ),
+      );
+      await pump();
+      expect(h.connector.uris.map((uri) => uri.path), ['/a', '/b']);
+      oldKey.complete('stale-a');
+      await pump();
+      expect(h.connector.uris.map((uri) => uri.path), ['/a', '/b']);
+      await h.session.close();
+    });
+
+    test('socket watchdog excludes mint time including final retry', () async {
+      final keys = <Completer<String>>[];
+      final h = Harness(
+        credentials: (_) => StreamCredentials(
+          url: 'wss://stream.test/s',
+          tokenProvider: () {
+            final key = Completer<String>();
+            keys.add(key);
+            return key.future;
+          },
+        ),
+      );
+      h.session.start();
+      await pump();
+      for (final delay in [1000, 2000, 4000, 8000, 16000, 30000]) {
+        await h.advance(9000);
+        keys.last.complete('key');
+        await pump();
+        h.ws.receive(example('server-rtc-configuration.json'));
+        await pump();
+        final count = h.connector.uris.length;
+        final statuses = h.statuses.length;
+        await h.advance(44999);
+        expect(h.connector.uris, hasLength(count));
+        expect(h.statuses, hasLength(statuses));
+        await h.advance(1);
+        expect(h.session.status.value, StreamReconnecting(count));
+        await h.advance(delay);
+      }
+      await h.advance(9000);
+      keys.last.complete('final');
+      await pump();
+      h.ws.receive(example('server-rtc-configuration.json'));
+      await pump();
+      await h.advance(44999);
+      expect(h.session.status.value, const StreamReconnecting(6));
+      await h.advance(1);
+      expect(h.session.status.value, const StreamUnavailable());
+      expect(keys, hasLength(7));
+      h.session.retry();
+      await pump();
+      expect(keys, hasLength(8));
+      await h.session.close();
+    });
+
+    test('provider callback identity is not a target change', () async {
+      final refresh = Completer<StreamCredentials?>();
+      var oldCalls = 0;
+      var newCalls = 0;
+      final h = Harness(
+        credentials: (call) => call == 1
+            ? StreamCredentials(
+                url: 'wss://stream.test/s',
+                tokenProvider: () async {
+                  oldCalls++;
+                  return 'old';
+                },
+              )
+            : refresh.future,
+      );
+      await h.connect();
+      h.peer.emitState(PeerState.disconnected);
+      h.peer.emitState(PeerState.connected);
+      refresh.complete(
+        StreamCredentials(
+          url: 'wss://stream.test/s',
+          tokenProvider: () async {
+            newCalls++;
+            return 'new';
+          },
+        ),
+      );
+      await pump();
+      expect(h.connector.uris, hasLength(1));
+      expect(newCalls, 0);
+      h.ws.serverClose();
+      await pump();
+      await h.advance(2000);
+      expect(oldCalls, 1);
+      expect(newCalls, 1);
+      expect(h.ws.uri.queryParameters['token'], 'new');
+      await h.session.close();
+    });
+
+    test(
+      'ICE refresh never mints; eventual socket owns keepalive and first frame',
+      () async {
+        final key = Completer<String>();
+        var calls = 0;
+        final h = Harness(
+          credentials: (_) => StreamCredentials(
+            url: 'wss://stream.test/s',
+            tokenProvider: () {
+              calls++;
+              return key.future;
+            },
+          ),
+        );
+        h.session.start();
+        await pump();
+        await h.advance(9000);
+        expect(h.connector.uris, isEmpty);
+        h.session.setVisible(false);
+        h.session.setVisible(true);
+        key.complete('key');
+        await h.connect();
+        h.peer.stats = const VideoStats(
+          width: 488,
+          height: 1080,
+          framesDecoded: 1,
+        );
+        h.peer.emitVideo(FakeMediaStream());
+        await pump();
+        await h.advance(500);
+        expect(h.peer.lastTimeToFirstFrameMs, 0);
+        h.ws.receive(example('server-rtc-configuration.json'));
+        await pump();
+        expect(calls, 1);
+        expect(h.peer.calls, contains('createOffer(iceRestart)'));
+        await h.advance(9499);
+        expect(h.ws.ofType('keepAlive'), isEmpty);
+        await h.advance(1);
+        expect(h.ws.ofType('keepAlive'), hasLength(1));
+        expect(h.ws.ofType('keepAlive').single.atMs, 19000);
+        h.session.setVisible(false);
+        await h.advance(10000);
+        expect(h.ws.ofType('keepAlive'), hasLength(1));
+        h.session.setVisible(true);
+        await h.advance(10000);
+        expect(h.ws.ofType('keepAlive'), hasLength(2));
+        await h.session.close();
+      },
+    );
+
+    for (final providerMode in [false, true]) {
+      test(
+        '1001 reconnect tears down media in ${providerMode ? "provider" : "static"} mode',
+        () async {
+          var calls = 0;
+          final h = Harness(
+            credentials: (_) => StreamCredentials(
+              url: 'wss://stream.test/s',
+              token: 'static',
+              tokenProvider: providerMode ? () async => 'key-${++calls}' : null,
+            ),
+          );
+          await h.connect();
+          final socket = h.ws;
+          final peer = h.peer;
+          peer.emitVideo(FakeMediaStream());
+          await pump();
+          expect(h.session.videoStream.value, isNotNull);
+          final screenshot = expectLater(
+            h.session.screenshot(),
+            throwsA(isA<StreamDisconnectedException>()),
+          );
+          socket.closeGate = Completer<void>();
+          socket.serverClose();
+          await pump();
+          await screenshot;
+          expect(peer.closed, isTrue);
+          expect(h.session.videoStream.value, isNull);
+          expect(h.session.sendControl(Uint8List(1)), isFalse);
+          expect(h.session.sendHover(Uint8List(1)), isFalse);
+          expect(h.session.status.value, const StreamReconnecting(1));
+          await h.advance(999);
+          expect(h.connector.uris, hasLength(1));
+          await h.advance(1);
+          expect(
+            h.ws.uri.queryParameters['token'],
+            providerMode ? 'key-2' : 'static',
+          );
+          socket.closeGate!.complete();
+          await h.session.close();
+          expect(h.scheduler.pendingTimers, 0);
+        },
+      );
+    }
+  });
+
   group('credentials discovery and cached recovery', () {
     test(
       'token refresh after recovery is stored until the next mount',

@@ -5,11 +5,13 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:typed_data';
 
+import 'package:flutter/foundation.dart' show debugPrint;
 import 'package:flutter_webrtc/flutter_webrtc.dart' show MediaStream;
 
 import '../protocol/signalling.dart';
 import '../protocol/stream_timing.dart';
 import 'scheduler.dart';
+import 'reconnect_policy.dart';
 import 'stream_config.dart';
 import 'stream_credentials.dart';
 import 'stream_exception.dart';
@@ -22,6 +24,7 @@ import 'stream_transports.dart';
 final class StreamAttemptEvents {
   /// Creates the callback set.
   const StreamAttemptEvents({
+    required this.socketAllocated,
     required this.connected,
     required this.controlReady,
     required this.disconnected,
@@ -31,6 +34,9 @@ final class StreamAttemptEvents {
     required this.credentialsRejected,
     required this.stats,
   });
+
+  /// The signalling connector has allocated a socket for this attempt.
+  final void Function() socketAllocated;
 
   /// The control channel can now accept queued requests.
   final void Function() controlReady;
@@ -110,11 +116,12 @@ final class StreamAttempt {
   bool _resetRates = true;
   int _sampleEpoch = 0;
   Duration? _nextStatsAt;
-  final Duration _startedAt;
+  Duration _startedAt;
   double? _firstFrameMs;
   ScheduledTask? _graceTimer;
   bool _requestedFrames = false;
   bool _visible = true;
+  bool _socketAllocated = false;
 
   // The first rtcConfiguration reply ends the awaiting phase; later ones are
   // credential refreshes.
@@ -137,9 +144,9 @@ final class StreamAttempt {
 
   bool get _signallingOpen => live && _connection != null;
 
-  /// Arms the keepAlive timer and connects.
+  /// Acquires a key if needed, then connects.
   void start() {
-    if (_visible) _scheduleKeepAlive();
+    if (!live) return;
     unawaited(_run());
   }
 
@@ -149,7 +156,7 @@ final class StreamAttempt {
     _visible = visible;
     _keepAlive?.cancel();
     _keepAlive = null;
-    if (visible) _scheduleKeepAlive();
+    if (visible && _socketAllocated) _scheduleKeepAlive();
   }
 
   // ---- requests -----------------------------------------------------------
@@ -238,7 +245,12 @@ final class StreamAttempt {
         completer.completeError(TimeoutException(what, timeout));
       }
     });
-    _timers.add(timer);
+    // A provider may synchronously close its own session before returning.
+    if (live) {
+      _timers.add(timer);
+    } else {
+      timer.cancel();
+    }
     future.then(
       (value) {
         timer.cancel();
@@ -252,11 +264,53 @@ final class StreamAttempt {
     return completer.future;
   }
 
+  Future<StreamCredentials?> _socketCredentials(
+    StreamTokenProvider provider,
+  ) async {
+    if (!credentials.allowsTokenProvider) {
+      debugPrint('[mobilerun.stream] Token provider destination rejected');
+      _fail();
+      return null;
+    }
+    try {
+      final key = await _within(
+        Future<String>.sync(provider),
+        InternalReconnectPolicy.tokenProviderTimeout,
+        'Token provider timeout',
+      );
+      if (!live) return null;
+      if (key.trim().isNotEmpty) {
+        return StreamCredentials(url: credentials.url, token: key);
+      }
+      debugPrint('[mobilerun.stream] Token provider blank key');
+    } on TimeoutException {
+      if (!live) return null;
+      debugPrint('[mobilerun.stream] Token provider timeout');
+    } on Object catch (error) {
+      if (!live) return null;
+      debugPrint(
+        '[mobilerun.stream] Token provider error: ${error.runtimeType}',
+      );
+    }
+    _fail();
+    return null;
+  }
+
   Future<void> _run() async {
     try {
+      // Static startup retains its existing synchronous allocation boundary.
+      final provider = credentials.tokenProvider;
+      final resolved = provider == null
+          ? credentials
+          : await _socketCredentials(provider);
+      if (!live || resolved == null) return;
       final connecting = transports.signalling.connect(
-        credentials.toWebSocketUri(),
+        resolved.toWebSocketUri(),
       );
+      _socketAllocated = true;
+      _startedAt = scheduler.now;
+      events.socketAllocated();
+      if (_visible) _scheduleKeepAlive();
       // A socket that opens after the attempt gave up is closed.
       unawaited(
         connecting.then<void>((connection) {

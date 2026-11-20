@@ -1,14 +1,28 @@
 // Copyright 2026 Mobilerun
 // SPDX-License-Identifier: Apache-2.0
 
+import 'dart:async';
 import 'dart:io';
+import 'dart:convert';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mobilerun_flutter/mobilerun_flutter.dart';
 import 'package:mobilerun_flutter_example/main.dart';
+import 'package:mobilerun_flutter_example/sample_backend.dart';
+import 'package:mobilerun_flutter/src/webrtc/webrtc_initializer.dart';
 import 'package:mobilerun_flutter_example/sample_credentials.dart';
 
 void main() {
+  final binding = TestWidgetsFlutterBinding.ensureInitialized();
+  setUpAll(() async {
+    binding.defaultBinaryMessenger.setMockMethodCallHandler(
+      const MethodChannel('FlutterWebRTC.Method'),
+      (_) async => null,
+    );
+    await ensureWebRtcInitialized();
+  });
+
   late Directory dir;
   setUp(() => dir = Directory.systemTemp.createTempSync('sample-test-'));
   tearDown(() => dir.deleteSync(recursive: true));
@@ -18,11 +32,11 @@ void main() {
     await file.writeAsString(
       '{"streamUrl":"  wss://example.com  ", "streamToken":"  secret-canary  "}',
     );
-    final credentials = await consumeCredentials(file);
+    final credentials = (await consumeLaunch(file))?.credentials;
     expect(credentials?.url, 'wss://example.com');
     expect(credentials?.token, 'secret-canary');
     expect(await file.exists(), isFalse);
-    expect(await consumeCredentials(file), isNull);
+    expect(await consumeLaunch(file), isNull);
   });
 
   for (final entry in {
@@ -32,17 +46,244 @@ void main() {
     'wrong field type': '{"streamUrl":12,"streamToken":"secret-canary"}',
     'malformed JSON': 'secret-canary',
     'json array': '[]',
+    'missing helper device': '{"helperBaseUrl":"http://localhost:3001"}',
+    'invalid helper scheme':
+        '{"helperBaseUrl":"file:///tmp/helper","deviceId":"a"}',
+    'helper credentials':
+        '{"helperBaseUrl":"http://key@localhost:3001","deviceId":"a"}',
+    'LAN helper HTTP':
+        '{"helperBaseUrl":"http://192.168.1.2:3001","deviceId":"a"}',
   }.entries) {
     test('rejects and deletes ${entry.key}', () async {
       final file = File('${dir.path}/sample.json');
       await file.writeAsString(entry.value);
-      await expectLater(
-        consumeCredentials(file),
-        throwsA(isA<FormatException>()),
-      );
+      await expectLater(consumeLaunch(file), throwsA(isA<FormatException>()));
       expect(await file.exists(), isFalse);
     });
   }
+
+  for (final base in [
+    'http://localhost:3001',
+    'http://127.0.0.1:3001',
+    'http://[::1]:3001',
+    'https://backend.example.com',
+  ]) {
+    test('helper launch accepts $base', () async {
+      final file = File('${dir.path}/sample.json');
+      await file.writeAsString(
+        jsonEncode({'helperBaseUrl': base, 'deviceId': 'a'}),
+      );
+      final launch = (await consumeLaunch(file))!;
+      expect(launch.backend!.baseUrl.toString(), base);
+      expect(launch.credentials, isNull);
+      expect(await file.exists(), isFalse);
+    });
+  }
+
+  test(
+    'helper launch is credential-free, consumed once and binds its device',
+    () async {
+      final previousOverrides = HttpOverrides.current;
+      HttpOverrides.global = null;
+      addTearDown(() => HttpOverrides.global = previousOverrides);
+      final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+      addTearDown(() => server.close(force: true));
+      final requests = <String>[];
+      server.listen((request) async {
+        requests.add('${request.method} ${request.uri.path}');
+        request.response.headers.contentType = ContentType.json;
+        request.response.statusCode = request.method == 'POST' ? 201 : 200;
+        request.response.write(
+          jsonEncode(
+            request.method == 'POST'
+                ? {'key': 'mint-canary', 'keyId': 'id', 'expiresAt': 'later'}
+                : {
+                    'id': 'device-a',
+                    'state': 'running',
+                    'streamUrl': 'wss://stream.test/a',
+                  },
+          ),
+        );
+        await request.response.close();
+      });
+      final file = File('${dir.path}/sample.json');
+      await file.writeAsString(
+        jsonEncode({
+          'helperBaseUrl': 'http://127.0.0.1:${server.port}',
+          'deviceId': 'device-a',
+        }),
+      );
+      final launch = (await consumeLaunch(file))!;
+      expect(await file.exists(), isFalse);
+      expect(await consumeLaunch(file), isNull);
+      expect(launch.credentials, isNull);
+      final target = (await launch.backend!.credentials())!;
+      expect(target.url, 'wss://stream.test/a');
+      expect(target.token, isNull);
+      expect(requests, ['GET /api/v1/devices/device-a']);
+      expect(await target.tokenProvider!(), 'mint-canary');
+      expect(await target.tokenProvider!(), 'mint-canary');
+      expect(target.token, isNull);
+      expect(target.toString(), isNot(contains('mint-canary')));
+      expect(requests, [
+        'GET /api/v1/devices/device-a',
+        'POST /api/v1/devices/device-a/stream-key',
+        'POST /api/v1/devices/device-a/stream-key',
+      ]);
+    },
+  );
+
+  testWidgets('helper timeout closes the client after ten seconds', (
+    tester,
+  ) async {
+    final client = _PendingHttpClient();
+    final backend = SampleBackend(
+      baseUrl: Uri.parse('http://localhost:3001'),
+      deviceId: 'a',
+    );
+    final result = HttpOverrides.runZoned(
+      backend.credentials,
+      createHttpClient: (_) => client,
+    );
+    final failed = expectLater(
+      result,
+      throwsA(
+        isA<FormatException>().having(
+          (error) => error.message,
+          'message',
+          'Backend request failed',
+        ),
+      ),
+    );
+    await tester.pump(const Duration(milliseconds: 9999));
+    final closedBeforeDeadline = client.closed;
+    await tester.pump(const Duration(milliseconds: 1));
+    await failed;
+    expect(client.connectionTimeout, const Duration(seconds: 10));
+    expect(closedBeforeDeadline, isFalse);
+    expect(client.closed, isTrue);
+  });
+
+  test('helper errors never expose upstream response text', () async {
+    final previousOverrides = HttpOverrides.current;
+    HttpOverrides.global = null;
+    addTearDown(() => HttpOverrides.global = previousOverrides);
+    final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+    addTearDown(() => server.close(force: true));
+    server.listen((request) async {
+      request.response.statusCode = 403;
+      request.response.write('private-canary');
+      await request.response.close();
+    });
+    final file = File('${dir.path}/sample.json');
+    await file.writeAsString(
+      jsonEncode({
+        'helperBaseUrl': 'http://127.0.0.1:${server.port}',
+        'deviceId': 'device-a',
+      }),
+    );
+    final launch = (await consumeLaunch(file))!;
+    await expectLater(
+      launch.backend!.credentials(),
+      throwsA(
+        isA<FormatException>().having(
+          (error) => error.message,
+          'message',
+          'Backend request failed',
+        ),
+      ),
+    );
+  });
+
+  testWidgets(
+    'helper reconnect never puts minted keys into the credential form',
+    (tester) async {
+      binding.defaultBinaryMessenger.setMockMethodCallHandler(
+        const MethodChannel('FlutterWebRTC.Method'),
+        (call) async =>
+            call.method == 'createVideoRenderer' ? {'textureId': 1} : null,
+      );
+      binding.defaultBinaryMessenger.setMockMethodCallHandler(
+        const MethodChannel('FlutterWebRTC.Event'),
+        (_) async => null,
+      );
+      binding.defaultBinaryMessenger.setMockMethodCallHandler(
+        const MethodChannel('FlutterWebRTC/Texture1'),
+        (_) async => null,
+      );
+      final previousOverrides = HttpOverrides.current;
+      HttpOverrides.global = null;
+      addTearDown(() => HttpOverrides.global = previousOverrides);
+      final server = (await tester.runAsync(
+        () => HttpServer.bind(InternetAddress.loopbackIPv4, 0),
+      ))!;
+      addTearDown(() => server.close(force: true));
+      final upgrades = StreamController<WebSocket>();
+      addTearDown(upgrades.close);
+      final sockets = StreamIterator(upgrades.stream);
+      addTearDown(sockets.cancel);
+      var mints = 0;
+      server.listen((request) async {
+        if (request.uri.path == '/stream') {
+          final socket = await WebSocketTransformer.upgrade(request);
+          socket.listen((_) {});
+          upgrades.add(socket);
+          return;
+        }
+        final mint = request.method == 'POST';
+        if (mint) mints++;
+        request.response.statusCode = mint ? 201 : 200;
+        request.response.write(
+          jsonEncode(
+            mint
+                ? {'key': 'mint-canary-$mints'}
+                : {'streamUrl': 'ws://127.0.0.1:${server.port}/stream'},
+          ),
+        );
+        await request.response.close();
+      });
+      final backend = SampleBackend(
+        baseUrl: Uri.parse('http://127.0.0.1:${server.port}'),
+        deviceId: 'a',
+      );
+      await tester.pumpWidget(ExampleApp(backend: backend));
+      var opened = false;
+      final opening = sockets.moveNext().then((value) => opened = value);
+      for (var i = 0; i < 100; i++) {
+        await tester.pump();
+        await tester.runAsync(() => Future<void>.delayed(Duration.zero));
+      }
+      expect(opened, isTrue);
+      await opening;
+      await tester.pump();
+      await tester.tap(find.text('Credentials'));
+      await tester.pump();
+      expect(
+        tester
+            .widgetList<TextField>(find.byType(TextField))
+            .map((field) => field.controller!.text),
+        ['', ''],
+      );
+      expect(find.textContaining('mint-canary'), findsNothing);
+      await tester.tap(find.text('Reconnect'));
+      await tester.pump();
+      var reopened = false;
+      final reopening = sockets.moveNext().then((value) => reopened = value);
+      for (var i = 0; i < 100; i++) {
+        await tester.pump();
+        await tester.runAsync(() => Future<void>.delayed(Duration.zero));
+      }
+      expect(reopened, isTrue);
+      await reopening;
+      expect(mints, 2);
+      await tester.pumpWidget(const SizedBox());
+      unawaited(sockets.current.close());
+      for (var i = 0; i < 20; i++) {
+        await tester.pump();
+        await tester.runAsync(() => Future<void>.delayed(Duration.zero));
+      }
+    },
+  );
 
   testWidgets('token entry is obscured', (tester) async {
     await tester.pumpWidget(const ExampleApp());
@@ -121,4 +362,21 @@ void main() {
     expect(card.labels.deny, 'Decline');
     await tester.pumpWidget(const SizedBox());
   });
+}
+
+final class _PendingHttpClient implements HttpClient {
+  @override
+  Duration? connectionTimeout;
+
+  bool closed = false;
+
+  @override
+  Future<HttpClientRequest> openUrl(String method, Uri url) =>
+      Completer<HttpClientRequest>().future;
+
+  @override
+  void close({bool force = false}) => closed = force;
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }
