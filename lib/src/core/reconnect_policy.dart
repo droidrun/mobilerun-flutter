@@ -17,6 +17,9 @@ abstract final class ReconnectPolicy {
 
 /// Internal reconnect timings.
 abstract final class InternalReconnectPolicy {
+  /// Independent deadline for each per-socket token acquisition.
+  static const Duration tokenProviderTimeout = Duration(seconds: 10);
+
   /// Watchdog for a whole connect attempt. It must exceed
   /// [SignallingTiming.wsOpenTimeout] plus [SignallingTiming.rtcConfigTimeout],
   /// or it would preempt handshakes the connection layer still considers on

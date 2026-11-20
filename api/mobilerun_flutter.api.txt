@@ -98,10 +98,11 @@ final class StreamConnecting extends StreamStatus
   String toString()
 
 final class StreamCredentials
-  const StreamCredentials({required String url, String? token})
+  const StreamCredentials({required String url, String? token, StreamTokenProvider? tokenProvider})
   String toString()
   Uri toWebSocketUri()
   final String? token
+  final StreamTokenProvider? tokenProvider
   final String url
 
 typedef StreamCredentialsProvider = Future<StreamCredentials?> Function()
@@ -196,6 +197,8 @@ class StreamTheme extends StatelessWidget
   const StreamTheme({Key? key, StreamTokens tokens = const StreamTokens(), StreamTokens darkTokens = StreamTokens.dark, bool followSystem = false, required Widget child})
   static StreamTokens of(BuildContext context)
   final StreamTokens tokens
+
+typedef StreamTokenProvider = Future<String> Function()
 
 final class StreamTokens
   bool ==(Object other)

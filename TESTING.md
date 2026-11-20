@@ -8,29 +8,43 @@ Xcode with an iOS simulator runtime; verify setup with `flutter doctor`.
 
 ## Credentials and launch
 
-Use a device in your Mobilerun account. Your backend fetches `streamUrl` and
-`streamToken` via `GET /devices/{id}` and supplies them to the app. Never ship
-an API key in an app. Create a local JSON file outside the checkout:
+Use an existing device in your Mobilerun account. The preferred launch file contains
+no credentials:
 
 ```json
-{"streamUrl":"wss://your-stream-endpoint", "streamToken":"your-short-lived-token"}
+{"helperBaseUrl":"http://localhost:3001","deviceId":"DEVICE_UUID"}
 ```
+
+Start the [local backend helper](example/README.md) with the parent API key in its
+process environment only, then launch the sample:
 
 ```sh
-tool/run-sample.sh /path/to/credentials.json
+tool/run-sample.sh /path/to/sample.json
 # macOS, optional:
-tool/run-sample.sh /path/to/credentials.json --ios
+tool/run-sample.sh /path/to/sample.json --ios
 ```
 
-The script builds the debug app, boots one emulator/simulator, installs the app,
-loads the JSON into app-private storage and launches it. Android uses stdin with
-`adb run-as`; iOS uses the simulator app's private container. The app reads and
-deletes the launch file once, even when the JSON is invalid. The original file
-stays on your machine; delete it when finished and never commit it. Credentials
-then stay in memory, are never logged, and disappear when the process exits.
-The token field is obscured. You can also paste credentials manually; Credentials
-opens the form and Connect applies changes. The sample reuses the entered token;
-load fresh values when it expires. Your production backend should refresh it.
+The helper uses `@mobilerun/sdk@6.2.1`: metadata via `sdk.devices.get(id)`, then
+`POST /v1/identity/stream-keys` with `{deviceId,ttlSeconds:120}`, no automatic mint
+retry. Only metadata and the single-use mint DTO cross the local helper boundary.
+The app keeps an immutable helper/device binding and mints once per new socket.
+It stores no minted keys in app state, launch JSON, UI or logs. Never put an API key,
+keyId or expiresAt in app configuration.
+
+The runner copies launch bytes to app-private storage. The app reads and deletes that
+file once, including invalid input. Android uses an owned emulator with an `adb reverse`
+port mapping, removed during cleanup; the helper still binds only `127.0.0.1`.
+Sample-only local networking exceptions do not relax stream WSS enforcement.
+
+The manual form and old `{"streamUrl":"wss://…","streamToken":"…"}` file remain
+**legacy diagnostics**. The token entry is obscured. This static path reuses its token;
+a pasted single-use key cannot reconnect. E2E/benchmark launch formats remain static.
+
+Provider callbacks must be non-blocking (offload blocking/CPU work with `compute` or
+`Isolate.run`). Pending Futures time out at 10 seconds without fallback. The 45-second
+connect watchdog and 15-second handshake phase budgets start at socket allocation.
+Close1001 immediately clears media, peer, channels, timers and screenshots, then schedules
+bounded reconnect; other Flutter closes retain their existing rebuild behaviour.
 
 Create an AVD before running. SAMPLE_AVD selects it; SAMPLE_EMULATOR_PORT selects
 an unused even port (default 5582). Close other instances of that AVD first. The
@@ -76,9 +90,10 @@ flutter test
 (cd example && flutter test && flutter build apk --debug)
 dart run tool/api_dump.dart --check
 flutter pub publish --dry-run
+(cd example/backend && npm ci && node --test server.test.mjs)
 ```
 
-Sample tests cover launch-file validation, one-time deletion, token-field masking,
+Sample tests cover helper/device binding, safe HTTP errors, mint timing and launch-file validation, one-time deletion, token-field masking,
 themes/approval labels and local approval decisions/refetch. Library tests cover
 stream lifecycle, input, approvals, credential redaction, statistics and default UI.
 CI runs both suites and builds the Android sample.

@@ -331,8 +331,8 @@ final class DeviceStreamSession {
     _retireAttempt();
     _clearVideo();
     _activeCredentials = resolved;
-    _controller.attemptMounted();
-    _attempt = StreamAttempt(
+    _controller.attemptMounted(startWatchdog: false);
+    final attempt = StreamAttempt(
       sessionId: _sessionId,
       transports: _transports,
       scheduler: _scheduler,
@@ -341,6 +341,7 @@ final class DeviceStreamSession {
       credentials: resolved,
       visible: _visible,
       events: StreamAttemptEvents(
+        socketAllocated: _controller.attemptMounted,
         controlReady: _flushUrl,
         stats: (sample) =>
             _stats.value = _status.value is StreamConnected ? sample : null,
@@ -358,7 +359,9 @@ final class DeviceStreamSession {
         ),
         credentialsRejected: _requestCredentials,
       ),
-    )..start();
+    );
+    _attempt = attempt;
+    attempt.start();
     _updateSampling();
   }
 

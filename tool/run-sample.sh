@@ -19,11 +19,15 @@ pid=''
 sim=''
 container=''
 log=''
+reverse_port=''
 adb_() { adb -s "emulator-$port" "$@"; }
 cleanup() {
   local exit_code=$?
   if [ -n "$pid" ]; then
     adb_ shell run-as "$pkg" rm -f files/sample.json >/dev/null 2>&1 || true
+    if [ -n "$reverse_port" ]; then
+      adb_ reverse --remove "tcp:$reverse_port" >/dev/null 2>&1 || true
+    fi
     adb_ emu kill >/dev/null 2>&1 || true
     kill "$pid" 2>/dev/null || true
     wait "$pid" 2>/dev/null || true
@@ -82,6 +86,22 @@ else
   done
   [ "$booted" = 1 ] || { echo 'Emulator boot timed out' >&2; exit 1; }
   adb_ install -r build/app/outputs/flutter-apk/app-debug.apk
+  # Read only the helper port; launch bytes are copied unchanged below.
+  reverse_port="$(python3 - "$creds" <<'PYPORT'
+import json, sys
+from urllib.parse import urlparse
+try:
+    with open(sys.argv[1]) as source:
+        helper = json.load(source).get('helperBaseUrl')
+    if helper:
+        uri = urlparse(helper)
+        if uri.hostname in ('localhost', '127.0.0.1', '::1'):
+            print(uri.port or (443 if uri.scheme == 'https' else 80))
+except (ValueError, TypeError, AttributeError):
+    pass  # The app consumes invalid launch bytes and shows its generic error.
+PYPORT
+)"
+  if [ -n "$reverse_port" ]; then adb_ reverse "tcp:$reverse_port" "tcp:$reverse_port"; fi
   adb_ shell am force-stop "$pkg"
   adb_ shell run-as "$pkg" mkdir -p files
   adb_ shell "run-as $pkg sh -c 'cat > files/sample.json'" < "$creds"

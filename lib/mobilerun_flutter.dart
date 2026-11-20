@@ -20,7 +20,7 @@ export 'src/core/stream_exception.dart'
         ScreenshotFailedException,
         ScreenshotTimeoutException;
 export 'src/core/stream_credentials.dart'
-    show StreamCredentials, StreamCredentialsProvider;
+    show StreamCredentials, StreamCredentialsProvider, StreamTokenProvider;
 export 'src/core/stream_status.dart'
     show
         StreamConnected,

@@ -28,6 +28,7 @@ const sessionId = 'sess_0123456789abcdef';
 final class Harness {
   Harness({
     StreamConfig config = const StreamConfig(),
+    SignallingConnector? signalling,
     FutureOr<StreamCredentials?> Function(int call)? credentials,
   }) {
     connector = FakeConnector(scheduler);
@@ -43,7 +44,10 @@ final class Harness {
                 token: 'token-$credentialCalls',
               );
       },
-      transports: StreamTransports(signalling: connector, peers: peers),
+      transports: StreamTransports(
+        signalling: signalling ?? connector,
+        peers: peers,
+      ),
       config: config,
       scheduler: scheduler,
       random: () => 0.5,
