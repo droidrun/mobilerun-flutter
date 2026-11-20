@@ -111,12 +111,12 @@ DeviceStream(session: session);
 
 | Guide | Covers |
 | --- | --- |
-| [Stream keys](docs/stream-keys.md) | Single-use keys, deadlines, retries and legacy credentials. |
-| [Video and input](docs/video-and-input.md) | Touch, keyboard, host back, URLs and screenshots. |
-| [Default UI](docs/default-ui.md) | Navigation, overlays, custom builders, themes and labels. |
-| [Task approvals](docs/task-approvals.md) | Backend callbacks, polling, decisions and card customization. |
-| [Session and lifecycle](docs/lifecycle.md) | Status, codecs, credentials, visibility and network recovery. |
-| [Statistics](docs/stats.md) | Stats fields, sampling and the benchmark procedure. |
+| [Stream keys](doc/stream-keys.md) | Single-use keys, deadlines, retries and legacy credentials. |
+| [Video and input](doc/video-and-input.md) | Touch, keyboard, host back, URLs and screenshots. |
+| [Default UI](doc/default-ui.md) | Navigation, overlays, custom builders, themes and labels. |
+| [Task approvals](doc/task-approvals.md) | Backend callbacks, polling, decisions and card customization. |
+| [Session and lifecycle](doc/lifecycle.md) | Status, codecs, credentials, visibility and network recovery. |
+| [Statistics](doc/stats.md) | Stats fields, sampling and the benchmark procedure. |
 
 ## Contributing
 
