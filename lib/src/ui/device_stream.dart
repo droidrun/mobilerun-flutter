@@ -7,6 +7,7 @@ import 'package:flutter/material.dart';
 
 import '../core/device_stream_session.dart';
 import '../core/reconnect_policy.dart';
+import '../core/stream_error.dart';
 import '../core/stream_status.dart';
 import '../widgets/device_stream_view.dart';
 import 'stream_button.dart';
@@ -21,6 +22,7 @@ final class StreamOverlayState {
   const StreamOverlayState({
     this.status = const StreamConnecting(),
     this.labels = const StreamLabels(),
+    this.error,
     required this.retry,
   });
 
@@ -30,11 +32,17 @@ final class StreamOverlayState {
   /// Localized strings.
   final StreamLabels labels;
 
+  /// The latest failed attempt, or null while none failed in this cycle.
+  final StreamError? error;
+
   /// Retry a session which exhausted its attempts.
   final VoidCallback retry;
 }
 
 String _overlayLabel(StreamOverlayState state) => switch (state.status) {
+  StreamReconnecting()
+      when state.error?.reason == StreamErrorReason.disconnected =>
+    state.labels.disconnected,
   StreamReconnecting(:final attempt) when attempt > 1 =>
     state.labels.reconnectingAttempt
         .replaceAll('{attempt}', '$attempt')
@@ -267,6 +275,7 @@ class _DeviceStreamState extends State<DeviceStream> {
         listenable: Listenable.merge([
           widget.session.status,
           widget.session.closed,
+          widget.session.lastError,
         ]),
         builder: (context, _) {
           final status = widget.session.status.value;
@@ -276,6 +285,7 @@ class _DeviceStreamState extends State<DeviceStream> {
           final scope = StreamOverlayState(
             status: status,
             labels: widget.labels,
+            error: widget.session.lastError.value,
             retry: widget.session.retry,
           );
           return ColoredBox(

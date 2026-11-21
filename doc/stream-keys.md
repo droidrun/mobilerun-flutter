@@ -34,7 +34,7 @@ number and `isFinal`, which is true once retries stop (the stream is then
 | `reason.code` | Meaning |
 | --- | --- |
 | `credentials_unavailable` | The provider threw, returned a blank key or missed its 10-second deadline. |
-| `token_rejected` | The upgrade returned HTTP 401 or 403: the key was invalid, expired or already used. |
+| `token_rejected` | The upgrade returned HTTP 401: the key was invalid, expired or already used (HTTP 403 is `connection_refused`). |
 | `connection_refused` | The socket failed or closed before it opened (host, device or origin). |
 | `disconnected` | An open session dropped, including the server session cap. |
 | `unknown` | Anything else, such as the connect watchdog or a negotiation failure. |

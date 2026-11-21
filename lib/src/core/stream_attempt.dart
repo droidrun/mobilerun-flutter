@@ -373,8 +373,13 @@ final class StreamAttempt {
       if (_connection != null) {
         _fail(StreamErrorReason.unknown, 'Negotiation failed');
       } else if (error is SignallingRejectedException && error.isUnauthorized) {
+        // 401 and 403 both refresh credentials; only 401 is a rejected key.
         events.credentialsRejected();
-        _fail(StreamErrorReason.tokenRejected, 'Stream key rejected');
+        if (error.statusCode == 401) {
+          _fail(StreamErrorReason.tokenRejected, 'Stream key rejected');
+        } else {
+          _fail(StreamErrorReason.connectionRefused, 'Connection refused');
+        }
       } else {
         _fail(StreamErrorReason.connectionRefused, 'Connection refused');
       }

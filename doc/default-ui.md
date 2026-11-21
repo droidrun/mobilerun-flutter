@@ -84,8 +84,9 @@ dark background `#0a0a0a`, primary `#fafafa`, destructive `#ff6467`.
 `TaskApprovalLabels` provides React's approval label keys (`paymentCardTitle`,
 `waiting`, `card`, `app`, `domain`, `timeLeft`, `expired`, `approve`, `deny`,
 `viewSwitch`, `details`, `device`). `StreamLabels` provides stream/navigation
-labels (`connecting`, `reconnecting`, `reconnectingAttempt`, `unavailable`,
-`retry`, `back`, `home`, `recent`). `{time}` is replaced in `timeLeft`;
+labels (`connecting`, `reconnecting`, `disconnected`, `reconnectingAttempt`,
+`unavailable`, `retry`, `back`, `home`, `recent`). `disconnected` shows while
+reconnecting after an open session dropped; `session.lastError` carries the reason. `{time}` is replaced in `timeLeft`;
 `{attempt}` and `{max}` are reconnect template fields. Backend values are
 rendered as supplied; the card accepts a `String?` error so the app can map
 and localize the controller's raw error. Changed error text is announced once,

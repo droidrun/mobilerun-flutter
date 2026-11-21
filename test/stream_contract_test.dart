@@ -140,6 +140,15 @@ void main() {
       await h.session.close();
     });
 
+    test('HTTP 403 on the upgrade is connection_refused', () async {
+      final h = Harness(credentials: (_) => _provider(() async => 'key'));
+      h.connector.failWith = const SignallingRejectedException(403);
+      h.session.start();
+      await pump();
+      expect(h.errors.single.reason, StreamErrorReason.connectionRefused);
+      await h.session.close();
+    });
+
     test('HTTP 500 on the upgrade is connection_refused', () async {
       final h = Harness(credentials: (_) => _provider(() async => 'key'));
       h.connector.failWith = const SignallingRejectedException(500);

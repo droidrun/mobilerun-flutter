@@ -87,6 +87,7 @@ final class DeviceStreamSession {
   );
   late final _ObservedStats _stats;
   final ValueNotifier<VideoSize?> _videoSize = ValueNotifier(null);
+  final ValueNotifier<StreamError?> _lastError = ValueNotifier(null);
   final ValueNotifier<MediaStream?> _videoStream = ValueNotifier(null);
 
   bool _started = false;
@@ -116,6 +117,10 @@ final class DeviceStreamSession {
 
   /// The connection status. Starts as [StreamConnecting].
   ValueListenable<StreamStatus> get status => _status;
+
+  /// The latest failed attempt of the current recovery cycle; null while
+  /// connected and after a fresh cycle starts. Also delivered to `onError`.
+  ValueListenable<StreamError?> get lastError => _lastError;
 
   /// Inbound video statistics sampled every second while connected.
   /// Null unless connected, visible and observed; unsupported fields stay null.
@@ -257,6 +262,11 @@ final class DeviceStreamSession {
       ReconnectStatus.reconnecting => StreamReconnecting(snapshot.attempt),
       ReconnectStatus.unavailable => const StreamUnavailable(),
     };
+    if (snapshot.status == ReconnectStatus.connected ||
+        (snapshot.status == ReconnectStatus.reconnecting &&
+            snapshot.attempt == 0)) {
+      _lastError.value = null;
+    }
     _updateSampling();
     scheduleMicrotask(_applyPendingTarget);
     if (snapshot.status == ReconnectStatus.unavailable) {
@@ -283,18 +293,18 @@ final class DeviceStreamSession {
   }
 
   void _reportFailure(int attempt, bool isFinal) {
+    final error = StreamError(
+      // No attempt signal: the connect watchdog expired.
+      reason: _failureReason ?? StreamErrorReason.unknown,
+      message: _failureMessage ?? 'Connection attempt timed out',
+      attempt: attempt,
+      isFinal: isFinal,
+    );
+    _lastError.value = error;
     final onError = _onError;
     if (onError == null) return;
     try {
-      onError(
-        StreamError(
-          // No attempt signal: the connect watchdog expired.
-          reason: _failureReason ?? StreamErrorReason.unknown,
-          message: _failureMessage ?? 'Connection attempt timed out',
-          attempt: attempt,
-          isFinal: isFinal,
-        ),
-      );
+      onError(error);
     } on Object catch (error) {
       debugPrint('[mobilerun.stream] onError threw: ${error.runtimeType}');
     }

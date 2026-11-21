@@ -190,6 +190,35 @@ void main() {
     expect(find.byType(StreamNavigationBar), findsNothing);
   });
 
+  testWidgets('a dropped open session shows the disconnected label', (
+    tester,
+  ) async {
+    final h = Harness();
+    await tester.runAsync(h.connect);
+    await mount(
+      tester,
+      h,
+      labels: const StreamLabels(
+        disconnected: 'Lost the phone',
+        reconnecting: 'Trying again',
+      ),
+    );
+    expect(find.text('Lost the phone'), findsNothing);
+    await tester.runAsync(() async {
+      h.ws.serverClose();
+      await pump();
+    });
+    await tester.pump();
+    expect(find.text('Lost the phone'), findsOneWidget);
+    expect(find.text('Trying again'), findsNothing);
+    // A refused reconnect is not a dropped session: the generic label returns.
+    h.connector.failWith = StateError('offline');
+    await tester.runAsync(() => h.advance(1000));
+    await tester.pump();
+    expect(find.text('Lost the phone'), findsNothing);
+    expect(find.text('reconnecting (2/6)'), findsOneWidget);
+  });
+
   testWidgets('connected keeps video, navigation sends exact DOWN/UP pairs', (
     tester,
   ) async {

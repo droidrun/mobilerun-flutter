@@ -13,8 +13,8 @@ enum StreamErrorReason {
   /// expired token also lands here unless the platform exposes HTTP 401.
   connectionRefused('connection_refused'),
 
-  /// The upgrade was refused with HTTP 401 or 403: the key was invalid,
-  /// expired or already used.
+  /// The upgrade was refused with HTTP 401: the key was invalid, expired or
+  /// already used. HTTP 403 is [connectionRefused].
   tokenRejected('token_rejected'),
 
   /// A session that was open dropped, including the server session cap.

@@ -120,7 +120,7 @@ DeviceStream(
 ```
 
 `onError` reasons are `credentials_unavailable`, `connection_refused`,
-`token_rejected` (HTTP 401/403 on connect), `disconnected` and `unknown`;
+`token_rejected` (HTTP 401 on connect), `disconnected` and `unknown`;
 `isFinal` is true once the SDK stops retrying. `StreamCredentials.token`
 (a static key) is deprecated: a single-use key cannot reconnect.
 
