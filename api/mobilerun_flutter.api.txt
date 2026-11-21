@@ -43,7 +43,7 @@ final class DeviceStreamController
 final class DeviceStreamSession
   Future<void> close()
   void handleWake()
-  DeviceStreamSession({required StreamCredentialsProvider credentials, StreamConfig config = const StreamConfig()})
+  DeviceStreamSession({required StreamCredentialsProvider credentials, StreamConfig config = const StreamConfig(), StreamErrorCallback? onError})
   void openUrl(String url)
   void retry()
   Future<Uint8List> screenshot({Duration timeout = const Duration(seconds: 30)})
@@ -108,6 +108,27 @@ final class StreamCredentials
 typedef StreamCredentialsProvider = Future<StreamCredentials?> Function()
 
 final class StreamDisconnectedException extends StreamException
+
+final class StreamError
+  final int attempt
+  final bool isFinal
+  final String message
+  const StreamError({required StreamErrorReason reason, required String message, required int attempt, required bool isFinal})
+  final StreamErrorReason reason
+  String toString()
+
+typedef StreamErrorCallback = void Function(StreamError)
+
+enum StreamErrorReason
+  final String code
+  static const StreamErrorReason connectionRefused
+  static const StreamErrorReason credentialsUnavailable
+  static const StreamErrorReason deviceUnavailable
+  static const StreamErrorReason disconnected
+  const StreamErrorReason(String code)
+  static const StreamErrorReason tokenRejected
+  static const StreamErrorReason unknown
+  static const List<StreamErrorReason> values
 
 sealed class StreamException implements Exception
   final String message

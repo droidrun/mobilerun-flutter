@@ -7,3 +7,4 @@
 - Read-only stream statistics and decoded video dimensions and rotation.
 - App visibility and connectivity lifecycle integration.
 - PNG screenshots with typed failure and timeout errors.
+- `onError` failure reasons (`StreamError`); a fresh stream key per connect through `tokenProvider`; static `StreamCredentials.token` is deprecated.

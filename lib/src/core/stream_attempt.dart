@@ -14,6 +14,7 @@ import 'scheduler.dart';
 import 'reconnect_policy.dart';
 import 'stream_config.dart';
 import 'stream_credentials.dart';
+import 'stream_error.dart';
 import 'stream_exception.dart';
 import 'stream_status.dart';
 import 'stream_stats.dart';
@@ -50,8 +51,9 @@ final class StreamAttemptEvents {
   /// The peer connection left connected outside an ICE restart.
   final void Function() disconnected;
 
-  /// A terminal failure; the attempt has already released everything.
-  final void Function() failed;
+  /// A terminal failure with its reason; the attempt has already released
+  /// everything. The message never contains the URL or a token.
+  final void Function(StreamErrorReason reason, String message) failed;
 
   /// The stream with the remote video track arrived.
   final void Function(MediaStream stream) videoStream;
@@ -232,10 +234,10 @@ final class StreamAttempt {
   }
 
   /// A terminal failure: release everything and tell the session.
-  void _fail() {
+  void _fail(StreamErrorReason reason, String message) {
     if (!live) return;
     unawaited(dispose());
-    events.failed();
+    events.failed(reason, message);
   }
 
   Future<T> _within<T>(Future<T> future, Duration timeout, String what) {
@@ -269,7 +271,7 @@ final class StreamAttempt {
   ) async {
     if (!credentials.allowsTokenProvider) {
       debugPrint('[mobilerun.stream] Token provider destination rejected');
-      _fail();
+      _fail(StreamErrorReason.unknown, 'Token provider destination rejected');
       return null;
     }
     try {
@@ -283,17 +285,24 @@ final class StreamAttempt {
         return StreamCredentials(url: credentials.url, token: key);
       }
       debugPrint('[mobilerun.stream] Token provider blank key');
+      _fail(
+        StreamErrorReason.credentialsUnavailable,
+        'Token provider blank key',
+      );
+      return null;
     } on TimeoutException {
       if (!live) return null;
       debugPrint('[mobilerun.stream] Token provider timeout');
+      _fail(StreamErrorReason.credentialsUnavailable, 'Token provider timeout');
+      return null;
     } on Object catch (error) {
       if (!live) return null;
       debugPrint(
         '[mobilerun.stream] Token provider error: ${error.runtimeType}',
       );
+      _fail(StreamErrorReason.credentialsUnavailable, 'Token provider failed');
+      return null;
     }
-    _fail();
-    return null;
   }
 
   Future<void> _run() async {
@@ -332,7 +341,7 @@ final class StreamAttempt {
       // while the peer connection still reports connected.
       _socketSubscription = connection.messages.listen(
         _onMessage,
-        onDone: _fail,
+        onDone: () => _fail(StreamErrorReason.disconnected, 'Socket closed'),
         onError: (Object _) {},
       );
 
@@ -361,10 +370,14 @@ final class StreamAttempt {
       _send(OfferMessage(sdp: sdp, sessionId: sessionId));
     } on Object catch (error) {
       if (!live) return;
-      if (error is SignallingRejectedException && error.isUnauthorized) {
+      if (_connection != null) {
+        _fail(StreamErrorReason.unknown, 'Negotiation failed');
+      } else if (error is SignallingRejectedException && error.isUnauthorized) {
         events.credentialsRejected();
+        _fail(StreamErrorReason.tokenRejected, 'Stream key rejected');
+      } else {
+        _fail(StreamErrorReason.connectionRefused, 'Connection refused');
       }
-      _fail();
     }
   }
 
@@ -483,7 +496,7 @@ final class StreamAttempt {
     _peerState = state;
     if (state == PeerState.failed || state == PeerState.closed) {
       // Terminal: this peer connection will not come back on its own.
-      _fail();
+      _fail(StreamErrorReason.disconnected, 'Peer connection ended');
       return;
     }
     if (state == PeerState.connected) {
@@ -529,7 +542,7 @@ final class StreamAttempt {
     try {
       message = decodeServerMessage(text, phase: _phase);
     } on SignallingStartupException {
-      _fail();
+      _fail(StreamErrorReason.unknown, 'Invalid signalling reply');
       return;
     }
     switch (message) {

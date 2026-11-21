@@ -42,8 +42,9 @@ mapping during cleanup. iOS Simulator uses localhost. The consumed file is delet
 Each session captures the helper/device binding; metadata discovery supplies a target whose
 `tokenProvider` POSTs once per socket. No minted key enters form fields, state or storage.
 
-The existing manual static form/file is a legacy diagnostic path. A pasted single-use key
-cannot support reconnect. `e2e_main.dart` and `benchmark_main.dart` retain their static
+The sample shows `onError` reasons in its status line. The existing manual static form/file
+is a deprecated legacy diagnostic path: a pasted single-use key cannot reconnect and the
+session logs a deprecation warning. `e2e_main.dart` and `benchmark_main.dart` retain their static
 launch formats. Pending provider Futures have a 10-second deadline and cannot delay
 teardown; callbacks must not block the Dart isolate (offload blocking/CPU work themselves).
 The socket watchdog starts after minting. Close 1001 immediately tears down media in every
