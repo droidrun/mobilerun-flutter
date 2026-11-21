@@ -18,8 +18,9 @@ final class StreamCredentials {
   /// The signalling WebSocket URL (`wss://...`), without the token.
   final String url;
 
-  /// **Deprecated:** use [tokenProvider]. A static single-use key cannot
-  /// reconnect, and a session logs one warning when it uses this path.
+  /// **Deprecated legacy path:** use [tokenProvider]. Until the legacy token
+  /// hard cut, a reconnect reuses this same token, so a single-use key fails on
+  /// the second connect. A session logs one warning when it uses this path.
   /// [tokenProvider] wins when both are given.
   ///
   /// The stream token. It is sent as the `token` query parameter; a null or empty

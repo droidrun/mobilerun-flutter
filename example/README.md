@@ -43,8 +43,8 @@ Each session captures the helper/device binding; metadata discovery supplies a t
 `tokenProvider` POSTs once per socket. No minted key enters form fields, state or storage.
 
 The sample shows `onError` reasons in its status line. The existing manual static form/file
-is a deprecated legacy diagnostic path: a pasted single-use key cannot reconnect and the
-session logs a deprecation warning. `e2e_main.dart` and `benchmark_main.dart` retain their static
+is a deprecated legacy path: a reconnect reuses the pasted token, so a single-use key
+fails on the second connect (use the provider), and the session logs a deprecation warning. `e2e_main.dart` and `benchmark_main.dart` retain their static
 launch formats. Pending provider Futures have a 10-second deadline and cannot delay
 teardown; callbacks must not block the Dart isolate (offload blocking/CPU work themselves).
 The socket watchdog starts after minting. Close 1001 immediately tears down media in every

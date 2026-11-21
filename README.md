@@ -121,8 +121,14 @@ DeviceStream(
 
 `onError` reasons are `credentials_unavailable`, `connection_refused`,
 `token_rejected` (HTTP 401 on connect), `disconnected` and `unknown`;
-`isFinal` is true once the SDK stops retrying. `StreamCredentials.token`
-(a static key) is deprecated: a single-use key cannot reconnect.
+`isFinal` is true once the SDK stops retrying. 
+
+**Credential modes.** `tokenProvider` is the recommended path: one fresh key per
+connection. The static `StreamCredentials.token` is legacy and deprecated until its
+hard cut. It is an explicit exception: a reconnect **reuses the same static token**
+(the SDK logs one deprecation warning per session). That works for a long-lived
+token, but a single-use stream key is rejected on the second connect, so single-use
+keys need `tokenProvider`.
 
 ## Guides
 

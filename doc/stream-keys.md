@@ -47,8 +47,11 @@ per session.
 Close **1001** immediately releases peer/channels/media, timers and pending screenshots,
 then reconnects with a fresh key. Flutter retains its existing full-rebuild behaviour for
 other closes too. The static `token` field/path is deprecated in documentation but remains
-source-compatible, including null/empty behaviour. It is a legacy diagnostic option;
-a pasted single-use key cannot support reconnect. Target discovery (`credentials`) is
+source-compatible, including null/empty behaviour. It is an explicit legacy
+exception until the legacy token hard cut: unlike `tokenProvider`, a reconnect
+**reuses the same static token**. That suits a long-lived token only; a single-use
+key (for example one pasted from the dashboard) is rejected on the second connect,
+so single-use keys need `tokenProvider`, the recommended path. Target discovery (`credentials`) is
 unchanged and is not deprecated.
 
 See [the sample helper](../example/README.md) for a credential-free local launch.

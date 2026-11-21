@@ -310,7 +310,7 @@ final class DeviceStreamSession {
     }
   }
 
-  // The static token cannot reconnect: a key is single-use.
+  // Legacy exception: a reconnect reuses the static token; single-use keys fail.
   void _warnStaticToken(StreamCredentials credentials) {
     final token = credentials.token;
     if (_warnedStaticToken ||
@@ -321,8 +321,9 @@ final class DeviceStreamSession {
     }
     _warnedStaticToken = true;
     debugPrint(
-      '[mobilerun.stream] StreamCredentials.token is deprecated: a single-use '
-      'key cannot reconnect. Use StreamCredentials.tokenProvider.',
+      '[mobilerun.stream] StreamCredentials.token is deprecated: reconnects '
+      'reuse it, which fails for single-use keys. Use '
+      'StreamCredentials.tokenProvider.',
     );
   }
 
