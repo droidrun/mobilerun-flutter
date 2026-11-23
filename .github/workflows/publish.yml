@@ -1,8 +1,8 @@
-name: Publish to pub.dev
+name: Publish to pub.dev (manual only)
 
 on:
-  push:
-    tags: ['v*']
+  # Git releases are consumed directly; tags must never upload to pub.dev.
+  workflow_dispatch:
 
 permissions:
   contents: read

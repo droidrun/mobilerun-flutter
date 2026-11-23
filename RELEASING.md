@@ -1,83 +1,63 @@
-# Releasing to pub.dev
+# Git releases
 
-Nothing has been published yet. Pull requests only validate the package. A `v*`
-tag runs the reusable CI workflow without publishing permissions, then requests
-approval through the `pub-dev` environment before publishing. The upload job
-checks that the commit belongs to `main` and the tag matches the stable package
-version. These workflow checks prevent mistakes, not misuse: environment
-protection, pub.dev's environment requirement and tag rules are required controls.
+Version 0.1.0 is distributed from the `v0.1.0` git tag of
+`https://github.com/droidrun/mobilerun-flutter.git`. The package lives at the
+repository root. No pub.dev upload is needed for this release.
 
-## Required one-time setup
+Pull requests and pushes to `main` run CI. The pub.dev workflow in
+`.github/workflows/publish.yml` is manual-only (`workflow_dispatch`); pushing a
+`v*` tag does not trigger it. Registry publishing is separate from git releases.
 
-The repository owner must complete all of these steps before automated publishing:
+## Before the first public tag
 
-1. Create a [verified publisher](https://dart.dev/tools/pub/verified-publishers)
-   for `mobilerun.ai`. Verify domain ownership through the DNS record requested
-   by Google Search Console and add the intended maintainers.
-2. Decide repository visibility and confirm the public repository and issue
-   tracker links. Uploaded package source is public regardless of repository
-   visibility. Confirm the Apache-2.0 license and example are ready to distribute.
-3. Prepare a release PR for `0.1.0`: update the changelog and follow
-   [Each release](#each-release) step 1 for the first-tag documentation changes.
-   Merge after CI passes.
-   From that exact commit, run the checks in [README Development](README.md#development)
-   using its pinned Flutter version, then **manually** run `flutter pub publish`.
-   Authenticate interactively with the authorized uploader account. New packages
-   require this manual first upload; automated publishing cannot create them.
-   The package initially belongs to the uploader's account. Transfer it to the
-   company publisher on the package Admin settings, then verify publisher ownership.
-4. Create the GitHub environment `pub-dev` with a required reviewer and deployment
-   restrictions allowing only tags matching `v*`. Enable protection against
-   self-approval. The upload job already references this environment.
-5. On the package's pub.dev Admin settings, enable automated publishing from
-   `droidrun/mobilerun-flutter` with tag pattern `v{{version}}`. Enable **Require
-   GitHub Actions environment** and require `pub-dev`.
-   See [automated publishing](https://dart.dev/tools/pub/automated-publishing).
-   No long-lived publishing secret is needed; OIDC credentials are minted by
-   `dart-lang/setup-dart@v1` immediately before the upload.
-6. Create an active GitHub tag ruleset for `v*` restricting tag creation, updates
-   and deletion to authorized release maintainers. Review workflow changes and
-   environment approvals before releasing.
+The repository owner must confirm the source, history, issue tracker, license
+and [third-party notices](THIRD_PARTY_NOTICES.md) are ready for public distribution.
+Review repository permissions, fork workflow approvals, private vulnerability
+reporting and protection for `main`. Restrict creation, updates and deletion of
+`v*` tags to authorized release maintainers.
 
-After the manual upload and setup, create the historical `v0.1.0` tag on that
-release commit. Reject its `pub-dev` environment approval because `0.1.0` is already published
-and versions are immutable. Confirm the existing version on pub.dev; no second
-upload is needed.
-Subsequent tags publish new versions. No upload, tag, account setup or visibility
-change is part of preparing this pipeline.
+Repository visibility and tag creation are separate release decisions. Preparing
+or merging a release PR does not make the repository public or create a tag.
+A public git tag is consumable immediately; a draft GitHub Release is not an
+installation gate.
 
 ## Each release
 
-1. At the first tag, update every pre-release sentence:
-   - README Installation: replace “Install from source until the first release”
-     and “After the first release” with the released installation command.
-   - README Quickstart: remove “The package is not published yet and its
-     API may still change.”
-   - TESTING has no pre-release sentences that need changing.
-   - RELEASING introduction: remove “Nothing has been published yet.”
-   - RELEASING Required one-time setup: mark completed setup as historical,
-     including the manual first upload and historical-tag instructions.
-   - CHANGELOG: change “0.1.0 (unreleased)” to the release version and date.
-
-   Set a stable `X.Y.Z` version in `pubspec.yaml`, update `CHANGELOG.md` and the
-   README installation example. For public API changes, run
+1. Prepare a PR against `main`. Set the stable `X.Y.Z` version in `pubspec.yaml`,
+   add the matching `## X.Y.Z` heading in `CHANGELOG.md`, and update the README
+   dependency ref and version badge. For public API changes, run
    `dart run tool/api_dump.dart`, inspect and commit the signature diff.
    The contract covers exports of `lib/mobilerun_flutter.dart`, excluding
    `@internal` declarations. Imports from `lib/src/` are implementation details.
-2. Run the checks in [README Development](README.md#development). Resolve every
-   dry-run warning and inspect the package contents, including `LICENSE`,
-   `CHANGELOG.md`, `README.md`, `lib/` and `example/`. CI performs the same checks
-   without requesting publishing credentials.
-3. Merge only after CI is green. From the merged release commit on `main`,
-   create and push the matching tag, for example:
+2. Run the checks in [CONTRIBUTING.md](CONTRIBUTING.md#development) with Flutter
+   3.47.9 and its bundled Dart 3.13.7. Also run the example tests and the example
+   APK builds from `.github/workflows/ci.yml`. The package dry run validates
+   packaging only; it does not upload. Inspect the source, license, notices,
+   changelog, README and example intended for distribution.
+3. Merge only after CI is green. With explicit release approval, confirm the
+   repository is public and create the matching tag on the selected, merged
+   release commit on `main`. For 0.1.0:
 
    ```sh
-   git tag v0.1.1
-   git push origin v0.1.1
+   git tag v0.1.0 <release-commit>
+   git push origin v0.1.0
    ```
 
-4. After verification succeeds, review the tag and commit before approving the
-   `pub-dev` environment deployment. Inspect the publishing Actions run and
-   verify the version, publisher, documentation and installation on pub.dev
-   before announcing it. Published versions are immutable; diagnose failures
-   before retrying.
+   Do not move or overwrite a released tag; fixes need a new version.
+4. Verify anonymous source/tag access, then resolve this dependency in a fresh
+   Flutter app with `flutter pub get`:
+
+   ```yaml
+   dependencies:
+     flutter:
+       sdk: flutter
+     mobilerun_flutter:
+       git:
+         url: https://github.com/droidrun/mobilerun-flutter.git
+         ref: v0.1.0
+   ```
+
+   Import `package:mobilerun_flutter/mobilerun_flutter.dart` and follow the
+   [host requirements](README.md#install). A GitHub Release may accompany the
+   tag, but Flutter resolves the tag without one. Announce only after this
+   install check succeeds.

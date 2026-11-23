@@ -1,4 +1,4 @@
-## 0.1.0 (unreleased)
+## 0.1.0
 
 - Device streaming with WebRTC video, credential discovery and reconnection.
 - Touch, mouse, hardware keyboard, IME and explicit system-key input.

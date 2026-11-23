@@ -21,7 +21,7 @@
 ·
 <a href="https://cloud.mobilerun.ai">☁️ Mobilerun Cloud</a>
 
-![Status](https://img.shields.io/badge/status-pre--release-grey.svg)
+![Version](https://img.shields.io/badge/version-0.1.0-blue.svg)
 ![Platforms](https://img.shields.io/badge/Android-24%2B%20%7C%20iOS%2013%2B-blue.svg)
 [![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](./LICENSE)
 [![Discord](https://img.shields.io/discord/1360219330318696488?color=white&label=Discord&logo=discord&logoColor=white)](https://discord.gg/ZZbKEZZkwK)
@@ -63,14 +63,22 @@
 
 ## Install
 
-The package is not published yet; install from source until the first release.
-Its API may still change.
+Install the git release by adding this dependency to your `pubspec.yaml`:
 
-```sh
-flutter pub add mobilerun_flutter --git-url https://github.com/droidrun/mobilerun-flutter.git
+```yaml
+dependencies:
+  flutter:
+    sdk: flutter
+  mobilerun_flutter:
+    git:
+      url: https://github.com/droidrun/mobilerun-flutter.git
+      ref: v0.1.0
 ```
 
-After the first release, add `mobilerun_flutter: ^0.1.0` to your dependencies.
+Run `flutter pub get`, then import `package:mobilerun_flutter/mobilerun_flutter.dart`.
+The package is at the repository root, so no `path:` is needed. Version 0.1.0 is
+distributed through the git tag; a pub.dev upload is not required.
+
 The host Android app needs `<uses-permission android:name="android.permission.INTERNET" />`
 in `android/app/src/main/AndroidManifest.xml`, including release builds. Set
 `uses-material-design: true` under `flutter:` in the host's `pubspec.yaml` for the default UI icons.
@@ -162,4 +170,5 @@ Report vulnerabilities privately through [SECURITY.md](SECURITY.md).
 
 ## License
 
-[Apache-2.0](LICENSE).
+[Apache-2.0](LICENSE). See [third-party notices](THIRD_PARTY_NOTICES.md) for
+`flutter_webrtc` and its native WebRTC dependencies, including app redistribution requirements.
