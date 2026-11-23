@@ -87,7 +87,8 @@ Availability starts unknown and optimistic. An initial offline observation block
 discovery, token-provider calls and new sockets immediately. Going offline cancels
 retry/watchdog waits and invalidates pending acquisition without reporting a failure;
 late tokens are discarded. Healthy connected media is retained until its transport
-actually fails. Manual retry, foreground wake and target updates cannot bypass offline.
+actually fails. Foreground wake and target updates cannot bypass offline.
+An explicit `retry()` overrides the offline hint for one fresh attempt with a reset counter and fresh stream token; if it fails offline, it reports once and waits for network return before any automatic retry.
 A real offline → online transition resets backoff and the retry budget and starts
 one immediate attempt with a fresh stream token, even after Unavailable. Duplicate
 online observations and healthy connected sessions do not remount. Route availability

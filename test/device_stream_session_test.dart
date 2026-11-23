@@ -17,27 +17,23 @@ import 'support/harness.dart';
 
 void main() {
   group('network availability', () {
-    test(
-      'initial offline blocks start, retry and foreground discovery',
-      () async {
-        final h = Harness();
-        h.session.setNetworkAvailable(false);
-        h.session.start();
-        h.session.retry();
-        h.session.handleWake();
-        h.session.setVisible(false);
-        h.session.setVisible(true);
-        await h.advance(60000);
-        expect(h.credentialCalls, 0);
-        expect(h.connector.uris, isEmpty);
-        expect(h.errors, isEmpty);
-        h.session.setNetworkAvailable(true);
-        await pump();
-        expect(h.credentialCalls, 1);
-        expect(h.connector.uris, hasLength(1));
-        await h.session.close();
-      },
-    );
+    test('initial offline blocks start and foreground discovery', () async {
+      final h = Harness();
+      h.session.setNetworkAvailable(false);
+      h.session.start();
+      h.session.handleWake();
+      h.session.setVisible(false);
+      h.session.setVisible(true);
+      await h.advance(60000);
+      expect(h.credentialCalls, 0);
+      expect(h.connector.uris, isEmpty);
+      expect(h.errors, isEmpty);
+      h.session.setNetworkAvailable(true);
+      await pump();
+      expect(h.credentialCalls, 1);
+      expect(h.connector.uris, hasLength(1));
+      await h.session.close();
+    });
 
     for (final completion in <String, void Function(Completer<String>)>{
       'success': (pending) => pending.complete('stale'),
@@ -74,39 +70,35 @@ void main() {
       });
     }
 
-    test(
-      'offline backoff blocks timers, manual retry and foreground wake',
-      () async {
-        var tokens = 0;
-        final h = Harness(
-          credentials: (_) => StreamCredentials(
-            url: 'wss://stream.test/s',
-            tokenProvider: () async => 'fresh-${++tokens}',
-          ),
-        );
-        h.connector.failWith = StateError('refused');
-        h.session.start();
-        await pump();
-        expect(h.errors, hasLength(1));
-        h.session.setNetworkAvailable(false);
-        h.session.retry();
-        h.session.handleWake();
-        h.session.setVisible(false);
-        h.session.setVisible(true);
-        await h.advance(120000);
-        expect(tokens, 1);
-        expect(h.connector.uris, hasLength(1));
-        expect(h.errors, hasLength(1));
-        expect(h.scheduler.pendingTimers, 0);
-        h.connector.failWith = null;
-        h.session.setNetworkAvailable(true);
-        await pump();
-        expect(h.session.status.value, const StreamReconnecting(0));
-        expect(tokens, 2);
-        expect(h.connector.uris, hasLength(2));
-        await h.session.close();
-      },
-    );
+    test('offline backoff blocks timers and foreground wake', () async {
+      var tokens = 0;
+      final h = Harness(
+        credentials: (_) => StreamCredentials(
+          url: 'wss://stream.test/s',
+          tokenProvider: () async => 'fresh-${++tokens}',
+        ),
+      );
+      h.connector.failWith = StateError('refused');
+      h.session.start();
+      await pump();
+      expect(h.errors, hasLength(1));
+      h.session.setNetworkAvailable(false);
+      h.session.handleWake();
+      h.session.setVisible(false);
+      h.session.setVisible(true);
+      await h.advance(120000);
+      expect(tokens, 1);
+      expect(h.connector.uris, hasLength(1));
+      expect(h.errors, hasLength(1));
+      expect(h.scheduler.pendingTimers, 0);
+      h.connector.failWith = null;
+      h.session.setNetworkAvailable(true);
+      await pump();
+      expect(h.session.status.value, const StreamReconnecting(0));
+      expect(tokens, 2);
+      expect(h.connector.uris, hasLength(2));
+      await h.session.close();
+    });
 
     test(
       'network return resets exhausted budget once with fresh token',
@@ -218,6 +210,129 @@ void main() {
         expect(h.connector.uris, isEmpty);
       },
     );
+    test('offline Retry discovers once and opens one fresh socket', () async {
+      var tokens = 0;
+      final h = Harness(
+        credentials: (_) => StreamCredentials(
+          url: 'wss://stream.test/s',
+          tokenProvider: () async => 'fresh-${++tokens}',
+        ),
+      );
+      addTearDown(h.session.close);
+      h.session.setNetworkAvailable(false);
+      h.session.start();
+      await h.advance(60000);
+      expect(h.credentialCalls, 0);
+      expect(tokens, 0);
+      expect(h.connector.uris, isEmpty);
+      h.session.retry();
+      await pump();
+      expect(h.credentialCalls, 1);
+      expect(tokens, 1);
+      expect(h.connector.uris.single.queryParameters['token'], 'fresh-1');
+      expect(h.session.status.value, const StreamReconnecting(0));
+      expect(h.errors, isEmpty);
+    });
+
+    test(
+      'offline Retry resets budget; failure waits until one online cycle',
+      () async {
+        var tokens = 0;
+        final h = Harness(
+          credentials: (_) => StreamCredentials(
+            url: 'wss://stream.test/s',
+            tokenProvider: () async => 'fresh-${++tokens}',
+          ),
+        );
+        addTearDown(h.session.close);
+        h.connector.failWith = StateError('refused');
+        h.session.start();
+        await pump();
+        await h.advance(1000);
+        expect(h.session.status.value, const StreamReconnecting(2));
+        h.session.setNetworkAvailable(false);
+        h.session.retry();
+        await pump();
+        expect(tokens, 3);
+        expect(h.connector.uris, hasLength(3));
+        expect(h.errors.map((error) => error.attempt), [1, 2, 1]);
+        expect(h.session.status.value, const StreamReconnecting(1));
+        h.session.handleWake();
+        h.session.setVisible(false);
+        h.session.setVisible(true);
+        await h.advance(120000);
+        expect(tokens, 3);
+        expect(h.connector.uris, hasLength(3));
+        expect(h.errors, hasLength(3));
+        expect(h.scheduler.pendingTimers, 0);
+        h.connector.failWith = null;
+        h.session.setNetworkAvailable(true);
+        h.session.setNetworkAvailable(true);
+        await pump();
+        expect(tokens, 4);
+        expect(h.connector.uris, hasLength(4));
+        expect(h.connector.uris.last.queryParameters['token'], 'fresh-4');
+        expect(h.session.status.value, const StreamReconnecting(0));
+        expect(h.session.lastError.value, isNull);
+      },
+    );
+
+    test('online during forced Retry discards its pending token', () async {
+      final pending = Completer<String>();
+      var tokens = 0;
+      final h = Harness(
+        credentials: (_) => StreamCredentials(
+          url: 'wss://stream.test/s',
+          tokenProvider: () {
+            tokens++;
+            return tokens == 1 ? pending.future : Future.value('fresh-online');
+          },
+        ),
+      );
+      addTearDown(h.session.close);
+      h.session.setNetworkAvailable(false);
+      h.session.start();
+      h.session.retry();
+      await pump();
+      expect(tokens, 1);
+      expect(h.connector.uris, isEmpty);
+      h.session.setNetworkAvailable(true);
+      await pump();
+      pending.complete('stale-forced');
+      await pump();
+      expect(tokens, 2);
+      expect(h.connector.uris.single.queryParameters['token'], 'fresh-online');
+      expect(h.errors, isEmpty);
+    });
+
+    test('offline forced attempt keeps the 45000ms socket watchdog', () async {
+      var tokens = 0;
+      final h = Harness(
+        credentials: (_) => StreamCredentials(
+          url: 'wss://stream.test/s',
+          tokenProvider: () async => 'fresh-${++tokens}',
+        ),
+      );
+      addTearDown(h.session.close);
+      h.session.setNetworkAvailable(false);
+      h.session.start();
+      h.session.retry();
+      await pump();
+      h.ws.receive(example('server-rtc-configuration.json'));
+      await pump();
+      h.ws.receive(example('server-answer.json'));
+      await pump();
+      await h.advance(44999);
+      expect(h.errors, isEmpty);
+      await h.advance(1);
+      expect(h.errors, hasLength(1));
+      expect(h.errors.single.reason, StreamErrorReason.unknown);
+      expect(h.errors.single.attempt, 1);
+      await h.advance(120000);
+      expect(tokens, 1);
+      expect(h.connector.uris, hasLength(1));
+      expect(h.errors, hasLength(1));
+    });
   });
 
   group('per-socket token provider', () {

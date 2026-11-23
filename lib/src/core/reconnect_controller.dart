@@ -171,21 +171,21 @@ final class ReconnectController {
     );
   }
 
-  void _freshCycle({bool heal = true}) {
+  void _freshCycle({bool heal = true, bool remount = true}) {
     _attempt = 0;
     _failureLatched = false;
     _everConnectedThisEpoch = false;
-    // Manual cycles heal up front; a network return uses the committed target
-    // and lets its first counted failure request a refresh if needed.
+    // Ordinary manual cycles heal up front; network return and an offline Retry
+    // use the committed target and can heal after a counted failure.
     _healedThisCycle = heal;
     _status = ReconnectStatus.reconnecting;
     _emit();
     if (heal) _onHeal();
-    _onRemount();
+    if (remount) _onRemount();
   }
 
   /// The stream (re)mounted: arms the connect watchdog.
-  void attemptMounted({bool startWatchdog = true}) {
+  void attemptMounted({bool startWatchdog = true, bool allowOffline = false}) {
     if (_disposed) return;
     _enabled = true;
     // A mount during a wait is stale: the scheduled attempt owns the next
@@ -201,7 +201,7 @@ final class ReconnectController {
       _status = ReconnectStatus.connecting;
       _emit();
     }
-    if (!startWatchdog || !_networkAvailable) return;
+    if (!startWatchdog || (!_networkAvailable && !allowOffline)) return;
     _watchdogTimer = _scheduler.schedule(
       InternalReconnectPolicy.connectTimeout,
       () {
@@ -308,6 +308,14 @@ final class ReconnectController {
       _backoffTimer = _clear(_backoffTimer);
       _onRemount();
     }
+  }
+
+  /// Resets the budget for one session-owned explicit attempt while offline.
+  void prepareOfflineRetry() {
+    if (_disposed) return;
+    _enabled = true;
+    _clearAllTimers();
+    _freshCycle(heal: false, remount: false);
   }
 
   /// A manual retry; only acts while unavailable.

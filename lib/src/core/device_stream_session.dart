@@ -154,8 +154,18 @@ final class DeviceStreamSession {
 
   /// Starts a fresh connect cycle after the stream became
   /// [StreamUnavailable]. Before discovery, also restarts a pending provider call.
+  /// An explicit Retry overrides an offline hint for one fresh attempt.
   void retry() {
     if (_closed || !_started) return;
+    if (!_networkAvailable) {
+      _controller.prepareOfflineRetry();
+      if (_lastCredentials == null) {
+        _requestCredentials(replacePending: true, allowOffline: true);
+      } else {
+        _beginAttempt(allowOffline: true);
+      }
+      return;
+    }
     if (_lastCredentials == null) {
       _requestCredentials(replacePending: true);
     } else {
@@ -175,7 +185,7 @@ final class DeviceStreamSession {
   }
 
   /// Supplies advisory route availability, optimistic until first observed.
-  /// Offline suppresses discovery and new sockets; healthy media stays alive.
+  /// Offline suppresses automatic discovery and new sockets; healthy media stays alive.
   /// A real return starts one fresh recovery cycle, including from unavailable.
   void setNetworkAvailable(bool available) {
     if (_closed || _networkAvailable == available) return;
@@ -365,9 +375,12 @@ final class DeviceStreamSession {
 
   // Only initial discovery polls. Recovery mounts always use the latest cached
   // target; a bounded background refresh must never stall reconnect progress.
-  void _requestCredentials({bool replacePending = false}) {
+  void _requestCredentials({
+    bool replacePending = false,
+    bool allowOffline = false,
+  }) {
     if (_closed ||
-        !_networkAvailable ||
+        (!_networkAvailable && !allowOffline) ||
         (_credentialsPending && !replacePending)) {
       return;
     }
@@ -381,7 +394,7 @@ final class DeviceStreamSession {
       _credentialsTimeout?.cancel();
       _credentialsTimeout = null;
       if (next == null) {
-        if (_lastCredentials == null) {
+        if (_lastCredentials == null && _networkAvailable) {
           _credentialsPoll = _scheduler.schedule(
             const Duration(seconds: 3),
             () {
@@ -393,7 +406,11 @@ final class DeviceStreamSession {
         return;
       }
       _lastCredentials = next;
-      _applyPendingTarget();
+      if (allowOffline) {
+        _beginAttempt(allowOffline: true);
+      } else {
+        _applyPendingTarget();
+      }
     }
 
     _credentialsTimeout = _scheduler.schedule(
@@ -427,9 +444,11 @@ final class DeviceStreamSession {
   }
 
   /// Tears down the previous connection and mounts the cached target.
-  void _beginAttempt() {
+  void _beginAttempt({bool allowOffline = false}) {
     final resolved = _lastCredentials;
-    if (_closed || !_networkAvailable || resolved == null) return;
+    if (_closed || (!_networkAvailable && !allowOffline) || resolved == null) {
+      return;
+    }
     _retireAttempt();
     _clearVideo();
     _activeCredentials = resolved;
@@ -442,10 +461,11 @@ final class DeviceStreamSession {
       config: _config,
       muted: _muted,
       credentials: resolved,
-      networkAvailable: () => _networkAvailable,
+      networkAvailable: () => _networkAvailable || allowOffline,
       visible: _visible,
       events: StreamAttemptEvents(
-        socketAllocated: _controller.attemptMounted,
+        socketAllocated: () =>
+            _controller.attemptMounted(allowOffline: allowOffline),
         controlReady: _flushUrl,
         stats: (sample) =>
             _stats.value = _status.value is StreamConnected ? sample : null,
