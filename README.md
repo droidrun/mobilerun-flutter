@@ -144,6 +144,8 @@ stream tokens need `tokenProvider`.
 
 ## Guides
 
+Coding agents: use the [device stream integration skill](skills/mobilerun-device-stream/SKILL.md).
+
 | Guide | Covers |
 | --- | --- |
 | [Stream tokens](doc/stream-tokens.md) | Single-use stream tokens, deadlines, retries, `onError` reasons and legacy credentials. |
