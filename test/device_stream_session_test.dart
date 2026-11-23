@@ -140,39 +140,30 @@ void main() {
       },
     );
 
-    test(
-      'offline discards pending target update and resumes discovery',
-      () async {
-        final target = Completer<StreamCredentials?>();
-        final h = Harness(
-          credentials: (call) => call == 1
-              ? const StreamCredentials(url: 'wss://stream.test/old')
-              : call == 2
-              ? target.future
-              : const StreamCredentials(url: 'wss://stream.test/latest'),
-        );
-        h.session.start();
-        await pump();
-        h.ws.serverClose();
-        await pump();
-        h.session.setNetworkAvailable(false);
-        target.complete(
-          const StreamCredentials(url: 'wss://stream.test/stale'),
-        );
-        await h.advance(60000);
-        expect(h.connector.uris.map((uri) => uri.path), ['/old']);
-        expect(h.credentialCalls, 2);
-        h.session.setNetworkAvailable(true);
-        await pump();
-        expect(h.connector.uris.map((uri) => uri.path), [
-          '/old',
-          '/old',
-          '/latest',
-        ]);
-        expect(h.credentialCalls, 3);
-        await h.session.close();
-      },
-    );
+    test('offline discards pending target update and reconnects the committed target', () async {
+      final target = Completer<StreamCredentials?>();
+      final h = Harness(
+        credentials: (call) => call == 1
+            ? const StreamCredentials(url: 'wss://stream.test/old')
+            : call == 2
+            ? target.future
+            : const StreamCredentials(url: 'wss://stream.test/latest'),
+      );
+      h.session.start();
+      await pump();
+      h.ws.serverClose();
+      await pump();
+      h.session.setNetworkAvailable(false);
+      target.complete(const StreamCredentials(url: 'wss://stream.test/stale'));
+      await h.advance(60000);
+      expect(h.connector.uris.map((uri) => uri.path), ['/old']);
+      expect(h.credentialCalls, 2);
+      h.session.setNetworkAvailable(true);
+      await pump();
+      expect(h.connector.uris.map((uri) => uri.path), ['/old', '/old']);
+      expect(h.credentialCalls, 2);
+      await h.session.close();
+    });
 
     test(
       'offline preserves media; transport failure counts once without retries',

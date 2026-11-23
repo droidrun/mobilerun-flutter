@@ -171,16 +171,16 @@ final class ReconnectController {
     );
   }
 
-  void _freshCycle() {
+  void _freshCycle({bool heal = true}) {
     _attempt = 0;
     _failureLatched = false;
     _everConnectedThisEpoch = false;
-    // This heal covers the whole restarted cycle: a failure of the restarted
-    // attempt must not heal a second time.
-    _healedThisCycle = true;
+    // Manual cycles heal up front; a network return uses the committed target
+    // and lets its first counted failure request a refresh if needed.
+    _healedThisCycle = heal;
     _status = ReconnectStatus.reconnecting;
     _emit();
-    _onHeal();
+    if (heal) _onHeal();
     _onRemount();
   }
 
@@ -286,7 +286,9 @@ final class ReconnectController {
     if (!available) {
       _clearAllTimers();
     } else if (_enabled && _status != ReconnectStatus.connected) {
-      _freshCycle();
+      // Reuse the committed target. Its per-socket provider mints afresh; a
+      // parallel discovery refresh could replace this immediate attempt.
+      _freshCycle(heal: false);
     } else if (_enabled) {
       // Restore the stability window of the preserved healthy connection.
       handleConnected();

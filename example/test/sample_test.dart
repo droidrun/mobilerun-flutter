@@ -20,6 +20,14 @@ void main() {
       const MethodChannel('FlutterWebRTC.Method'),
       (_) async => null,
     );
+    binding.defaultBinaryMessenger.setMockMethodCallHandler(
+      const MethodChannel('dev.fluttercommunity.plus/connectivity'),
+      (_) async => ['wifi'],
+    );
+    binding.defaultBinaryMessenger.setMockMethodCallHandler(
+      const MethodChannel('dev.fluttercommunity.plus/connectivity_status'),
+      (_) async => null,
+    );
     await ensureWebRtcInitialized();
   });
 

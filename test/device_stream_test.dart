@@ -95,6 +95,16 @@ void main() {
       const MethodChannel('FlutterWebRTC.Method'),
       (_) async => null,
     );
+    // Native connectivity is external to widget tests; keep the initial route
+    // optimistic and leave transition coverage to the lifecycle suite.
+    binding.defaultBinaryMessenger.setMockMethodCallHandler(
+      const MethodChannel('dev.fluttercommunity.plus/connectivity'),
+      (_) async => ['wifi'],
+    );
+    binding.defaultBinaryMessenger.setMockMethodCallHandler(
+      const MethodChannel('dev.fluttercommunity.plus/connectivity_status'),
+      (_) async => null,
+    );
     await ensureWebRtcInitialized();
   });
 

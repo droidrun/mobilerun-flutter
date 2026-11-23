@@ -3,7 +3,6 @@
 
 import 'dart:async';
 
-import 'package:connectivity_plus/connectivity_plus.dart';
 // Use the plugin's official observation boundary without another dependency.
 // ignore: depend_on_referenced_packages
 import 'package:connectivity_plus_platform_interface/connectivity_plus_platform_interface.dart';
