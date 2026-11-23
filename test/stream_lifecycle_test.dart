@@ -48,6 +48,8 @@ void main() {
     () async {
       final h = Harness();
       final adapter = StreamLifecycle(session: h.session);
+      addTearDown(adapter.dispose);
+      addTearDown(h.session.close);
       await pump();
       h.session.start();
       await pump();
@@ -71,6 +73,8 @@ void main() {
       session: h.session,
       connectivity: custom.stream,
     );
+    addTearDown(adapter.dispose);
+    addTearDown(h.session.close);
     custom.add(false);
     h.session.start();
     await pump();
@@ -97,6 +101,8 @@ void main() {
     final snapshot = Completer<List<String>>();
     platform.snapshot = snapshot.future;
     final adapter = StreamLifecycle(session: h.session);
+    addTearDown(adapter.dispose);
+    addTearDown(h.session.close);
     await pump();
     platform.changes.add(['none']);
     await pump();
@@ -115,6 +121,8 @@ void main() {
     final snapshot = Completer<List<String>>();
     platform.snapshot = snapshot.future;
     final adapter = StreamLifecycle(session: h.session);
+    addTearDown(adapter.dispose);
+    addTearDown(h.session.close);
     final custom = StreamController<bool>.broadcast(sync: true);
     adapter.updateConnectivity(custom.stream);
     custom.add(false);
@@ -135,6 +143,8 @@ void main() {
       binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
       final h = Harness();
       final adapter = StreamLifecycle(session: h.session);
+      addTearDown(adapter.dispose);
+      addTearDown(h.session.close);
       await pump();
       h.session.start();
       await pump();
@@ -169,6 +179,8 @@ void main() {
       binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
       final h = Harness();
       final adapter = StreamLifecycle(session: h.session);
+      addTearDown(adapter.dispose);
+      addTearDown(h.session.close);
       await pump();
       h.session.start();
       await pump();
@@ -193,6 +205,8 @@ void main() {
     final h = Harness();
     platform.snapshot = Future.error(StateError('plugin unavailable'));
     final adapter = StreamLifecycle(session: h.session);
+    addTearDown(adapter.dispose);
+    addTearDown(h.session.close);
     await pump();
     platform.changes.addError(StateError('plugin unavailable'));
     await pump();
