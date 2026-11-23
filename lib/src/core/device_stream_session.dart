@@ -204,7 +204,7 @@ final class DeviceStreamSession {
     }
     _controller.setNetworkAvailable(available);
     if (available && _started && _lastCredentials == null) {
-      _requestCredentials();
+      _requestCredentials(replacePending: true);
     }
   }
 

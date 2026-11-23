@@ -305,6 +305,35 @@ void main() {
       expect(h.errors, isEmpty);
     });
 
+    test('online supersedes pending offline Retry discovery', () async {
+      final pending = Completer<StreamCredentials?>();
+      var tokens = 0;
+      final h = Harness(
+        credentials: (call) => call == 1
+            ? pending.future
+            : StreamCredentials(
+                url: 'wss://stream.test/latest',
+                tokenProvider: () async => 'fresh-${++tokens}',
+              ),
+      );
+      addTearDown(h.session.close);
+      h.session.setNetworkAvailable(false);
+      h.session.start();
+      h.session.retry();
+      await pump();
+      expect(h.credentialCalls, 1);
+      expect(h.connector.uris, isEmpty);
+      h.session.setNetworkAvailable(true);
+      await pump();
+      expect(h.credentialCalls, 2);
+      expect(tokens, 1);
+      expect(h.connector.uris.single.path, '/latest');
+      pending.complete(const StreamCredentials(url: 'wss://stream.test/stale'));
+      await pump();
+      expect(h.connector.uris, hasLength(1));
+      expect(h.errors, isEmpty);
+    });
+
     test('offline forced attempt keeps the 45000ms socket watchdog', () async {
       var tokens = 0;
       final h = Harness(
