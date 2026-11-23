@@ -6,7 +6,7 @@ import 'dart:io';
 
 import 'package:mobilerun_flutter/mobilerun_flutter.dart';
 
-/// Immutable backend/device binding for one sample session. Holds no keys.
+/// Immutable backend/device binding for one sample session. Holds no stream tokens.
 final class SampleBackend {
   SampleBackend({required this.baseUrl, required this.deviceId});
 
@@ -19,10 +19,10 @@ final class SampleBackend {
     final device = await _request('GET', '');
     final url = device['streamUrl'];
     if (url is! String || url.trim().isEmpty) return null;
-    return StreamCredentials(url: url, tokenProvider: mintStreamKey);
+    return StreamCredentials(url: url, tokenProvider: mintStreamToken);
   }
 
-  Future<String> mintStreamKey() async {
+  Future<String> mintStreamToken() async {
     final result = await _request('POST', '/stream-key');
     final key = result['key'];
     if (key is! String) throw const FormatException('Backend request failed');

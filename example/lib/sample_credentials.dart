@@ -8,7 +8,7 @@ import 'package:mobilerun_flutter/mobilerun_flutter.dart';
 
 import 'sample_backend.dart';
 
-/// Credential-free helper binding or the legacy static diagnostic target.
+/// Credential-free helper binding or a device token (legacy) diagnostic target.
 final class SampleLaunch {
   const SampleLaunch({this.backend, this.credentials});
   final SampleBackend? backend;

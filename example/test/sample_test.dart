@@ -288,7 +288,7 @@ void main() {
   testWidgets('token entry is obscured', (tester) async {
     await tester.pumpWidget(const ExampleApp());
     final tokenField = tester.widget<TextField>(
-      find.widgetWithText(TextField, 'Stream token'),
+      find.widgetWithText(TextField, 'Device token (legacy)'),
     );
     expect(tokenField.obscureText, isTrue);
   });

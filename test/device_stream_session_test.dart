@@ -299,7 +299,7 @@ void main() {
         final expected =
             entry.key.contains('throw') || entry.key == 'failed Future'
             ? '[mobilerun.stream] Token provider error: StateError'
-            : '[mobilerun.stream] Token provider blank key';
+            : '[mobilerun.stream] Token provider blank stream token';
         expect(diagnostics, [expected]);
         await h.session.close();
         expect(h.scheduler.pendingTimers, 0);

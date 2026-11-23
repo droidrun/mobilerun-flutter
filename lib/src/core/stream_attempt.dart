@@ -150,7 +150,7 @@ final class StreamAttempt {
 
   bool get _signallingOpen => live && _connection != null;
 
-  /// Acquires a key if needed, then connects.
+  /// Acquires a stream token if needed, then connects.
   void start() {
     if (!live) return;
     unawaited(_run());
@@ -289,10 +289,10 @@ final class StreamAttempt {
       if (key.trim().isNotEmpty) {
         return StreamCredentials(url: credentials.url, token: key);
       }
-      debugPrint('[mobilerun.stream] Token provider blank key');
+      debugPrint('[mobilerun.stream] Token provider blank stream token');
       _fail(
         StreamErrorReason.credentialsUnavailable,
-        'Token provider blank key',
+        'Token provider blank stream token',
       );
       return null;
     } on TimeoutException {
@@ -378,10 +378,10 @@ final class StreamAttempt {
       if (_connection != null) {
         _fail(StreamErrorReason.unknown, 'Negotiation failed');
       } else if (error is SignallingRejectedException && error.isUnauthorized) {
-        // 401 and 403 both refresh credentials; only 401 is a rejected key.
+        // 401 and 403 both refresh credentials; only 401 is a rejected stream token.
         events.credentialsRejected();
         if (error.statusCode == 401) {
-          _fail(StreamErrorReason.tokenRejected, 'Stream key rejected');
+          _fail(StreamErrorReason.tokenRejected, 'Stream token rejected');
         } else {
           _fail(StreamErrorReason.connectionRefused, 'Connection refused');
         }

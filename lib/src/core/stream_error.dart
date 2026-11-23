@@ -5,7 +5,8 @@
 ///
 /// [code] is the snake_case name shared by every Mobilerun stream SDK.
 enum StreamErrorReason {
-  /// The token provider threw, returned a blank key or exceeded its deadline.
+  /// The token provider threw, returned a blank stream token or exceeded
+  /// its deadline.
   credentialsUnavailable('credentials_unavailable'),
 
   /// The signalling socket could not be opened or closed before it opened:
@@ -13,7 +14,7 @@ enum StreamErrorReason {
   /// expired token also lands here unless the platform exposes HTTP 401.
   connectionRefused('connection_refused'),
 
-  /// The upgrade was refused with HTTP 401: the key was invalid, expired or
+  /// The upgrade was refused with HTTP 401: the stream token was invalid, expired or
   /// already used. HTTP 403 is [connectionRefused].
   tokenRejected('token_rejected'),
 
