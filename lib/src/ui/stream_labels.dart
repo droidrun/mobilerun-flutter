@@ -7,6 +7,7 @@ final class StreamLabels {
   const StreamLabels({
     this.connecting = 'connecting',
     this.reconnecting = 'reconnecting',
+    this.disconnected = 'disconnected',
     this.reconnectingAttempt = 'reconnecting ({attempt}/{max})',
     this.unavailable = 'device stream unavailable',
     this.retry = 'Retry',
@@ -20,6 +21,9 @@ final class StreamLabels {
 
   /// reconnecting label.
   final String reconnecting;
+
+  /// Shown while reconnecting after an open session dropped.
+  final String disconnected;
 
   /// reconnectingAttempt label.
   final String reconnectingAttempt;
@@ -43,6 +47,7 @@ final class StreamLabels {
   StreamLabels copyWith({
     String? connecting,
     String? reconnecting,
+    String? disconnected,
     String? reconnectingAttempt,
     String? unavailable,
     String? retry,
@@ -52,6 +57,7 @@ final class StreamLabels {
   }) => StreamLabels(
     connecting: connecting ?? this.connecting,
     reconnecting: reconnecting ?? this.reconnecting,
+    disconnected: disconnected ?? this.disconnected,
     reconnectingAttempt: reconnectingAttempt ?? this.reconnectingAttempt,
     unavailable: unavailable ?? this.unavailable,
     retry: retry ?? this.retry,
@@ -65,6 +71,7 @@ final class StreamLabels {
       other is StreamLabels &&
           other.connecting == connecting &&
           other.reconnecting == reconnecting &&
+          other.disconnected == disconnected &&
           other.reconnectingAttempt == reconnectingAttempt &&
           other.unavailable == unavailable &&
           other.retry == retry &&
@@ -76,6 +83,7 @@ final class StreamLabels {
   int get hashCode => Object.hashAll([
     connecting,
     reconnecting,
+    disconnected,
     reconnectingAttempt,
     unavailable,
     retry,

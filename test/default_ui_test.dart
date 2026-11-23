@@ -203,6 +203,13 @@ void main() {
     expect(stream.copyWith(), stream);
     expect(stream.copyWith().hashCode, stream.hashCode);
     expect(stream.copyWith(home: 'Start'), isNot(stream));
+    expect(stream.disconnected, 'disconnected');
+    expect(stream.copyWith(disconnected: 'Offline'), isNot(stream));
+    expect(stream.copyWith(disconnected: 'Offline').disconnected, 'Offline');
+    expect(
+      stream.copyWith(disconnected: 'Offline').hashCode,
+      isNot(stream.hashCode),
+    );
     const approval = TaskApprovalLabels();
     expect(approval.copyWith(), approval);
     expect(approval.copyWith().hashCode, approval.hashCode);

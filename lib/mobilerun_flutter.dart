@@ -19,6 +19,8 @@ export 'src/core/stream_exception.dart'
         StreamDisconnectedException,
         ScreenshotFailedException,
         ScreenshotTimeoutException;
+export 'src/core/stream_error.dart'
+    show StreamError, StreamErrorCallback, StreamErrorReason;
 export 'src/core/stream_credentials.dart'
     show StreamCredentials, StreamCredentialsProvider, StreamTokenProvider;
 export 'src/core/stream_status.dart'

@@ -75,13 +75,15 @@ final class ReconnectController {
   /// [onSnapshot] reports a changed status or attempt count and [onHeal] asks
   /// the host to refetch stream credentials; it is called once per recovery
   /// cycle, not per attempt, so a shared outage does not turn into a request
-  /// storm. [scheduler] runs the timers and defaults to [TimerScheduler];
+  /// storm. [onFailure] reports every counted failure with its consecutive
+  /// number and whether retries stopped. [scheduler] runs the timers and defaults to [TimerScheduler];
   /// [random] feeds the backoff jitter and defaults to a `dart:math`
   /// generator.
   ReconnectController({
     required this._onRemount,
     required this._onSnapshot,
     required this._onHeal,
+    this._onFailure,
     this._scheduler = const TimerScheduler(),
     this._random,
   });
@@ -89,6 +91,7 @@ final class ReconnectController {
   final void Function() _onRemount;
   final void Function(ReconnectSnapshot snapshot) _onSnapshot;
   final void Function() _onHeal;
+  final void Function(int attempt, bool isFinal)? _onFailure;
   final Scheduler _scheduler;
   final double Function()? _random;
 
@@ -147,10 +150,12 @@ final class ReconnectController {
     if (_attempt > ReconnectPolicy.maxAttempts) {
       _status = ReconnectStatus.unavailable;
       _emit();
+      _onFailure?.call(_attempt, true);
       return;
     }
     _status = ReconnectStatus.reconnecting;
     _emit();
+    _onFailure?.call(_attempt, false);
     if (!_healedThisCycle) {
       _healedThisCycle = true;
       _onHeal();

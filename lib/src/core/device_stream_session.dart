@@ -14,6 +14,7 @@ import 'scheduler.dart';
 import 'stream_attempt.dart';
 import 'stream_config.dart';
 import 'stream_credentials.dart';
+import 'stream_error.dart';
 import 'stream_exception.dart';
 import 'stream_status.dart';
 import 'stream_stats.dart';
@@ -34,13 +35,16 @@ final class DeviceStreamSession {
   /// Creates a session. Nothing connects before [start].
   ///
   /// [credentials] is asked for the stream URL and token, see
-  /// [StreamCredentialsProvider].
+  /// [StreamCredentialsProvider]. [onError] receives every failed attempt with
+  /// a [StreamErrorReason]; see [StreamError]. A throwing callback is ignored.
   DeviceStreamSession({
     required StreamCredentialsProvider credentials,
     StreamConfig config = const StreamConfig(),
+    StreamErrorCallback? onError,
   }) : this.withTransports(
          credentials: credentials,
          config: config,
+         onError: onError,
          transports: defaultStreamTransports(),
        );
 
@@ -51,6 +55,7 @@ final class DeviceStreamSession {
     required this._credentials,
     required this._transports,
     StreamConfig config = const StreamConfig(),
+    this._onError,
     Scheduler scheduler = const TimerScheduler(),
     double Function()? random,
     String Function()? sessionId,
@@ -63,6 +68,7 @@ final class DeviceStreamSession {
       onRemount: _beginAttempt,
       onSnapshot: _onSnapshot,
       onHeal: _requestCredentials,
+      onFailure: _reportFailure,
       scheduler: scheduler,
       random: random,
     );
@@ -70,6 +76,7 @@ final class DeviceStreamSession {
 
   final StreamCredentialsProvider _credentials;
   final StreamConfig _config;
+  final StreamErrorCallback? _onError;
   final StreamTransports _transports;
   final Scheduler _scheduler;
   final String _sessionId;
@@ -80,6 +87,7 @@ final class DeviceStreamSession {
   );
   late final _ObservedStats _stats;
   final ValueNotifier<VideoSize?> _videoSize = ValueNotifier(null);
+  final ValueNotifier<StreamError?> _lastError = ValueNotifier(null);
   final ValueNotifier<MediaStream?> _videoStream = ValueNotifier(null);
 
   bool _started = false;
@@ -97,6 +105,11 @@ final class DeviceStreamSession {
   bool _visible = true;
   int _videoRotation = 0;
   String? _pendingUrl;
+  bool _warnedStaticToken = false;
+
+  // Set while the controller counts a failure whose cause the attempt knows.
+  StreamErrorReason? _failureReason;
+  String? _failureMessage;
 
   /// Whether this session has been closed, for the SDK views.
   @internal
@@ -104,6 +117,10 @@ final class DeviceStreamSession {
 
   /// The connection status. Starts as [StreamConnecting].
   ValueListenable<StreamStatus> get status => _status;
+
+  /// The latest failed attempt of the current recovery cycle; null while
+  /// connected and after a fresh cycle starts. Also delivered to `onError`.
+  ValueListenable<StreamError?> get lastError => _lastError;
 
   /// Inbound video statistics sampled every second while connected.
   /// Null unless connected, visible and observed; unsupported fields stay null.
@@ -245,6 +262,11 @@ final class DeviceStreamSession {
       ReconnectStatus.reconnecting => StreamReconnecting(snapshot.attempt),
       ReconnectStatus.unavailable => const StreamUnavailable(),
     };
+    if (snapshot.status == ReconnectStatus.connected ||
+        (snapshot.status == ReconnectStatus.reconnecting &&
+            snapshot.attempt == 0)) {
+      _lastError.value = null;
+    }
     _updateSampling();
     scheduleMicrotask(_applyPendingTarget);
     if (snapshot.status == ReconnectStatus.unavailable) {
@@ -253,6 +275,56 @@ final class DeviceStreamSession {
       _retireAttempt();
       _clearVideo();
     }
+  }
+
+  void _withFailure(
+    StreamErrorReason reason,
+    String message,
+    void Function() count,
+  ) {
+    _failureReason = reason;
+    _failureMessage = message;
+    try {
+      count();
+    } finally {
+      _failureReason = null;
+      _failureMessage = null;
+    }
+  }
+
+  void _reportFailure(int attempt, bool isFinal) {
+    final error = StreamError(
+      // No attempt signal: the connect watchdog expired.
+      reason: _failureReason ?? StreamErrorReason.unknown,
+      message: _failureMessage ?? 'Connection attempt timed out',
+      attempt: attempt,
+      isFinal: isFinal,
+    );
+    _lastError.value = error;
+    final onError = _onError;
+    if (onError == null) return;
+    try {
+      onError(error);
+    } on Object catch (error) {
+      debugPrint('[mobilerun.stream] onError threw: ${error.runtimeType}');
+    }
+  }
+
+  // Legacy exception: a reconnect reuses the static token; single-use keys fail.
+  void _warnStaticToken(StreamCredentials credentials) {
+    final token = credentials.token;
+    if (_warnedStaticToken ||
+        credentials.tokenProvider != null ||
+        token == null ||
+        token.isEmpty) {
+      return;
+    }
+    _warnedStaticToken = true;
+    debugPrint(
+      '[mobilerun.stream] StreamCredentials.token is deprecated: reconnects '
+      'reuse it, which fails for single-use keys. Use '
+      'StreamCredentials.tokenProvider.',
+    );
   }
 
   void _updateSampling() {
@@ -331,6 +403,7 @@ final class DeviceStreamSession {
     _retireAttempt();
     _clearVideo();
     _activeCredentials = resolved;
+    _warnStaticToken(resolved);
     _controller.attemptMounted(startWatchdog: false);
     final attempt = StreamAttempt(
       sessionId: _sessionId,
@@ -346,10 +419,14 @@ final class DeviceStreamSession {
         stats: (sample) =>
             _stats.value = _status.value is StreamConnected ? sample : null,
         connected: _controller.handleConnected,
-        disconnected: _controller.handleDisconnected,
-        failed: () {
+        disconnected: () => _withFailure(
+          StreamErrorReason.disconnected,
+          'Peer connection dropped',
+          _controller.handleDisconnected,
+        ),
+        failed: (reason, message) {
           _clearVideo();
-          _controller.handleFailure();
+          _withFailure(reason, message, _controller.handleFailure);
         },
         videoStream: (stream) => _videoStream.value = stream,
         videoSize: (size) => _videoSize.value = VideoSize(

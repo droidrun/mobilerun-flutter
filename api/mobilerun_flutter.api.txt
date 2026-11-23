@@ -43,7 +43,8 @@ final class DeviceStreamController
 final class DeviceStreamSession
   Future<void> close()
   void handleWake()
-  DeviceStreamSession({required StreamCredentialsProvider credentials, StreamConfig config = const StreamConfig()})
+  ValueListenable<StreamError?> get lastError
+  DeviceStreamSession({required StreamCredentialsProvider credentials, StreamConfig config = const StreamConfig(), StreamErrorCallback? onError})
   void openUrl(String url)
   void retry()
   Future<Uint8List> screenshot({Duration timeout = const Duration(seconds: 30)})
@@ -109,6 +110,27 @@ typedef StreamCredentialsProvider = Future<StreamCredentials?> Function()
 
 final class StreamDisconnectedException extends StreamException
 
+final class StreamError
+  final int attempt
+  final bool isFinal
+  final String message
+  const StreamError({required StreamErrorReason reason, required String message, required int attempt, required bool isFinal})
+  final StreamErrorReason reason
+  String toString()
+
+typedef StreamErrorCallback = void Function(StreamError)
+
+enum StreamErrorReason
+  final String code
+  static const StreamErrorReason connectionRefused
+  static const StreamErrorReason credentialsUnavailable
+  static const StreamErrorReason deviceUnavailable
+  static const StreamErrorReason disconnected
+  const StreamErrorReason(String code)
+  static const StreamErrorReason tokenRejected
+  static const StreamErrorReason unknown
+  static const List<StreamErrorReason> values
+
 sealed class StreamException implements Exception
   final String message
   String toString()
@@ -117,10 +139,11 @@ final class StreamLabels
   bool ==(Object other)
   final String back
   final String connecting
-  StreamLabels copyWith({String? connecting, String? reconnecting, String? reconnectingAttempt, String? unavailable, String? retry, String? back, String? home, String? recent})
+  StreamLabels copyWith({String? connecting, String? reconnecting, String? disconnected, String? reconnectingAttempt, String? unavailable, String? retry, String? back, String? home, String? recent})
+  final String disconnected
   int get hashCode
   final String home
-  const StreamLabels({String connecting = 'connecting', String reconnecting = 'reconnecting', String reconnectingAttempt = 'reconnecting ({attempt}/{max})', String unavailable = 'device stream unavailable', String retry = 'Retry', String back = 'Back', String home = 'Home', String recent = 'Recent'})
+  const StreamLabels({String connecting = 'connecting', String reconnecting = 'reconnecting', String disconnected = 'disconnected', String reconnectingAttempt = 'reconnecting ({attempt}/{max})', String unavailable = 'device stream unavailable', String retry = 'Retry', String back = 'Back', String home = 'Home', String recent = 'Recent'})
   final String recent
   final String reconnecting
   final String reconnectingAttempt
@@ -151,8 +174,9 @@ final class StreamNotConnectedException extends StreamException
 typedef StreamOverlayBuilder = Widget Function(BuildContext, StreamOverlayState)
 
 final class StreamOverlayState
+  final StreamError? error
   final StreamLabels labels
-  const StreamOverlayState({StreamStatus status = const StreamConnecting(), StreamLabels labels = const StreamLabels(), required VoidCallback retry})
+  const StreamOverlayState({StreamStatus status = const StreamConnecting(), StreamLabels labels = const StreamLabels(), StreamError? error, required VoidCallback retry})
   final VoidCallback retry
   final StreamStatus status
 

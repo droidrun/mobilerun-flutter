@@ -30,6 +30,7 @@ final class Harness {
     StreamConfig config = const StreamConfig(),
     SignallingConnector? signalling,
     FutureOr<StreamCredentials?> Function(int call)? credentials,
+    StreamErrorCallback? onError,
   }) {
     connector = FakeConnector(scheduler);
     final offer = example('client-offer.json')['sdp']! as String;
@@ -49,6 +50,10 @@ final class Harness {
         peers: peers,
       ),
       config: config,
+      onError: (error) {
+        errors.add(error);
+        onError?.call(error);
+      },
       scheduler: scheduler,
       random: () => 0.5,
       sessionId: () => sessionId,
@@ -61,6 +66,7 @@ final class Harness {
   late final FakePeerFactory peers;
   late final DeviceStreamSession session;
   final List<StreamStatus> statuses = [];
+  final List<StreamError> errors = [];
   int credentialCalls = 0;
 
   FakeConnection get ws => connector.last;

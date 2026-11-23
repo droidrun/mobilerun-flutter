@@ -82,15 +82,21 @@ in `android/app/src/main/AndroidManifest.xml`, including release builds. Set
 2. Your app's `tokenProvider` asks your server for a key before each connection.
 3. The SDK opens the stream with that key, one key per connection, and reconnects with a fresh one.
 
-On your server, use the mint call from the [example helper](example/README.md):
+On your server, mint with `MOBILERUN_API_KEY` (never ship it in the app).
+Authenticate your user and check they own the device first:
 
 ```js
-// Authenticate your user and check they own the device before minting.
-const result = await sdk.api.post('/identity/stream-keys', {
-  body: { deviceId, ttlSeconds: 120 },
-  maxRetries: 0,
+// POST https://api.mobilerun.ai/v1/identity/stream-keys
+const res = await fetch('https://api.mobilerun.ai/v1/identity/stream-keys', {
+  method: 'POST',
+  headers: {
+    Authorization: `Bearer ${process.env.MOBILERUN_API_KEY}`,
+    'Content-Type': 'application/json',
+  },
+  body: JSON.stringify({ deviceId, ttlSeconds: 120 }),
 });
-// Return result.key to your app; keep the API key on your server.
+const { key, keyId, expiresAt } = await res.json();
+// Return only `key` to your app.
 ```
 
 In your app, using your backend client and the device's stream URL:
@@ -99,19 +105,36 @@ In your app, using your backend client and the device's stream URL:
 final session = DeviceStreamSession(
   credentials: () async => StreamCredentials(
     url: streamUrl,
+    // Called before every connection, including each reconnect.
     tokenProvider: () => backend.mintStreamKey(deviceId),
   ),
+  onError: (error) =>
+      debugPrint('stream ${error.reason.code} attempt ${error.attempt}'),
 )..start();
 // Inside a bounded area, such as Expanded:
-DeviceStream(session: session);
+DeviceStream(
+  session: session,
+  labels: const StreamLabels(unavailable: 'Phone offline', retry: 'Try again'),
+);
 // Close the session when finished: await session.close();
 ```
+
+`onError` reasons are `credentials_unavailable`, `connection_refused`,
+`token_rejected` (HTTP 401 on connect), `disconnected` and `unknown`;
+`isFinal` is true once the SDK stops retrying. 
+
+**Credential modes.** `tokenProvider` is the recommended path: one fresh key per
+connection. The static `StreamCredentials.token` is legacy and deprecated until its
+hard cut. It is an explicit exception: a reconnect **reuses the same static token**
+(the SDK logs one deprecation warning per session). That works for a long-lived
+token, but a single-use stream key is rejected on the second connect, so single-use
+keys need `tokenProvider`.
 
 ## Guides
 
 | Guide | Covers |
 | --- | --- |
-| [Stream keys](doc/stream-keys.md) | Single-use keys, deadlines, retries and legacy credentials. |
+| [Stream keys](doc/stream-keys.md) | Single-use keys, deadlines, retries, `onError` reasons and legacy credentials. |
 | [Video and input](doc/video-and-input.md) | Touch, keyboard, host back, URLs and screenshots. |
 | [Default UI](doc/default-ui.md) | Navigation, overlays, custom builders, themes and labels. |
 | [Task approvals](doc/task-approvals.md) | Backend callbacks, polling, decisions and card customization. |

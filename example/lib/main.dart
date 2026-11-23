@@ -151,10 +151,33 @@ class _StreamPageState extends State<StreamPage> {
   void _start(StreamCredentialsProvider credentials) {
     FocusManager.instance.primaryFocus?.unfocus();
     unawaited(_session?.close());
+    final session = DeviceStreamSession(
+      credentials: credentials,
+      onError: _showStreamError,
+    );
+    // Drop the message once the stream recovered.
+    session.status.addListener(() {
+      if (mounted &&
+          session.status.value is StreamConnected &&
+          _error != null) {
+        setState(() => _error = null);
+      }
+    });
     setState(() {
       _error = null;
       _form = false;
-      _session = DeviceStreamSession(credentials: credentials)..start();
+      _session = session..start();
+    });
+  }
+
+  // `reason.code` is shared by every Mobilerun stream SDK; `isFinal` means the
+  // SDK stopped retrying and the Retry button is showing.
+  void _showStreamError(StreamError error) {
+    if (!mounted) return;
+    setState(() {
+      _error =
+          'Stream error: ${error.reason.code}'
+          '${error.isFinal ? ' (final)' : ' (attempt ${error.attempt})'}';
     });
   }
 

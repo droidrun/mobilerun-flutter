@@ -24,11 +24,34 @@ configuration retains its subsequent **15-second** budget; minting consumes none
 on an existing socket never mints. A callback-only target update keeps healthy media;
 the next attempt uses the latest callback. Recreate the session for a different device.
 
+## Errors
+
+`DeviceStreamSession(onError: ...)` receives a `StreamError` for every failed
+attempt: `reason`, a `message` without URL or key, the consecutive `attempt`
+number and `isFinal`, which is true once retries stop (the stream is then
+`StreamUnavailable` until `retry()`).
+
+| `reason.code` | Meaning |
+| --- | --- |
+| `credentials_unavailable` | The provider threw, returned a blank key or missed its 10-second deadline. |
+| `token_rejected` | The upgrade returned HTTP 401: the key was invalid, expired or already used (HTTP 403 is `connection_refused`). |
+| `connection_refused` | The socket failed or closed before it opened (host, device or origin). |
+| `disconnected` | An open session dropped, including the server session cap. |
+| `unknown` | Anything else, such as the connect watchdog or a negotiation failure. |
+
+`device_unavailable` exists for parity with the other SDKs; the current protocol
+has no offline message, so it is not produced yet. A callback that throws is
+ignored. The first connection with a static `token` logs one deprecation warning
+per session.
+
 Close **1001** immediately releases peer/channels/media, timers and pending screenshots,
 then reconnects with a fresh key. Flutter retains its existing full-rebuild behaviour for
 other closes too. The static `token` field/path is deprecated in documentation but remains
-source-compatible, including null/empty behaviour. It is a legacy diagnostic option;
-a pasted single-use key cannot support reconnect. Target discovery (`credentials`) is
+source-compatible, including null/empty behaviour. It is an explicit legacy
+exception until the legacy token hard cut: unlike `tokenProvider`, a reconnect
+**reuses the same static token**. That suits a long-lived token only; a single-use
+key (for example one pasted from the dashboard) is rejected on the second connect,
+so single-use keys need `tokenProvider`, the recommended path. Target discovery (`credentials`) is
 unchanged and is not deprecated.
 
 See [the sample helper](../example/README.md) for a credential-free local launch.

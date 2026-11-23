@@ -49,8 +49,8 @@ await session.close();
 ## Credentials and app lifecycle
 
 Pass your existing backend call directly as the session's provider. The static
-`token` example below is retained for legacy diagnostics; use the
-[token provider](stream-keys.md) for single-use keys and reconnects:
+`token` example below is legacy (deprecated) and reuses the same token on every
+reconnect; use the [token provider](stream-keys.md) for single-use keys:
 
 ```dart
 final session = DeviceStreamSession(
