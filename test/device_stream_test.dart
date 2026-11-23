@@ -47,6 +47,7 @@ Future<void> mount(
   StreamOverlayBuilder placeholder = defaultStreamPlaceholder,
   StreamOverlayBuilder unavailable = defaultStreamUnavailable,
   StreamNavigationBuilder navigation = defaultStreamNavigation,
+  Stream<bool>? connectivity,
 }) async {
   addTearDown(() async {
     await tester.pumpWidget(const SizedBox());
@@ -60,6 +61,7 @@ Future<void> mount(
           height: 500,
           child: DeviceStream(
             session: h.session,
+            connectivity: connectivity,
             hasControl: hasControl,
             labels: labels,
             placeholderBuilder: placeholder,
@@ -95,6 +97,16 @@ void main() {
       const MethodChannel('FlutterWebRTC.Method'),
       (_) async => null,
     );
+    // Native connectivity is external to widget tests; keep the initial route
+    // optimistic and leave transition coverage to the lifecycle suite.
+    binding.defaultBinaryMessenger.setMockMethodCallHandler(
+      const MethodChannel('dev.fluttercommunity.plus/connectivity'),
+      (_) async => ['wifi'],
+    );
+    binding.defaultBinaryMessenger.setMockMethodCallHandler(
+      const MethodChannel('dev.fluttercommunity.plus/connectivity_status'),
+      (_) async => null,
+    );
     await ensureWebRtcInitialized();
   });
 
@@ -121,6 +133,35 @@ void main() {
       const MethodChannel('FlutterWebRTC/Texture1'),
       (_) async => null,
     );
+  });
+
+  testWidgets('offline start and failed Retry both expose the Retry control', (
+    tester,
+  ) async {
+    var tokens = 0;
+    final h = Harness(
+      credentials: (_) => StreamCredentials(
+        url: 'wss://stream.test/s',
+        tokenProvider: () async => 'fresh-${++tokens}',
+      ),
+    );
+    h.connector.failWith = StateError('refused');
+    h.session.setNetworkAvailable(false);
+    h.session.start();
+    await mount(tester, h, connectivity: const Stream<bool>.empty());
+    expect(find.text('Retry'), findsOneWidget);
+    expect(tokens, 0);
+    await tester.tap(find.text('Retry'));
+    await tester.runAsync(pump);
+    await tester.pump();
+    expect(tokens, 1);
+    expect(h.connector.uris, hasLength(1));
+    expect(h.errors.single.isFinal, isTrue);
+    expect(find.text('Retry'), findsOneWidget);
+    await tester.runAsync(() => h.advance(60000));
+    await tester.pump();
+    expect(tokens, 1);
+    expect(h.connector.uris, hasLength(1));
   });
 
   testWidgets(

@@ -132,7 +132,9 @@ class _StreamPageState extends State<StreamPage> {
     final url = _url.text.trim();
     final token = _token.text.trim();
     if (url.isEmpty || token.isEmpty) {
-      setState(() => _error = 'Enter both stream URL and token.');
+      setState(
+        () => _error = 'Enter both stream URL and device token (legacy).',
+      );
       return;
     }
     _helper = null;
@@ -253,7 +255,7 @@ class _StreamPageState extends State<StreamPage> {
                         enableSuggestions: false,
                         enableIMEPersonalizedLearning: false,
                         decoration: const InputDecoration(
-                          labelText: 'Stream token',
+                          labelText: 'Device token (legacy)',
                         ),
                       ),
                       FilledButton(

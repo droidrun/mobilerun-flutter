@@ -3,7 +3,7 @@
 
 import 'package:flutter/foundation.dart' show internal;
 
-/// Mints a fresh single-use key immediately before each signalling socket.
+/// Mints a fresh single-use stream token immediately before each signalling socket.
 ///
 /// Callbacks must be non-blocking. Offload blocking or CPU work with `compute`
 /// or `Isolate.run`. Pending futures have an independent 10-second deadline;
@@ -18,12 +18,15 @@ final class StreamCredentials {
   /// The signalling WebSocket URL (`wss://...`), without the token.
   final String url;
 
-  /// **Deprecated legacy path:** use [tokenProvider]. Until the legacy token
-  /// hard cut, a reconnect reuses this same token, so a single-use key fails on
+  /// **Device token (legacy):** deprecated; use [tokenProvider]. Until the
+  /// legacy token
+  /// hard cut, a reconnect reuses this same token, so a single-use stream
+  /// token fails on
   /// the second connect. A session logs one warning when it uses this path.
   /// [tokenProvider] wins when both are given.
   ///
-  /// The stream token. It is sent as the `token` query parameter; a null or empty
+  /// The device token (legacy). It is sent as the `token` query parameter;
+  /// a null or empty
   /// token sends the URL unchanged.
   final String? token;
 

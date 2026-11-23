@@ -27,8 +27,9 @@ tool/run-sample.sh /path/to/sample.json --ios
 The helper uses `@mobilerun/sdk@6.2.1`: metadata via `sdk.devices.get(id)`, then
 `POST /v1/identity/stream-keys` with `{deviceId,ttlSeconds:120}`, no automatic mint
 retry. Only metadata and the single-use mint DTO cross the local helper boundary.
+The mint route and DTO retain their transitional wire names.
 The app keeps an immutable helper/device binding and mints once per new socket.
-It stores no minted keys in app state, launch JSON, UI or logs. Never put an API key,
+It stores no minted stream tokens in app state, launch JSON, UI or logs. Never put an API key,
 keyId or expiresAt in app configuration.
 
 The runner copies launch bytes to app-private storage. The app reads and deletes that
@@ -37,14 +38,14 @@ port mapping, removed during cleanup; the helper still binds only `127.0.0.1`.
 The helper rejects foreign Host headers and all Origin or Sec-Fetch-Site headers (403/no-store).
 
 The manual form and old `{"streamUrl":"wss://…","streamToken":"…"}` file remain
-**legacy diagnostics**. The token entry is obscured. This static path reuses its token;
-a pasted single-use key cannot reconnect. E2E/benchmark launch formats remain static.
+**device token (legacy) diagnostics**. The token entry is obscured. This static path reuses its token;
+a pasted single-use stream token cannot reconnect. E2E/benchmark launch formats remain static.
 
 Provider callbacks must be non-blocking (offload blocking/CPU work with `compute` or
 `Isolate.run`). Pending Futures time out at 10 seconds without fallback. The 45-second
 connect watchdog and 15-second handshake phase budgets start at socket allocation.
 Close 1001 immediately clears media, peer, channels, timers and screenshots in every mode,
-then schedules bounded reconnect with a fresh provider key (static mode reuses its token);
+then schedules bounded reconnect with a fresh provider stream token (static mode reuses its token);
 other Flutter closes retain their existing rebuild behaviour.
 
 Create an AVD before running. SAMPLE_AVD selects it; SAMPLE_EMULATOR_PORT selects
@@ -102,6 +103,14 @@ CI runs both suites and builds the Android sample.
 Maintainers can run `example/tool/e2e_android.sh CREDENTIALS_JSON OUT_DIR` for
 scripted Android input, reconnect and screenshot checks, or `tool/benchmark.sh`
 for the [benchmark procedure](tool/BENCHMARK.md).
+
+For host widget tests, `DeviceStream` installs connectivity observation by default.
+Pass a controlled `connectivity:` stream (for example `const Stream<bool>.empty()`),
+set `observeLifecycle: false` when the host owns lifecycle testing, or mock both
+`dev.fluttercommunity.plus/connectivity` (the initial list such as `['wifi']` or
+`['none']`) and `dev.fluttercommunity.plus/connectivity_status` (listen/cancel).
+The default platform seed is asynchronous; explicitly set session availability before
+`start()` when testing launch-offline suppression.
 
 ## Known limitations
 

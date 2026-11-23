@@ -15,8 +15,8 @@ enum ReconnectStatus {
   /// An attempt failed; the next one is waiting out its backoff or running.
   reconnecting,
 
-  /// All attempts failed; only [ReconnectController.retry] or
-  /// [ReconnectController.handleWake] start a new cycle.
+  /// Automatic retrying stopped. Retry, foreground wake or network return
+  /// can start a new cycle.
   unavailable,
 }
 
@@ -97,6 +97,7 @@ final class ReconnectController {
 
   bool _disposed = false;
   bool _enabled = false;
+  bool _networkAvailable = true;
   ReconnectStatus _status = ReconnectStatus.connecting;
   int _attempt = 0;
 
@@ -147,7 +148,7 @@ final class ReconnectController {
     _watchdogTimer = _clear(_watchdogTimer);
     _stabilityTimer = _clear(_stabilityTimer);
     _attempt += 1;
-    if (_attempt > ReconnectPolicy.maxAttempts) {
+    if (_attempt > ReconnectPolicy.maxAttempts || !_networkAvailable) {
       _status = ReconnectStatus.unavailable;
       _emit();
       _onFailure?.call(_attempt, true);
@@ -169,17 +170,17 @@ final class ReconnectController {
     );
   }
 
-  void _freshCycle() {
+  void _freshCycle({bool heal = true, bool remount = true}) {
     _attempt = 0;
     _failureLatched = false;
     _everConnectedThisEpoch = false;
-    // This heal covers the whole restarted cycle: a failure of the restarted
-    // attempt must not heal a second time.
-    _healedThisCycle = true;
+    // Ordinary manual cycles heal up front; network return and an offline Retry
+    // use the committed target and can heal after a counted failure.
+    _healedThisCycle = heal;
     _status = ReconnectStatus.reconnecting;
     _emit();
-    _onHeal();
-    _onRemount();
+    if (heal) _onHeal();
+    if (remount) _onRemount();
   }
 
   /// The stream (re)mounted: arms the connect watchdog.
@@ -276,9 +277,29 @@ final class ReconnectController {
   /// unavailable. Everywhere else the new target applies immediately.
   bool shouldDeferTargetChange() => _waitingOrUnavailable;
 
-  /// The app became visible or the network came back.
+  /// Observes route availability. Offline cancels waits without dropping media.
+  /// A real return resets the retry budget and immediately reconnects if needed.
+  void setNetworkAvailable(bool available, {bool preserveAttempt = false}) {
+    if (_disposed || _networkAvailable == available) return;
+    _networkAvailable = available;
+    if (!available) {
+      _clearAllTimers();
+    } else if (preserveAttempt) {
+      // An explicit attempt already allocated its socket; retain its watchdog.
+      return;
+    } else if (_enabled && _status != ReconnectStatus.connected) {
+      // Reuse the committed target. Its per-socket provider mints afresh; a
+      // parallel discovery refresh could replace this immediate attempt.
+      _freshCycle(heal: false);
+    } else if (_enabled) {
+      // Restore the stability window of the preserved healthy connection.
+      handleConnected();
+    }
+  }
+
+  /// The app became visible.
   void handleWake() {
-    if (!_enabled) return;
+    if (!_enabled || !_networkAvailable) return;
     if (_status == ReconnectStatus.unavailable) {
       _freshCycle();
       return;
@@ -291,9 +312,27 @@ final class ReconnectController {
     }
   }
 
+  /// Stops automatic work offline, exposing Retry without counting a failure.
+  void setOfflineUnavailable() {
+    if (_disposed) return;
+    _enabled = true;
+    _clearAllTimers();
+    if (_status == ReconnectStatus.unavailable) return;
+    _status = ReconnectStatus.unavailable;
+    _emit();
+  }
+
+  /// Resets the budget for one session-owned explicit attempt while offline.
+  void prepareOfflineRetry() {
+    if (_disposed) return;
+    _enabled = true;
+    _clearAllTimers();
+    _freshCycle(heal: false, remount: false);
+  }
+
   /// A manual retry; only acts while unavailable.
   void retry() {
-    if (!_enabled) return;
+    if (!_enabled || !_networkAvailable) return;
     if (_status == ReconnectStatus.unavailable) _freshCycle();
   }
 

@@ -6,23 +6,32 @@ The package connects to a Mobilerun cloud device and recovers from failures,
 exactly like `@mobilerun/react`. The package is not published yet and its
 API may still change.
 
+The default connectivity snapshot arrives asynchronously. Attaching the adapter
+before `start()` begins observation, but does not synchronously seed availability.
+For a launch-offline guarantee, supply your own snapshot before `start()` as below
+(using `connectivity_plus`, declared and imported by the host app).
+
 ```dart
 final session = DeviceStreamSession(
   // Called at start, once per recovery cycle and when a token is rejected.
   // Return null while the device is not ready yet.
   credentials: () async => StreamCredentials(
     url: streamUrl,
-    tokenProvider: () => backend.mintStreamKey(deviceId),
+    tokenProvider: () => backend.mintStreamToken(deviceId),
   ),
 );
 session.status.addListener(() => print(session.status.value));
+final routes = await Connectivity().checkConnectivity();
+session.setNetworkAvailable(routes.any((route) => route != ConnectivityResult.none));
+final lifecycle = StreamLifecycle(session: session);
 session.start();
 
 // Inside a bounded area (for example Expanded):
-DeviceStream(session: session);
+DeviceStream(session: session, observeLifecycle: false);
 
 final png = await session.screenshot();
 
+lifecycle.dispose();
 await session.close();
 ```
 
@@ -49,8 +58,8 @@ await session.close();
 ## Credentials and app lifecycle
 
 Pass your existing backend call directly as the session's provider. The static
-`token` example below is legacy (deprecated) and reuses the same token on every
-reconnect; use the [token provider](stream-keys.md) for single-use keys:
+`token` example below uses a **device token (legacy)** (deprecated) and reuses the same token on every
+reconnect; use the [token provider](stream-tokens.md) for single-use stream tokens:
 
 ```dart
 final session = DeviceStreamSession(
@@ -77,14 +86,36 @@ ignores late provider results.
 
 For a custom UI, create a `StreamLifecycle(session: session)` once and dispose
 it with the UI. It uses `AppLifecycleListener` to pause keepAlive while hidden
-and wake pending reconnects on foreground transitions. Optionally pass your
-app's existing `Stream<bool>` as `connectivity`; only lost → available wakes,
-never the initial online snapshot. Use `updateConnectivity` to replace the
-source while retaining its last online state. The SDK adds no connectivity dependency: network-return wake needs your app's
-existing connectivity stream.
-You can instead call `session.setVisible(false/true)` and `session.handleWake()`
-from your existing lifecycle/network integration. The app owns session
-`start()` and `close()`.
+and wake pending reconnects on foreground transitions. The default connectivity
+source is `connectivity_plus` 7.3.2 on Android and iOS. A supplied `Stream<bool>`
+`connectivity` replaces that source; `updateConnectivity(null)` restores it.
+The adapter subscribes before checking the initial snapshot and refreshes the
+platform snapshot on resume. Stale snapshots and detached-source events are ignored.
+
+Availability starts unknown and optimistic. An initial offline observation blocks
+discovery, token-provider calls and new sockets immediately; starting offline shows
+`StreamUnavailable` and Retry without reporting an error. Going offline cancels
+retry/watchdog waits and invalidates pending acquisition without reporting a failure;
+late tokens are discarded. Healthy connected media is retained until its transport
+actually fails. Foreground wake and target updates cannot bypass offline.
+An explicit `retry()` overrides the offline hint for one fresh attempt with a reset
+counter and fresh stream token; repeat taps while it is live and Retry on healthy
+connected media do nothing. If it fails offline, `StreamUnavailable` exposes Retry
+again and the error has `isFinal: true` because the SDK stopped retrying.
+A real offline → online transition resets backoff and the retry budget and starts
+one immediate attempt with a fresh stream token, even after Unavailable. A forced
+attempt still waiting on its provider is discarded; one that already allocated its
+socket continues with its watchdog. Duplicate online observations and healthy
+connected sessions do not remount. Route availability
+is advisory and does not guarantee Internet or server reachability; iOS simulator
+network changes can miss observations.
+
+Headless/custom owners can instead forward availability with
+`session.setNetworkAvailable(false/true)`, visibility with `session.setVisible`,
+and foreground wake with `session.handleWake()`. The app still owns session
+`start()` and `close()`. If an adapter is removed while its session continues,
+replace the network observer or explicitly set availability; disposal retains the
+last observation. `DeviceStream(observeLifecycle: false)` has the same responsibility.
 
 The default [sample](../example/lib/main.dart) combines stream controls, themes,
 labels, stats and a local approval demo. See [TESTING.md](../TESTING.md).

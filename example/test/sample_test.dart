@@ -20,6 +20,14 @@ void main() {
       const MethodChannel('FlutterWebRTC.Method'),
       (_) async => null,
     );
+    binding.defaultBinaryMessenger.setMockMethodCallHandler(
+      const MethodChannel('dev.fluttercommunity.plus/connectivity'),
+      (_) async => ['wifi'],
+    );
+    binding.defaultBinaryMessenger.setMockMethodCallHandler(
+      const MethodChannel('dev.fluttercommunity.plus/connectivity_status'),
+      (_) async => null,
+    );
     await ensureWebRtcInitialized();
   });
 
@@ -288,7 +296,7 @@ void main() {
   testWidgets('token entry is obscured', (tester) async {
     await tester.pumpWidget(const ExampleApp());
     final tokenField = tester.widget<TextField>(
-      find.widgetWithText(TextField, 'Stream token'),
+      find.widgetWithText(TextField, 'Device token (legacy)'),
     );
     expect(tokenField.obscureText, isTrue);
   });

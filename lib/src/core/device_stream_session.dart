@@ -100,9 +100,11 @@ final class DeviceStreamSession {
   bool _credentialsPending = false;
   ScheduledTask? _credentialsTimeout;
   StreamAttempt? _attempt;
+  StreamAttempt? _forcedAttempt;
   final _retiredDisposals = <Future<void>>{};
   ScheduledTask? _credentialsPoll;
   bool _visible = true;
+  bool _networkAvailable = true;
   int _videoRotation = 0;
   String? _pendingUrl;
   bool _warnedStaticToken = false;
@@ -148,13 +150,33 @@ final class DeviceStreamSession {
   void start() {
     if (_started || _closed) return;
     _started = true;
+    if (!_networkAvailable) {
+      _controller.setOfflineUnavailable();
+      return;
+    }
     _requestCredentials();
   }
 
   /// Starts a fresh connect cycle after the stream became
   /// [StreamUnavailable]. Before discovery, also restarts a pending provider call.
+  /// An explicit Retry overrides an offline hint for one fresh attempt. While
+  /// offline, Retry preserves connected media and an already-live forced attempt.
   void retry() {
     if (_closed || !_started) return;
+    if (!_networkAvailable) {
+      if (_status.value is StreamConnected ||
+          (_forcedAttempt?.live ?? false) ||
+          _credentialsPending) {
+        return;
+      }
+      _controller.prepareOfflineRetry();
+      if (_lastCredentials == null) {
+        _requestCredentials(replacePending: true, allowOffline: true);
+      } else {
+        _beginAttempt(allowOffline: true);
+      }
+      return;
+    }
     if (_lastCredentials == null) {
       _requestCredentials(replacePending: true);
     } else {
@@ -163,13 +185,46 @@ final class DeviceStreamSession {
   }
 
   /// Wakes a pending reconnect wait or restarts an unavailable session.
-  /// Call this when the app's existing connectivity source comes back online.
+  /// Network sources should use [setNetworkAvailable] to reset backoff too.
   void handleWake() {
     if (_closed || !_started) return;
     if (_lastCredentials == null) {
       _requestCredentials(replacePending: true);
     } else {
       _controller.handleWake();
+    }
+  }
+
+  /// Supplies advisory route availability, optimistic until first observed.
+  /// Offline suppresses automatic discovery and new sockets; healthy media stays alive.
+  /// Network return restarts unavailable sessions, but retains a live forced
+  /// attempt that already allocated its socket.
+  void setNetworkAvailable(bool available) {
+    if (_closed || _networkAvailable == available) return;
+    _networkAvailable = available;
+    if (!available) {
+      _credentialsEpoch++;
+      _credentialsPending = false;
+      _credentialsTimeout?.cancel();
+      _credentialsPoll?.cancel();
+      if (_status.value is! StreamConnected) {
+        _retireAttempt();
+        _attempt = null;
+        _activeCredentials = null;
+        _clearVideo();
+      }
+    }
+    _controller.setNetworkAvailable(
+      available,
+      preserveAttempt:
+          (_forcedAttempt?.live ?? false) &&
+          (_forcedAttempt?.socketAllocated ?? false),
+    );
+    if (!available && _started && _status.value is! StreamConnected) {
+      _controller.setOfflineUnavailable();
+    }
+    if (available && _started && _lastCredentials == null) {
+      _requestCredentials(replacePending: true);
     }
   }
 
@@ -195,6 +250,7 @@ final class DeviceStreamSession {
     _controller.dispose();
     final attempt = _attempt;
     _attempt = null;
+    _forcedAttempt = null;
     _clearVideo();
     await attempt?.dispose();
     await Future.wait(_retiredDisposals.toList());
@@ -270,8 +326,7 @@ final class DeviceStreamSession {
     _updateSampling();
     scheduleMicrotask(_applyPendingTarget);
     if (snapshot.status == ReconnectStatus.unavailable) {
-      // The retry budget is spent: nothing of the last attempt may linger, a
-      // late peer state must not bring the stream back without retry().
+      // Automatic retrying stopped: no late peer state may revive the attempt.
       _retireAttempt();
       _clearVideo();
     }
@@ -310,7 +365,7 @@ final class DeviceStreamSession {
     }
   }
 
-  // Legacy exception: a reconnect reuses the static token; single-use keys fail.
+  // Legacy exception: a reconnect reuses the static token; single-use stream tokens fail.
   void _warnStaticToken(StreamCredentials credentials) {
     final token = credentials.token;
     if (_warnedStaticToken ||
@@ -321,8 +376,9 @@ final class DeviceStreamSession {
     }
     _warnedStaticToken = true;
     debugPrint(
-      '[mobilerun.stream] StreamCredentials.token is deprecated: reconnects '
-      'reuse it, which fails for single-use keys. Use '
+      '[mobilerun.stream] StreamCredentials.token is deprecated '
+      '(device token (legacy)): reconnects '
+      'reuse it, which fails for single-use stream tokens. Use '
       'StreamCredentials.tokenProvider.',
     );
   }
@@ -339,8 +395,15 @@ final class DeviceStreamSession {
 
   // Only initial discovery polls. Recovery mounts always use the latest cached
   // target; a bounded background refresh must never stall reconnect progress.
-  void _requestCredentials({bool replacePending = false}) {
-    if (_closed || (_credentialsPending && !replacePending)) return;
+  void _requestCredentials({
+    bool replacePending = false,
+    bool allowOffline = false,
+  }) {
+    if (_closed ||
+        (!_networkAvailable && !allowOffline) ||
+        (_credentialsPending && !replacePending)) {
+      return;
+    }
     final epoch = ++_credentialsEpoch;
     _credentialsPending = true;
     _credentialsPoll?.cancel();
@@ -351,7 +414,9 @@ final class DeviceStreamSession {
       _credentialsTimeout?.cancel();
       _credentialsTimeout = null;
       if (next == null) {
-        if (_lastCredentials == null) {
+        if (!_networkAvailable) {
+          _controller.setOfflineUnavailable();
+        } else if (_lastCredentials == null) {
           _credentialsPoll = _scheduler.schedule(
             const Duration(seconds: 3),
             () {
@@ -363,7 +428,11 @@ final class DeviceStreamSession {
         return;
       }
       _lastCredentials = next;
-      _applyPendingTarget();
+      if (allowOffline) {
+        _beginAttempt(allowOffline: true);
+      } else {
+        _applyPendingTarget();
+      }
     }
 
     _credentialsTimeout = _scheduler.schedule(
@@ -397,9 +466,11 @@ final class DeviceStreamSession {
   }
 
   /// Tears down the previous connection and mounts the cached target.
-  void _beginAttempt() {
+  void _beginAttempt({bool allowOffline = false}) {
     final resolved = _lastCredentials;
-    if (_closed || resolved == null) return;
+    if (_closed || (!_networkAvailable && !allowOffline) || resolved == null) {
+      return;
+    }
     _retireAttempt();
     _clearVideo();
     _activeCredentials = resolved;
@@ -438,6 +509,7 @@ final class DeviceStreamSession {
       ),
     );
     _attempt = attempt;
+    _forcedAttempt = allowOffline ? attempt : null;
     attempt.start();
     _updateSampling();
   }

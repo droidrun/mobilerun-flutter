@@ -34,7 +34,9 @@ The app still owns `session.start()` and `session.close()`. By default the view
 attaches `StreamLifecycle`; set `observeLifecycle: false` if your app already
 owns one. Initial online/foreground snapshots and visible focus changes do not
 wake reconnects. App background pauses keepAlive; foreground wakes pending reconnects. Network
-return wakes pending reconnects when you provide the app's `connectivity` stream.
+return resets the retry cycle through the default connectivity source; a supplied
+`connectivity` stream replaces it. The initial platform seed is asynchronous; see
+[the startup order](lifecycle.md) to seed availability before `start()`.
 
 Every slot has its default builder as an explicit default value:
 
