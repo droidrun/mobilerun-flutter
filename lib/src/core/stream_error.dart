@@ -53,8 +53,8 @@ final class StreamError {
   /// The 1-based number of consecutive failed attempts so far.
   final int attempt;
 
-  /// True when the SDK stops retrying. The stream is then unavailable until
-  /// `DeviceStreamSession.retry`.
+  /// True when the SDK stopped retrying. Retry, foreground wake or network
+  /// return can start a new cycle from unavailable.
   final bool isFinal;
 
   @override

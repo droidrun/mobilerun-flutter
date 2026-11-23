@@ -6,6 +6,11 @@ The package connects to a Mobilerun cloud device and recovers from failures,
 exactly like `@mobilerun/react`. The package is not published yet and its
 API may still change.
 
+The default connectivity snapshot arrives asynchronously. Attaching the adapter
+before `start()` begins observation, but does not synchronously seed availability.
+For a launch-offline guarantee, supply your own snapshot before `start()` as below
+(using `connectivity_plus`, declared and imported by the host app).
+
 ```dart
 final session = DeviceStreamSession(
   // Called at start, once per recovery cycle and when a token is rejected.
@@ -16,13 +21,17 @@ final session = DeviceStreamSession(
   ),
 );
 session.status.addListener(() => print(session.status.value));
+final routes = await Connectivity().checkConnectivity();
+session.setNetworkAvailable(routes.any((route) => route != ConnectivityResult.none));
+final lifecycle = StreamLifecycle(session: session);
 session.start();
 
 // Inside a bounded area (for example Expanded):
-DeviceStream(session: session);
+DeviceStream(session: session, observeLifecycle: false);
 
 final png = await session.screenshot();
 
+lifecycle.dispose();
 await session.close();
 ```
 
@@ -84,14 +93,20 @@ The adapter subscribes before checking the initial snapshot and refreshes the
 platform snapshot on resume. Stale snapshots and detached-source events are ignored.
 
 Availability starts unknown and optimistic. An initial offline observation blocks
-discovery, token-provider calls and new sockets immediately. Going offline cancels
+discovery, token-provider calls and new sockets immediately; starting offline shows
+`StreamUnavailable` and Retry without reporting an error. Going offline cancels
 retry/watchdog waits and invalidates pending acquisition without reporting a failure;
 late tokens are discarded. Healthy connected media is retained until its transport
 actually fails. Foreground wake and target updates cannot bypass offline.
-An explicit `retry()` overrides the offline hint for one fresh attempt with a reset counter and fresh stream token; if it fails offline, it reports once and waits for network return before any automatic retry.
+An explicit `retry()` overrides the offline hint for one fresh attempt with a reset
+counter and fresh stream token; repeat taps while it is live and Retry on healthy
+connected media do nothing. If it fails offline, `StreamUnavailable` exposes Retry
+again and the error has `isFinal: true` because the SDK stopped retrying.
 A real offline → online transition resets backoff and the retry budget and starts
-one immediate attempt with a fresh stream token, even after Unavailable. Duplicate
-online observations and healthy connected sessions do not remount. Route availability
+one immediate attempt with a fresh stream token, even after Unavailable. A forced
+attempt still waiting on its provider is discarded; one that already allocated its
+socket continues with its watchdog. Duplicate online observations and healthy
+connected sessions do not remount. Route availability
 is advisory and does not guarantee Internet or server reachability; iOS simulator
 network changes can miss observations.
 

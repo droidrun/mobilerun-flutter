@@ -219,7 +219,7 @@ class DeviceStream extends StatefulWidget {
   /// Navigation slot receiving one state object.
   final StreamNavigationBuilder navigationBuilder;
 
-  /// Optional existing host connectivity source.
+  /// Replaces the default connectivity source and gates automatic attempts.
   final Stream<bool>? connectivity;
 
   /// Uses the lifecycle adapter by default; disable when the app already owns it.

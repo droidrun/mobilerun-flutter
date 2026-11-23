@@ -100,6 +100,7 @@ final class DeviceStreamSession {
   bool _credentialsPending = false;
   ScheduledTask? _credentialsTimeout;
   StreamAttempt? _attempt;
+  StreamAttempt? _forcedAttempt;
   final _retiredDisposals = <Future<void>>{};
   ScheduledTask? _credentialsPoll;
   bool _visible = true;
@@ -149,15 +150,25 @@ final class DeviceStreamSession {
   void start() {
     if (_started || _closed) return;
     _started = true;
+    if (!_networkAvailable) {
+      _controller.setOfflineUnavailable();
+      return;
+    }
     _requestCredentials();
   }
 
   /// Starts a fresh connect cycle after the stream became
   /// [StreamUnavailable]. Before discovery, also restarts a pending provider call.
-  /// An explicit Retry overrides an offline hint for one fresh attempt.
+  /// An explicit Retry overrides an offline hint for one fresh attempt. While
+  /// offline, Retry preserves connected media and an already-live forced attempt.
   void retry() {
     if (_closed || !_started) return;
     if (!_networkAvailable) {
+      if (_status.value is StreamConnected ||
+          (_forcedAttempt?.live ?? false) ||
+          _credentialsPending) {
+        return;
+      }
       _controller.prepareOfflineRetry();
       if (_lastCredentials == null) {
         _requestCredentials(replacePending: true, allowOffline: true);
@@ -186,7 +197,8 @@ final class DeviceStreamSession {
 
   /// Supplies advisory route availability, optimistic until first observed.
   /// Offline suppresses automatic discovery and new sockets; healthy media stays alive.
-  /// A real return starts one fresh recovery cycle, including from unavailable.
+  /// Network return restarts unavailable sessions, but retains a live forced
+  /// attempt that already allocated its socket.
   void setNetworkAvailable(bool available) {
     if (_closed || _networkAvailable == available) return;
     _networkAvailable = available;
@@ -202,7 +214,15 @@ final class DeviceStreamSession {
         _clearVideo();
       }
     }
-    _controller.setNetworkAvailable(available);
+    _controller.setNetworkAvailable(
+      available,
+      preserveAttempt:
+          (_forcedAttempt?.live ?? false) &&
+          (_forcedAttempt?.socketAllocated ?? false),
+    );
+    if (!available && _started && _status.value is! StreamConnected) {
+      _controller.setOfflineUnavailable();
+    }
     if (available && _started && _lastCredentials == null) {
       _requestCredentials(replacePending: true);
     }
@@ -230,6 +250,7 @@ final class DeviceStreamSession {
     _controller.dispose();
     final attempt = _attempt;
     _attempt = null;
+    _forcedAttempt = null;
     _clearVideo();
     await attempt?.dispose();
     await Future.wait(_retiredDisposals.toList());
@@ -305,8 +326,7 @@ final class DeviceStreamSession {
     _updateSampling();
     scheduleMicrotask(_applyPendingTarget);
     if (snapshot.status == ReconnectStatus.unavailable) {
-      // The retry budget is spent: nothing of the last attempt may linger, a
-      // late peer state must not bring the stream back without retry().
+      // Automatic retrying stopped: no late peer state may revive the attempt.
       _retireAttempt();
       _clearVideo();
     }
@@ -394,7 +414,9 @@ final class DeviceStreamSession {
       _credentialsTimeout?.cancel();
       _credentialsTimeout = null;
       if (next == null) {
-        if (_lastCredentials == null && _networkAvailable) {
+        if (!_networkAvailable) {
+          _controller.setOfflineUnavailable();
+        } else if (_lastCredentials == null) {
           _credentialsPoll = _scheduler.schedule(
             const Duration(seconds: 3),
             () {
@@ -461,11 +483,9 @@ final class DeviceStreamSession {
       config: _config,
       muted: _muted,
       credentials: resolved,
-      networkAvailable: () => _networkAvailable || allowOffline,
       visible: _visible,
       events: StreamAttemptEvents(
-        socketAllocated: () =>
-            _controller.attemptMounted(allowOffline: allowOffline),
+        socketAllocated: _controller.attemptMounted,
         controlReady: _flushUrl,
         stats: (sample) =>
             _stats.value = _status.value is StreamConnected ? sample : null,
@@ -489,6 +509,7 @@ final class DeviceStreamSession {
       ),
     );
     _attempt = attempt;
+    _forcedAttempt = allowOffline ? attempt : null;
     attempt.start();
     _updateSampling();
   }

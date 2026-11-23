@@ -15,8 +15,8 @@ enum ReconnectStatus {
   /// An attempt failed; the next one is waiting out its backoff or running.
   reconnecting,
 
-  /// All attempts failed; only [ReconnectController.retry] or
-  /// [ReconnectController.handleWake] start a new cycle.
+  /// Automatic retrying stopped. Retry, foreground wake or network return
+  /// can start a new cycle.
   unavailable,
 }
 
@@ -148,7 +148,7 @@ final class ReconnectController {
     _watchdogTimer = _clear(_watchdogTimer);
     _stabilityTimer = _clear(_stabilityTimer);
     _attempt += 1;
-    if (_attempt > ReconnectPolicy.maxAttempts) {
+    if (_attempt > ReconnectPolicy.maxAttempts || !_networkAvailable) {
       _status = ReconnectStatus.unavailable;
       _emit();
       _onFailure?.call(_attempt, true);
@@ -157,7 +157,6 @@ final class ReconnectController {
     _status = ReconnectStatus.reconnecting;
     _emit();
     _onFailure?.call(_attempt, false);
-    if (!_networkAvailable) return;
     if (!_healedThisCycle) {
       _healedThisCycle = true;
       _onHeal();
@@ -185,7 +184,7 @@ final class ReconnectController {
   }
 
   /// The stream (re)mounted: arms the connect watchdog.
-  void attemptMounted({bool startWatchdog = true, bool allowOffline = false}) {
+  void attemptMounted({bool startWatchdog = true}) {
     if (_disposed) return;
     _enabled = true;
     // A mount during a wait is stale: the scheduled attempt owns the next
@@ -201,7 +200,7 @@ final class ReconnectController {
       _status = ReconnectStatus.connecting;
       _emit();
     }
-    if (!startWatchdog || (!_networkAvailable && !allowOffline)) return;
+    if (!startWatchdog) return;
     _watchdogTimer = _scheduler.schedule(
       InternalReconnectPolicy.connectTimeout,
       () {
@@ -276,15 +275,18 @@ final class ReconnectController {
   /// True while waiting out a backoff (an immediate switch would bypass the
   /// wait; the scheduled attempt picks up the fresh target itself) and while
   /// unavailable. Everywhere else the new target applies immediately.
-  bool shouldDeferTargetChange() => !_networkAvailable || _waitingOrUnavailable;
+  bool shouldDeferTargetChange() => _waitingOrUnavailable;
 
   /// Observes route availability. Offline cancels waits without dropping media.
   /// A real return resets the retry budget and immediately reconnects if needed.
-  void setNetworkAvailable(bool available) {
+  void setNetworkAvailable(bool available, {bool preserveAttempt = false}) {
     if (_disposed || _networkAvailable == available) return;
     _networkAvailable = available;
     if (!available) {
       _clearAllTimers();
+    } else if (preserveAttempt) {
+      // An explicit attempt already allocated its socket; retain its watchdog.
+      return;
     } else if (_enabled && _status != ReconnectStatus.connected) {
       // Reuse the committed target. Its per-socket provider mints afresh; a
       // parallel discovery refresh could replace this immediate attempt.
@@ -308,6 +310,16 @@ final class ReconnectController {
       _backoffTimer = _clear(_backoffTimer);
       _onRemount();
     }
+  }
+
+  /// Stops automatic work offline, exposing Retry without counting a failure.
+  void setOfflineUnavailable() {
+    if (_disposed) return;
+    _enabled = true;
+    _clearAllTimers();
+    if (_status == ReconnectStatus.unavailable) return;
+    _status = ReconnectStatus.unavailable;
+    _emit();
   }
 
   /// Resets the budget for one session-owned explicit attempt while offline.

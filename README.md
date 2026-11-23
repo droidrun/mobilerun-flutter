@@ -103,6 +103,10 @@ The stream-token mint route and DTO currently retain their transitional names
 `/identity/stream-keys` and `{key,keyId,expiresAt}`.
 
 In your app, using your backend client and the device's stream URL:
+The default connectivity seed is asynchronous. Attach the lifecycle before `start()`;
+to guarantee no provider call on a launch known to be offline, seed availability from
+your own snapshot before starting. This example uses `connectivity_plus` for that
+snapshot: declare it in the host app and import `package:connectivity_plus/connectivity_plus.dart`.
 
 ```dart
 final session = DeviceStreamSession(
@@ -113,18 +117,23 @@ final session = DeviceStreamSession(
   ),
   onError: (error) =>
       debugPrint('stream ${error.reason.code} attempt ${error.attempt}'),
-)..start();
+);
+final routes = await Connectivity().checkConnectivity();
+session.setNetworkAvailable(routes.any((route) => route != ConnectivityResult.none));
+final lifecycle = StreamLifecycle(session: session);
+session.start();
 // Inside a bounded area, such as Expanded:
 DeviceStream(
   session: session,
+  observeLifecycle: false, // The adapter above owns observation.
   labels: const StreamLabels(unavailable: 'Phone offline', retry: 'Try again'),
 );
-// Close the session when finished: await session.close();
+// When finished: lifecycle.dispose(); await session.close();
 ```
 
 `onError` reasons are `credentials_unavailable`, `connection_refused`,
 `token_rejected` (HTTP 401 on connect), `disconnected` and `unknown`;
-`isFinal` is true once the SDK stops retrying. 
+`isFinal` is true when the SDK stopped retrying, including a failed attempt waiting offline.
 
 **Credential modes.** `tokenProvider` is the recommended path: one fresh stream token per
 connection. The static `StreamCredentials.token` is a **device token (legacy)**, deprecated until its

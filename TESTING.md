@@ -104,6 +104,14 @@ Maintainers can run `example/tool/e2e_android.sh CREDENTIALS_JSON OUT_DIR` for
 scripted Android input, reconnect and screenshot checks, or `tool/benchmark.sh`
 for the [benchmark procedure](tool/BENCHMARK.md).
 
+For host widget tests, `DeviceStream` installs connectivity observation by default.
+Pass a controlled `connectivity:` stream (for example `const Stream<bool>.empty()`),
+set `observeLifecycle: false` when the host owns lifecycle testing, or mock both
+`dev.fluttercommunity.plus/connectivity` (the initial list such as `['wifi']` or
+`['none']`) and `dev.fluttercommunity.plus/connectivity_status` (listen/cancel).
+The default platform seed is asynchronous; explicitly set session availability before
+`start()` when testing launch-offline suppression.
+
 ## Known limitations
 
 Emulator multitouch and IME support depend on host configuration.

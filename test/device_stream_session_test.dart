@@ -25,6 +25,7 @@ void main() {
       h.session.setVisible(false);
       h.session.setVisible(true);
       await h.advance(60000);
+      expect(h.session.status.value, const StreamUnavailable());
       expect(h.credentialCalls, 0);
       expect(h.connector.uris, isEmpty);
       expect(h.errors, isEmpty);
@@ -256,7 +257,8 @@ void main() {
         expect(tokens, 3);
         expect(h.connector.uris, hasLength(3));
         expect(h.errors.map((error) => error.attempt), [1, 2, 1]);
-        expect(h.session.status.value, const StreamReconnecting(1));
+        expect(h.session.status.value, const StreamUnavailable());
+        expect(h.errors.map((error) => error.isFinal), [false, false, true]);
         h.session.handleWake();
         h.session.setVisible(false);
         h.session.setVisible(true);
@@ -274,6 +276,103 @@ void main() {
         expect(h.connector.uris.last.queryParameters['token'], 'fresh-4');
         expect(h.session.status.value, const StreamReconnecting(0));
         expect(h.session.lastError.value, isNull);
+      },
+    );
+
+    test('offline Retry preserves a healthy connected session', () async {
+      var tokens = 0;
+      final h = Harness(
+        credentials: (_) => StreamCredentials(
+          url: 'wss://stream.test/s',
+          tokenProvider: () async => 'fresh-${++tokens}',
+        ),
+      );
+      addTearDown(h.session.close);
+      await h.connect();
+      final peer = h.peer;
+      final socket = h.ws;
+      h.session.setNetworkAvailable(false);
+      h.session.retry();
+      await h.advance(60000);
+      expect(tokens, 1);
+      expect(h.connector.uris, hasLength(1));
+      expect(peer.closed, isFalse);
+      expect(socket.closedByClient, isFalse);
+      expect(h.session.status.value, const StreamConnected());
+      expect(h.errors, isEmpty);
+    });
+
+    test('offline repeated Retry keeps its one live forced attempt', () async {
+      final pending = Completer<String>();
+      var tokens = 0;
+      final h = Harness(
+        credentials: (_) => StreamCredentials(
+          url: 'wss://stream.test/s',
+          tokenProvider: () {
+            tokens++;
+            return pending.future;
+          },
+        ),
+      );
+      addTearDown(h.session.close);
+      h.session.setNetworkAvailable(false);
+      h.session.start();
+      h.session.retry();
+      h.session.retry();
+      await pump();
+      expect(h.credentialCalls, 1);
+      expect(tokens, 1);
+      h.session.retry();
+      await pump();
+      expect(tokens, 1);
+      pending.complete('fresh');
+      await pump();
+      h.session.retry();
+      await pump();
+      expect(tokens, 1);
+      expect(h.connector.uris, hasLength(1));
+      expect(h.errors, isEmpty);
+    });
+
+    test('online preserves a forced attempt after socket allocation', () async {
+      var tokens = 0;
+      final h = Harness(
+        credentials: (_) => StreamCredentials(
+          url: 'wss://stream.test/s',
+          tokenProvider: () async => 'fresh-${++tokens}',
+        ),
+      );
+      addTearDown(h.session.close);
+      h.session.setNetworkAvailable(false);
+      h.session.start();
+      h.session.retry();
+      await pump();
+      final socket = h.ws;
+      h.session.setNetworkAvailable(true);
+      h.session.setNetworkAvailable(true);
+      await pump();
+      expect(tokens, 1);
+      expect(h.connector.uris, hasLength(1));
+      expect(socket.closedByClient, isFalse);
+      await h.connect();
+      expect(h.session.status.value, const StreamConnected());
+      expect(tokens, 1);
+      expect(h.errors, isEmpty);
+    });
+
+    test(
+      'failed offline Retry discovery exposes Retry without polling',
+      () async {
+        final h = Harness(credentials: (_) => null);
+        addTearDown(h.session.close);
+        h.session.setNetworkAvailable(false);
+        h.session.start();
+        h.session.retry();
+        await h.advance(60000);
+        expect(h.credentialCalls, 1);
+        expect(h.session.status.value, const StreamUnavailable());
+        expect(h.errors, isEmpty);
+        expect(h.scheduler.pendingTimers, 0);
       },
     );
 

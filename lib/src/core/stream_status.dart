@@ -58,7 +58,8 @@ final class StreamReconnecting extends StreamStatus {
   String toString() => 'StreamReconnecting($attempt)';
 }
 
-/// All attempts failed. Only [DeviceStreamSession.retry] starts a new cycle.
+/// Automatic retrying stopped. Retry, foreground wake or network return
+/// can start a new cycle.
 final class StreamUnavailable extends StreamStatus {
   /// Creates the status.
   const StreamUnavailable();
