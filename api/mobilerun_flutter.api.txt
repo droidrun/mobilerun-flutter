@@ -49,6 +49,7 @@ final class DeviceStreamSession
   void retry()
   Future<Uint8List> screenshot({Duration timeout = const Duration(seconds: 30)})
   void setMuted(bool muted)
+  void setNetworkAvailable(bool available)
   void setVisible(bool visible)
   void start()
   ValueListenable<StreamStats?> get stats

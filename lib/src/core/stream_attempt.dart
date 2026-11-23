@@ -77,6 +77,7 @@ final class StreamAttempt {
     required this.muted,
     required this.credentials,
     required this.events,
+    required this.networkAvailable,
     this._visible = true,
   }) : _startedAt = scheduler.now;
 
@@ -100,6 +101,9 @@ final class StreamAttempt {
 
   /// The session callbacks.
   final StreamAttemptEvents events;
+
+  /// Whether a new token or socket may be acquired right now.
+  final bool Function() networkAvailable;
 
   static int _screenshotSequence = 0;
 
@@ -269,6 +273,7 @@ final class StreamAttempt {
   Future<StreamCredentials?> _socketCredentials(
     StreamTokenProvider provider,
   ) async {
+    if (!live || !networkAvailable()) return null;
     if (!credentials.allowsTokenProvider) {
       debugPrint('[mobilerun.stream] Token provider destination rejected');
       _fail(StreamErrorReason.unknown, 'Token provider destination rejected');
@@ -312,7 +317,7 @@ final class StreamAttempt {
       final resolved = provider == null
           ? credentials
           : await _socketCredentials(provider);
-      if (!live || resolved == null) return;
+      if (!live || !networkAvailable() || resolved == null) return;
       final connecting = transports.signalling.connect(
         resolved.toWebSocketUri(),
       );

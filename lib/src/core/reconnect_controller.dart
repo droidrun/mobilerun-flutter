@@ -97,6 +97,7 @@ final class ReconnectController {
 
   bool _disposed = false;
   bool _enabled = false;
+  bool _networkAvailable = true;
   ReconnectStatus _status = ReconnectStatus.connecting;
   int _attempt = 0;
 
@@ -156,6 +157,7 @@ final class ReconnectController {
     _status = ReconnectStatus.reconnecting;
     _emit();
     _onFailure?.call(_attempt, false);
+    if (!_networkAvailable) return;
     if (!_healedThisCycle) {
       _healedThisCycle = true;
       _onHeal();
@@ -199,7 +201,7 @@ final class ReconnectController {
       _status = ReconnectStatus.connecting;
       _emit();
     }
-    if (!startWatchdog) return;
+    if (!startWatchdog || !_networkAvailable) return;
     _watchdogTimer = _scheduler.schedule(
       InternalReconnectPolicy.connectTimeout,
       () {
@@ -274,11 +276,26 @@ final class ReconnectController {
   /// True while waiting out a backoff (an immediate switch would bypass the
   /// wait; the scheduled attempt picks up the fresh target itself) and while
   /// unavailable. Everywhere else the new target applies immediately.
-  bool shouldDeferTargetChange() => _waitingOrUnavailable;
+  bool shouldDeferTargetChange() => !_networkAvailable || _waitingOrUnavailable;
 
-  /// The app became visible or the network came back.
+  /// Observes route availability. Offline cancels waits without dropping media.
+  /// A real return resets the retry budget and immediately reconnects if needed.
+  void setNetworkAvailable(bool available) {
+    if (_disposed || _networkAvailable == available) return;
+    _networkAvailable = available;
+    if (!available) {
+      _clearAllTimers();
+    } else if (_enabled && _status != ReconnectStatus.connected) {
+      _freshCycle();
+    } else if (_enabled) {
+      // Restore the stability window of the preserved healthy connection.
+      handleConnected();
+    }
+  }
+
+  /// The app became visible.
   void handleWake() {
-    if (!_enabled) return;
+    if (!_enabled || !_networkAvailable) return;
     if (_status == ReconnectStatus.unavailable) {
       _freshCycle();
       return;
@@ -293,7 +310,7 @@ final class ReconnectController {
 
   /// A manual retry; only acts while unavailable.
   void retry() {
-    if (!_enabled) return;
+    if (!_enabled || !_networkAvailable) return;
     if (_status == ReconnectStatus.unavailable) _freshCycle();
   }
 

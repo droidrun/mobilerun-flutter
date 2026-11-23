@@ -16,6 +16,219 @@ import 'support/fake_transports.dart';
 import 'support/harness.dart';
 
 void main() {
+  group('network availability', () {
+    test(
+      'initial offline blocks start, retry and foreground discovery',
+      () async {
+        final h = Harness();
+        h.session.setNetworkAvailable(false);
+        h.session.start();
+        h.session.retry();
+        h.session.handleWake();
+        h.session.setVisible(false);
+        h.session.setVisible(true);
+        await h.advance(60000);
+        expect(h.credentialCalls, 0);
+        expect(h.connector.uris, isEmpty);
+        expect(h.errors, isEmpty);
+        h.session.setNetworkAvailable(true);
+        await pump();
+        expect(h.credentialCalls, 1);
+        expect(h.connector.uris, hasLength(1));
+        await h.session.close();
+      },
+    );
+
+    for (final completion in <String, void Function(Completer<String>)>{
+      'success': (pending) => pending.complete('stale'),
+      'error': (pending) => pending.completeError(StateError('late')),
+    }.entries) {
+      test('offline invalidates pending token ${completion.key}', () async {
+        final pending = Completer<String>();
+        var calls = 0;
+        final h = Harness(
+          credentials: (_) => StreamCredentials(
+            url: 'wss://stream.test/s',
+            tokenProvider: () {
+              calls++;
+              return calls == 1 ? pending.future : Future.value('fresh');
+            },
+          ),
+        );
+        h.session.start();
+        await pump();
+        h.session.setNetworkAvailable(false);
+        await h.advance(60000);
+        expect(h.scheduler.pendingTimers, 0);
+        expect(h.errors, isEmpty);
+        h.session.setNetworkAvailable(true);
+        h.session.setNetworkAvailable(true);
+        await pump();
+        expect(calls, 2);
+        expect(h.connector.uris.single.queryParameters['token'], 'fresh');
+        completion.value(pending);
+        await pump();
+        expect(h.connector.uris, hasLength(1));
+        expect(h.errors, isEmpty);
+        await h.session.close();
+      });
+    }
+
+    test(
+      'offline backoff blocks timers, manual retry and foreground wake',
+      () async {
+        var tokens = 0;
+        final h = Harness(
+          credentials: (_) => StreamCredentials(
+            url: 'wss://stream.test/s',
+            tokenProvider: () async => 'fresh-${++tokens}',
+          ),
+        );
+        h.connector.failWith = StateError('refused');
+        h.session.start();
+        await pump();
+        expect(h.errors, hasLength(1));
+        h.session.setNetworkAvailable(false);
+        h.session.retry();
+        h.session.handleWake();
+        h.session.setVisible(false);
+        h.session.setVisible(true);
+        await h.advance(120000);
+        expect(tokens, 1);
+        expect(h.connector.uris, hasLength(1));
+        expect(h.errors, hasLength(1));
+        expect(h.scheduler.pendingTimers, 0);
+        h.connector.failWith = null;
+        h.session.setNetworkAvailable(true);
+        await pump();
+        expect(h.session.status.value, const StreamReconnecting(0));
+        expect(tokens, 2);
+        expect(h.connector.uris, hasLength(2));
+        await h.session.close();
+      },
+    );
+
+    test(
+      'network return resets exhausted budget once with fresh token',
+      () async {
+        var tokens = 0;
+        final h = Harness(
+          credentials: (_) => StreamCredentials(
+            url: 'wss://stream.test/s',
+            tokenProvider: () async => 'fresh-${++tokens}',
+          ),
+        );
+        h.connector.failWith = StateError('refused');
+        h.session.start();
+        await pump();
+        for (final delay in [1000, 2000, 4000, 8000, 16000, 30000]) {
+          await h.advance(delay);
+        }
+        expect(h.session.status.value, const StreamUnavailable());
+        expect(tokens, 7);
+        h.session.setNetworkAvailable(false);
+        h.connector.failWith = null;
+        h.session.setNetworkAvailable(true);
+        h.session.setNetworkAvailable(true);
+        await pump();
+        expect(h.session.status.value, const StreamReconnecting(0));
+        expect(h.session.lastError.value, isNull);
+        expect(tokens, 8);
+        expect(h.connector.uris, hasLength(8));
+        expect(h.connector.uris.last.queryParameters['token'], 'fresh-8');
+        await h.session.close();
+      },
+    );
+
+    test(
+      'offline discards pending target update and resumes discovery',
+      () async {
+        final target = Completer<StreamCredentials?>();
+        final h = Harness(
+          credentials: (call) => call == 1
+              ? const StreamCredentials(url: 'wss://stream.test/old')
+              : call == 2
+              ? target.future
+              : const StreamCredentials(url: 'wss://stream.test/latest'),
+        );
+        h.session.start();
+        await pump();
+        h.ws.serverClose();
+        await pump();
+        h.session.setNetworkAvailable(false);
+        target.complete(
+          const StreamCredentials(url: 'wss://stream.test/stale'),
+        );
+        await h.advance(60000);
+        expect(h.connector.uris.map((uri) => uri.path), ['/old']);
+        expect(h.credentialCalls, 2);
+        h.session.setNetworkAvailable(true);
+        await pump();
+        expect(h.connector.uris.map((uri) => uri.path), [
+          '/old',
+          '/old',
+          '/latest',
+        ]);
+        expect(h.credentialCalls, 3);
+        await h.session.close();
+      },
+    );
+
+    test(
+      'offline preserves media; transport failure counts once without retries',
+      () async {
+        final h = Harness(
+          credentials: (_) =>
+              const StreamCredentials(url: 'wss://stream.test/s'),
+        );
+        await h.connect();
+        final connection = h.ws;
+        h.session.setNetworkAvailable(false);
+        await h.advance(60000);
+        expect(connection.closedByClient, isFalse);
+        expect(h.peer.closed, isFalse);
+        expect(h.session.status.value, const StreamConnected());
+        h.session.setNetworkAvailable(true);
+        await pump();
+        expect(h.connector.uris, hasLength(1));
+        h.session.setNetworkAvailable(false);
+        connection.serverClose();
+        await h.advance(60000);
+        expect(h.errors, hasLength(1));
+        expect(h.errors.single.reason, StreamErrorReason.disconnected);
+        expect(h.connector.uris, hasLength(1));
+        expect(h.scheduler.pendingTimers, 0);
+        h.session.setNetworkAvailable(true);
+        await pump();
+        expect(h.connector.uris, hasLength(2));
+        await h.session.close();
+      },
+    );
+
+    test(
+      'offline during discovery ignores late target and close prevents revival',
+      () async {
+        final target = Completer<StreamCredentials?>();
+        final h = Harness(credentials: (_) => target.future);
+        h.session.start();
+        await pump();
+        h.session.setNetworkAvailable(false);
+        target.complete(
+          const StreamCredentials(url: 'wss://stream.test/stale'),
+        );
+        await h.advance(60000);
+        expect(h.connector.uris, isEmpty);
+        expect(h.errors, isEmpty);
+        expect(h.scheduler.pendingTimers, 0);
+        await h.session.close();
+        h.session.setNetworkAvailable(true);
+        await pump();
+        expect(h.credentialCalls, 1);
+        expect(h.connector.uris, isEmpty);
+      },
+    );
+  });
+
   group('per-socket token provider', () {
     late List<String> diagnostics;
     late DebugPrintCallback previousDebugPrint;

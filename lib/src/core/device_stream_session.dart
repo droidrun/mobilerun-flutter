@@ -103,6 +103,7 @@ final class DeviceStreamSession {
   final _retiredDisposals = <Future<void>>{};
   ScheduledTask? _credentialsPoll;
   bool _visible = true;
+  bool _networkAvailable = true;
   int _videoRotation = 0;
   String? _pendingUrl;
   bool _warnedStaticToken = false;
@@ -163,13 +164,37 @@ final class DeviceStreamSession {
   }
 
   /// Wakes a pending reconnect wait or restarts an unavailable session.
-  /// Call this when the app's existing connectivity source comes back online.
+  /// Network sources should use [setNetworkAvailable] to reset backoff too.
   void handleWake() {
     if (_closed || !_started) return;
     if (_lastCredentials == null) {
       _requestCredentials(replacePending: true);
     } else {
       _controller.handleWake();
+    }
+  }
+
+  /// Supplies advisory route availability, optimistic until first observed.
+  /// Offline suppresses discovery and new sockets; healthy media stays alive.
+  /// A real return starts one fresh recovery cycle, including from unavailable.
+  void setNetworkAvailable(bool available) {
+    if (_closed || _networkAvailable == available) return;
+    _networkAvailable = available;
+    if (!available) {
+      _credentialsEpoch++;
+      _credentialsPending = false;
+      _credentialsTimeout?.cancel();
+      _credentialsPoll?.cancel();
+      if (_status.value is! StreamConnected) {
+        _retireAttempt();
+        _attempt = null;
+        _activeCredentials = null;
+        _clearVideo();
+      }
+    }
+    _controller.setNetworkAvailable(available);
+    if (available && _started && _lastCredentials == null) {
+      _requestCredentials();
     }
   }
 
@@ -340,7 +365,11 @@ final class DeviceStreamSession {
   // Only initial discovery polls. Recovery mounts always use the latest cached
   // target; a bounded background refresh must never stall reconnect progress.
   void _requestCredentials({bool replacePending = false}) {
-    if (_closed || (_credentialsPending && !replacePending)) return;
+    if (_closed ||
+        !_networkAvailable ||
+        (_credentialsPending && !replacePending)) {
+      return;
+    }
     final epoch = ++_credentialsEpoch;
     _credentialsPending = true;
     _credentialsPoll?.cancel();
@@ -399,7 +428,7 @@ final class DeviceStreamSession {
   /// Tears down the previous connection and mounts the cached target.
   void _beginAttempt() {
     final resolved = _lastCredentials;
-    if (_closed || resolved == null) return;
+    if (_closed || !_networkAvailable || resolved == null) return;
     _retireAttempt();
     _clearVideo();
     _activeCredentials = resolved;
@@ -412,6 +441,7 @@ final class DeviceStreamSession {
       config: _config,
       muted: _muted,
       credentials: resolved,
+      networkAvailable: () => _networkAvailable,
       visible: _visible,
       events: StreamAttemptEvents(
         socketAllocated: _controller.attemptMounted,

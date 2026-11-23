@@ -3,6 +3,10 @@
 
 import 'dart:async';
 
+import 'package:connectivity_plus/connectivity_plus.dart';
+// Use the plugin's official observation boundary without another dependency.
+// ignore: depend_on_referenced_packages
+import 'package:connectivity_plus_platform_interface/connectivity_plus_platform_interface.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mobilerun_flutter/mobilerun_flutter.dart';
@@ -10,8 +14,181 @@ import 'package:mobilerun_flutter/src/core/stream_transports.dart';
 
 import 'support/fake_scheduler.dart';
 import 'support/fake_transports.dart';
+import 'support/harness.dart' show Harness, pump;
 
 void main() {
+  final binding = TestWidgetsFlutterBinding.ensureInitialized();
+  late ConnectivityPlatform originalPlatform;
+  late _Connectivity platform;
+  setUp(() {
+    originalPlatform = ConnectivityPlatform.instance;
+    platform = _Connectivity();
+    ConnectivityPlatform.instance = platform;
+  });
+  tearDown(() async {
+    ConnectivityPlatform.instance = originalPlatform;
+    await platform.changes.close();
+  });
+
+  test(
+    'default source observes initial offline and normalizes transport lists',
+    () async {
+      final h = Harness();
+      final adapter = StreamLifecycle(session: h.session);
+      await pump();
+      h.session.start();
+      await pump();
+      expect(platform.checks, 1);
+      expect(platform.changes.hasListener, isTrue);
+      expect(h.credentialCalls, 0);
+      expect(h.connector.uris, isEmpty);
+      platform.changes.add([ConnectivityResult.none, ConnectivityResult.wifi]);
+      platform.changes.add([ConnectivityResult.wifi]);
+      await pump();
+      expect(h.connector.uris, hasLength(1));
+      adapter.dispose();
+      await h.session.close();
+    },
+  );
+
+  test('supplied source replaces default and null restores it', () async {
+    final h = Harness();
+    final custom = StreamController<bool>.broadcast(sync: true);
+    final adapter = StreamLifecycle(
+      session: h.session,
+      connectivity: custom.stream,
+    );
+    custom.add(false);
+    h.session.start();
+    await pump();
+    expect(platform.checks, 0);
+    expect(platform.changes.hasListener, isFalse);
+    expect(h.credentialCalls, 0);
+    adapter.updateConnectivity(null);
+    await pump();
+    expect(platform.checks, 1);
+    expect(platform.changes.hasListener, isTrue);
+    custom.add(true);
+    await pump();
+    expect(h.credentialCalls, 0);
+    platform.changes.add([ConnectivityResult.mobile]);
+    await pump();
+    expect(h.connector.uris, hasLength(1));
+    adapter.dispose();
+    await h.session.close();
+    await custom.close();
+  });
+
+  test('newer event wins over stale initial check', () async {
+    final h = Harness();
+    final snapshot = Completer<List<ConnectivityResult>>();
+    platform.snapshot = snapshot.future;
+    final adapter = StreamLifecycle(session: h.session);
+    platform.changes.add([ConnectivityResult.none]);
+    snapshot.complete([ConnectivityResult.wifi]);
+    await pump();
+    h.session.start();
+    await pump();
+    expect(h.credentialCalls, 0);
+    expect(h.connector.uris, isEmpty);
+    adapter.dispose();
+    await h.session.close();
+  });
+
+  test('source replacement invalidates pending default check', () async {
+    final h = Harness();
+    final snapshot = Completer<List<ConnectivityResult>>();
+    platform.snapshot = snapshot.future;
+    final adapter = StreamLifecycle(session: h.session);
+    final custom = StreamController<bool>.broadcast(sync: true);
+    adapter.updateConnectivity(custom.stream);
+    custom.add(false);
+    snapshot.complete([ConnectivityResult.wifi]);
+    await pump();
+    h.session.start();
+    await pump();
+    expect(h.credentialCalls, 0);
+    expect(h.connector.uris, isEmpty);
+    adapter.dispose();
+    await h.session.close();
+    await custom.close();
+  });
+
+  test(
+    'resume refreshes default snapshot and disposed adapter stays silent',
+    () async {
+      binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+      final h = Harness();
+      final adapter = StreamLifecycle(session: h.session);
+      await pump();
+      h.session.start();
+      await pump();
+      binding.handleAppLifecycleStateChanged(AppLifecycleState.inactive);
+      binding.handleAppLifecycleStateChanged(AppLifecycleState.hidden);
+      binding.handleAppLifecycleStateChanged(AppLifecycleState.paused);
+      final snapshot = Completer<List<ConnectivityResult>>();
+      platform.snapshot = snapshot.future;
+      binding.handleAppLifecycleStateChanged(AppLifecycleState.hidden);
+      binding.handleAppLifecycleStateChanged(AppLifecycleState.inactive);
+      binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+      await pump();
+      expect(platform.checks, 2);
+      expect(h.credentialCalls, 0);
+      adapter.dispose();
+      snapshot.complete([ConnectivityResult.wifi]);
+      platform.changes.add([ConnectivityResult.wifi]);
+      await pump();
+      expect(h.credentialCalls, 0);
+      expect(h.connector.uris, isEmpty);
+      // Detaching the adapter leaves the owner responsible for availability.
+      h.session.setNetworkAvailable(true);
+      await pump();
+      expect(h.connector.uris, hasLength(1));
+      await h.session.close();
+    },
+  );
+
+  test(
+    'resume snapshot recovers from initial offline without a platform event',
+    () async {
+      binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+      final h = Harness();
+      final adapter = StreamLifecycle(session: h.session);
+      await pump();
+      h.session.start();
+      await pump();
+      expect(h.credentialCalls, 0);
+      expect(h.connector.uris, isEmpty);
+      binding.handleAppLifecycleStateChanged(AppLifecycleState.inactive);
+      binding.handleAppLifecycleStateChanged(AppLifecycleState.hidden);
+      binding.handleAppLifecycleStateChanged(AppLifecycleState.paused);
+      platform.snapshot = Future.value([ConnectivityResult.wifi]);
+      binding.handleAppLifecycleStateChanged(AppLifecycleState.hidden);
+      binding.handleAppLifecycleStateChanged(AppLifecycleState.inactive);
+      binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+      await pump();
+      expect(platform.checks, 2);
+      expect(h.connector.uris, hasLength(1));
+      adapter.dispose();
+      await h.session.close();
+    },
+  );
+
+  test('plugin errors stay unknown without retry polling', () async {
+    final h = Harness();
+    platform.snapshot = Future.error(StateError('plugin unavailable'));
+    final adapter = StreamLifecycle(session: h.session);
+    platform.changes.addError(StateError('plugin unavailable'));
+    await pump();
+    h.session.start();
+    await pump();
+    expect(platform.checks, 1);
+    expect(h.connector.uris, hasLength(1));
+    expect(h.errors, isEmpty);
+    adapter.dispose();
+    await h.session.close();
+  });
+
   testWidgets('connectivity source replacement retains offline state', (
     tester,
   ) async {
@@ -98,7 +275,10 @@ void main() {
       await tester.pump();
       expect(connector.uris.length, before);
       tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.inactive);
-      final unfocusedAdapter = StreamLifecycle(session: session);
+      final unfocusedAdapter = StreamLifecycle(
+        session: session,
+        connectivity: const Stream.empty(),
+      );
       addTearDown(unfocusedAdapter.dispose);
       tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
       await tester.pump();
@@ -132,7 +312,7 @@ void main() {
       network.add(true);
       await tester.pump();
       expect(connector.uris.length, before + 2);
-      expect(fetches, 2);
+      expect(fetches, 3);
       await session.close();
       await network.close();
       expect(scheduler.pendingTimers, 0);
@@ -217,4 +397,21 @@ void main() {
       expect(calls, 31);
     },
   );
+}
+
+final class _Connectivity extends ConnectivityPlatform {
+  final changes = StreamController<List<ConnectivityResult>>.broadcast(
+    sync: true,
+  );
+  Future<List<ConnectivityResult>>? snapshot;
+  int checks = 0;
+
+  @override
+  Stream<List<ConnectivityResult>> get onConnectivityChanged => changes.stream;
+
+  @override
+  Future<List<ConnectivityResult>> checkConnectivity() {
+    checks++;
+    return snapshot ?? Future.value([ConnectivityResult.none]);
+  }
 }
