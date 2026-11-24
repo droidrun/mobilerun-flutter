@@ -4,9 +4,34 @@
 
 `StreamCredentials.tokenProvider` is bound to its device target and runs once before
 **every new signalling socket**, including retries, wake and rejected upgrades. Mint
-through your authenticated backend: `POST /v1/identity/stream-keys` with
-`{deviceId, ttlSeconds: 120}`. Keep the parent API key on that server. Stream tokens are single-use.
-The route and `{key,keyId,expiresAt}` DTO retain their transitional wire names.
+through your authenticated Node backend with `@mobilerun/sdk@6.3.0`.
+Keep `MOBILERUN_API_KEY` in the server environment only. Stream tokens are single-use.
+
+```js
+import { MobilerunSDK } from '@mobilerun/sdk';
+
+const client = new MobilerunSDK({
+  apiKey: process.env.MOBILERUN_API_KEY,
+});
+
+// Authenticate your user and authorize this device before calling.
+async function mintStreamToken(authorizedDeviceId, allowedOrigins) {
+  const { key, keyId, expiresAt } = await client.streamTokens.create({
+    deviceId: authorizedDeviceId,
+    ttlSeconds: 120,
+    allowedOrigins, // Optional server-owned policy for browser embeds.
+  }, { maxRetries: 0 });
+  // Keep keyId/expiry on the server if needed; return only the fresh key.
+  return key;
+}
+```
+
+The response is `{key, keyId, expiresAt}`; return only `key` to the app.
+`allowedOrigins` is an optional server-owned restriction for browser embeds;
+omit it for native-only apps. To revoke a token on the server, call
+`await client.streamTokens.delete(keyId)` using the returned ID.
+REST fallback: `POST https://api.mobilerun.ai/v1/identity/stream-keys` with the same request fields.
+
 Do not store tokens, infer validity from expiry, or reuse one for reconnect.
 
 The provider has an independent **10-second deadline**. Throws, failed Futures and
