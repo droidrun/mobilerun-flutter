@@ -30,6 +30,29 @@
 
 </div>
 
+## Install
+
+Add the package from [pub.dev](https://pub.dev/packages/mobilerun_flutter):
+
+```sh
+flutter pub add mobilerun_flutter
+```
+
+Or add it to your app's `pubspec.yaml` by hand:
+
+```yaml
+dependencies:
+  flutter:
+    sdk: flutter
+  mobilerun_flutter: ^0.1.0
+```
+
+Run `flutter pub get`, then import `package:mobilerun_flutter/mobilerun_flutter.dart`.
+
+The host Android app needs `<uses-permission android:name="android.permission.INTERNET" />`
+in `android/app/src/main/AndroidManifest.xml`, including release builds. Set
+`uses-material-design: true` under `flutter:` in the host's `pubspec.yaml` for the default UI icons.
+
 > **Building Mobilerun phones into your platform?** Start with the [Partner guide](https://docs.mobilerun.ai/partners). It walks through the API key, one phone per user, stream tokens and live viewing step by step.
 
 <table>
@@ -60,24 +83,6 @@
 </td>
 </tr>
 </table>
-
-## Install
-
-Add the [pub.dev package](https://pub.dev/packages/mobilerun_flutter) to your
-Flutter app's `pubspec.yaml`:
-
-```yaml
-dependencies:
-  flutter:
-    sdk: flutter
-  mobilerun_flutter: ^0.1.0
-```
-
-Run `flutter pub get`, then import `package:mobilerun_flutter/mobilerun_flutter.dart`.
-
-The host Android app needs `<uses-permission android:name="android.permission.INTERNET" />`
-in `android/app/src/main/AndroidManifest.xml`, including release builds. Set
-`uses-material-design: true` under `flutter:` in the host's `pubspec.yaml` for the default UI icons.
 
 ## Quick start
 
