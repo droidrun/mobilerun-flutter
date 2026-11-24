@@ -7,6 +7,8 @@ import 'dart:typed_data';
 import 'package:flutter_webrtc/flutter_webrtc.dart';
 
 import '../core/stream_config.dart';
+import '../core/publish.dart';
+import '../core/publish_transport.dart';
 import 'stream_stats_parser.dart';
 import 'webrtc_initializer.dart';
 import '../core/stream_transports.dart';
@@ -30,7 +32,7 @@ final class FlutterWebRtcPeerFactory implements PeerTransportFactory {
       'sdpSemantics': 'unified-plan',
     });
     try {
-      return await _FlutterWebRtcPeer.setUp(pc, muted, config.videoCodec);
+      return await _FlutterWebRtcPeer.setUp(pc, muted, config);
     } on Object {
       await pc.close();
       await pc.dispose();
@@ -117,7 +119,7 @@ final class _Channel implements DataChannelTransport {
   }
 }
 
-final class _FlutterWebRtcPeer implements PeerTransport {
+final class _FlutterWebRtcPeer implements PeerTransport, PublishPeerTransport {
   _FlutterWebRtcPeer._(this._pc, this._muted, this._control, this._hover) {
     _pc.onConnectionState = (state) => _connectionStates.add(_peerState(state));
     _pc.onIceCandidate = (candidate) {
@@ -138,7 +140,7 @@ final class _FlutterWebRtcPeer implements PeerTransport {
   static Future<_FlutterWebRtcPeer> setUp(
     RTCPeerConnection pc,
     bool muted,
-    VideoCodec videoCodec,
+    StreamConfig config,
   ) async {
     await pc.addTransceiver(
       kind: RTCRtpMediaType.RTCRtpMediaTypeAudio,
@@ -153,11 +155,75 @@ final class _FlutterWebRtcPeer implements PeerTransport {
       final codecs = capabilities.codecs ?? const <RTCRtpCodecCapability>[];
       final order = videoCodecOrder([
         for (final c in codecs) c.mimeType,
-      ], preference: videoCodec);
+      ], preference: config.videoCodec);
       await video.setCodecPreferences([for (final i in order) codecs[i]]);
     } on Object {
       // Codec preferences are an optimisation: the platform default order is
       // negotiated without them.
+    }
+    final upstream = <PublishKind, RTCRtpTransceiver>{};
+    final caps = config.publishCapabilities;
+    if (caps?.supportsMicrophone ?? false) {
+      // A failed upstream capability query must leave the receive-only viewer usable.
+      if (caps!.cameraInjection) {
+        try {
+          final codecs = (await getRtpSenderCapabilities('video')).codecs ?? [];
+          final supported = codecs.where((codec) {
+            final fmtp = codec.sdpFmtpLine ?? '';
+            return codec.mimeType.toLowerCase() == 'video/h264' &&
+                RegExp(r'(?:^|;)\s*packetization-mode=1(?:;|$)')
+                    .hasMatch(fmtp) &&
+                RegExp(
+                  r'(?:^|;)\s*profile-level-id=(42e01f|42c01f|4d001f|640c1f)(?:;|$)',
+                  caseSensitive: false,
+                ).hasMatch(fmtp);
+          }).toList();
+          supported.sort(
+            (a, b) => (a.sdpFmtpLine!.contains('42') ? 0 : 1).compareTo(
+              b.sdpFmtpLine!.contains('42') ? 0 : 1,
+            ),
+          );
+          if (supported.isNotEmpty) {
+            final sender = await pc.addTransceiver(
+              kind: RTCRtpMediaType.RTCRtpMediaTypeVideo,
+              init: RTCRtpTransceiverInit(
+                direction: TransceiverDirection.SendOnly,
+                sendEncodings: [
+                  RTCRtpEncoding(maxBitrate: 1000000, maxFramerate: 30),
+                ],
+              ),
+            );
+            upstream[PublishKind.video] = sender;
+            await sender.setCodecPreferences(supported);
+          }
+        } on Object {
+          // Unsupported local H.264 never blocks microphone-only publication.
+          upstream.remove(PublishKind.video);
+        }
+      }
+      try {
+        final codecs = (await getRtpSenderCapabilities('audio')).codecs ?? [];
+        final opus = codecs
+            .where(
+              (codec) =>
+                  codec.mimeType.toLowerCase() == 'audio/opus' &&
+                  codec.clockRate == 48000 &&
+                  codec.channels == 2,
+            )
+            .toList();
+        if (opus.isNotEmpty) {
+          final sender = await pc.addTransceiver(
+            kind: RTCRtpMediaType.RTCRtpMediaTypeAudio,
+            init: RTCRtpTransceiverInit(
+              direction: TransceiverDirection.SendOnly,
+            ),
+          );
+          upstream[PublishKind.audio] = sender;
+          await sender.setCodecPreferences(opus);
+        }
+      } on Object {
+        upstream.remove(PublishKind.audio);
+      }
     }
     final control = await pc.createDataChannel(
       StreamDataChannels.control.label,
@@ -167,10 +233,64 @@ final class _FlutterWebRtcPeer implements PeerTransport {
       StreamDataChannels.hover.label,
       _ChannelInit(StreamDataChannels.hover),
     );
-    return _FlutterWebRtcPeer._(pc, muted, _Channel(control), _Channel(hover));
+    final result = _FlutterWebRtcPeer._(
+      pc,
+      muted,
+      _Channel(control),
+      _Channel(hover),
+    );
+    result._upstream.addAll(upstream);
+    return result;
   }
 
   final RTCPeerConnection _pc;
+  final _upstream = <PublishKind, RTCRtpTransceiver>{};
+  final _validReservations = <PublishKind>{};
+
+  @override
+  Set<PublishKind> get publishKinds => Set.unmodifiable(_validReservations);
+
+  @override
+  Future<bool> canAttachPublish(List<PublishKind> kinds) async {
+    for (final kind in kinds) {
+      final transceiver = _upstream[kind];
+      if (transceiver == null || !_validReservations.contains(kind)) {
+        return false;
+      }
+      final direction = await transceiver.getCurrentDirection();
+      if (direction != TransceiverDirection.SendOnly &&
+          direction != TransceiverDirection.SendRecv) {
+        return false;
+      }
+    }
+    return true;
+  }
+
+  @override
+  Future<void> replacePublishTrack(
+    PublishKind kind,
+    MediaStreamTrack? track,
+  ) async {
+    final sender = _upstream[kind]?.sender;
+    if (sender == null) {
+      if (track != null) throw StateError('No reserved sender');
+      return;
+    }
+    await sender.replaceTrack(track);
+    if (kind == PublishKind.video && track != null) {
+      try {
+        final parameters = sender.parameters;
+        for (final encoding in parameters.encodings ?? <RTCRtpEncoding>[]) {
+          encoding.maxBitrate = 1000000;
+          encoding.maxFramerate = 30;
+        }
+        await sender.setParameters(parameters);
+      } on Object {
+        /* Best-effort uplink cap. */
+      }
+    }
+  }
+
   final _statsParser = StreamStatsParser();
   bool _muted;
   MediaStreamTrack? _audioTrack;
@@ -254,7 +374,75 @@ final class _FlutterWebRtcPeer implements PeerTransport {
           : <String, dynamic>{},
     );
     await _pc.setLocalDescription(offer);
+    if (!iceRestart && _upstream.isNotEmpty) {
+      // Native transceiver wrappers snapshot their MID when constructed; refresh
+      // after setLocalDescription assigns MIDs instead of reading stale wrappers.
+      try {
+        final transceivers = await _pc.getTransceivers();
+        for (final kind in _upstream.keys.toList()) {
+          final id = _upstream[kind]!.transceiverId;
+          final refreshed = transceivers.where(
+            (item) => item.transceiverId == id,
+          );
+          if (refreshed.isEmpty) {
+            _upstream.remove(kind);
+          } else {
+            _upstream[kind] = refreshed.first;
+          }
+        }
+      } on Object {
+        // Missing transceiver inspection disables publishing, never viewing.
+        _upstream.clear();
+      }
+      final sections = offer.sdp!.split(RegExp(r'(?=^m=)', multiLine: true));
+      for (final entry in _upstream.entries) {
+        final matching = sections.where(
+          (section) =>
+              section.startsWith('m=${entry.key.name} ') &&
+              section.contains('a=sendonly') &&
+              section.contains('a=mid:${entry.value.mid}'),
+        );
+        if (matching.any(
+          (section) => _validPublishSection(section, entry.key),
+        )) {
+          _validReservations.add(entry.key);
+        }
+      }
+    }
     return offer.sdp!;
+  }
+
+  static bool _validPublishSection(String section, PublishKind kind) {
+    if (!RegExp(r'^a=ssrc:\d+ ', multiLine: true).hasMatch(section) ||
+        section.startsWith('m=${kind.name} 0 ')) {
+      return false;
+    }
+    if (kind == PublishKind.audio) {
+      return RegExp(
+        r'^a=rtpmap:\d+ opus/48000/2\r?$',
+        multiLine: true,
+        caseSensitive: false,
+      ).hasMatch(section);
+    }
+    final payloads = RegExp(
+      r'^a=rtpmap:(\d+) H264/90000\r?$',
+      multiLine: true,
+      caseSensitive: false,
+    ).allMatches(section);
+    return payloads.any((payload) {
+      final fmtp =
+          RegExp(
+            '^a=fmtp:${payload[1]} (.*)',
+            multiLine: true,
+          ).firstMatch(section)?.group(1) ??
+          '';
+      return RegExp(r'(?:^|;)\s*packetization-mode=1(?:;|\s*$)')
+              .hasMatch(fmtp) &&
+          RegExp(
+            r'(?:^|;)\s*profile-level-id=(42e01f|42c01f|4d001f|640c1f)(?:;|\s*$)',
+            caseSensitive: false,
+          ).hasMatch(fmtp);
+    });
   }
 
   @override

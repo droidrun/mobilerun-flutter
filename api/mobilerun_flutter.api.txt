@@ -20,6 +20,13 @@ typedef ApprovalSubscribe = FutureOr<ApprovalUnsubscribe> Function(String, VoidC
 
 typedef ApprovalUnsubscribe = FutureOr<void> Function()
 
+final class DevicePublishCapabilities
+  final bool cameraInjection
+  final String? mediaInjectionTransport
+  final bool microphoneInjection
+  const DevicePublishCapabilities({required bool microphoneInjection, required bool cameraInjection, String? mediaInjectionTransport})
+  bool get supportsMicrophone
+
 class DeviceStream extends StatefulWidget
   final bool autofocus
   final Stream<bool>? connectivity
@@ -28,10 +35,11 @@ class DeviceStream extends StatefulWidget
   final bool hasControl
   final StreamLabels labels
   final StreamNavigationBuilder navigationBuilder
-  const DeviceStream({Key? key, required DeviceStreamSession session, bool hasControl = true, bool autofocus = false, StreamLabels labels = const StreamLabels(), DeviceStreamController? controller, StreamOverlayBuilder placeholderBuilder = defaultStreamPlaceholder, StreamOverlayBuilder unavailableBuilder = defaultStreamUnavailable, StreamNavigationBuilder navigationBuilder = defaultStreamNavigation, Stream<bool>? connectivity, bool observeLifecycle = true})
+  const DeviceStream({Key? key, required DeviceStreamSession session, bool hasControl = true, bool showPublishControls = true, bool autofocus = false, StreamLabels labels = const StreamLabels(), DeviceStreamController? controller, StreamOverlayBuilder placeholderBuilder = defaultStreamPlaceholder, StreamOverlayBuilder unavailableBuilder = defaultStreamUnavailable, StreamNavigationBuilder navigationBuilder = defaultStreamNavigation, Stream<bool>? connectivity, bool observeLifecycle = true})
   final bool observeLifecycle
   final StreamOverlayBuilder placeholderBuilder
   final DeviceStreamSession session
+  final bool showPublishControls
   final StreamOverlayBuilder unavailableBuilder
 
 final class DeviceStreamController
@@ -46,14 +54,18 @@ final class DeviceStreamSession
   ValueListenable<StreamError?> get lastError
   DeviceStreamSession({required StreamCredentialsProvider credentials, StreamConfig config = const StreamConfig(), StreamErrorCallback? onError})
   void openUrl(String url)
+  DevicePublishCapabilities? get publishCapabilities
+  ValueListenable<PublishState> get publishState
   void retry()
   Future<Uint8List> screenshot({Duration timeout = const Duration(seconds: 30)})
   void setMuted(bool muted)
   void setNetworkAvailable(bool available)
   void setVisible(bool visible)
   void start()
+  Future<PublishState> startPublish(PublishOptions options)
   ValueListenable<StreamStats?> get stats
   ValueListenable<StreamStatus> get status
+  Future<void> stopPublish()
   ValueListenable<VideoSize?> get videoSize
 
 class DeviceStreamView extends StatefulWidget
@@ -75,6 +87,50 @@ final class PendingApproval
   final String kind
   const PendingApproval({required String approvalId, required String kind, Map<String, Object?> details = const {}, required String expiresAt, String? deviceId})
 
+final class PublishException implements Exception
+  final PublishFailure failure
+  const PublishException(PublishFailure failure)
+  String toString()
+
+final class PublishFailure
+  final String? detail
+  final String message
+  const PublishFailure({required StreamErrorReason reason, required String message, String? detail, String? serverReason})
+  final StreamErrorReason reason
+  final String? serverReason
+
+enum PublishKind
+  static const PublishKind audio
+  const PublishKind()
+  static const List<PublishKind> values
+  static const PublishKind video
+
+final class PublishOptions
+  final bool audio
+  const PublishOptions({required bool audio, bool video = false})
+  final bool video
+
+enum PublishPhase
+  static const PublishPhase accepted
+  static const PublishPhase active
+  static const PublishPhase capturing
+  static const PublishPhase error
+  static const PublishPhase idle
+  const PublishPhase()
+  static const PublishPhase starting
+  static const PublishPhase stopped
+  static const List<PublishPhase> values
+
+final class PublishState
+  final String? detail
+  final List<PublishKind> kinds
+  final String? mediaSessionId
+  final String? message
+  PublishState({PublishPhase phase = PublishPhase.idle, String? mediaSessionId, List<PublishKind> kinds = const [], String? reason, String? message, String? detail, String? serverReason})
+  final PublishPhase phase
+  final String? reason
+  final String? serverReason
+
 abstract final class ReconnectPolicy
   static const int maxAttempts
 
@@ -84,7 +140,8 @@ final class ScreenshotTimeoutException extends StreamException
 
 final class StreamConfig
   final bool muted
-  const StreamConfig({bool muted = true, VideoCodec videoCodec = VideoCodec.automatic})
+  const StreamConfig({bool muted = true, DevicePublishCapabilities? publishCapabilities, VideoCodec videoCodec = VideoCodec.automatic})
+  final DevicePublishCapabilities? publishCapabilities
   final VideoCodec videoCodec
 
 final class StreamConnected extends StreamStatus
@@ -113,10 +170,14 @@ final class StreamDisconnectedException extends StreamException
 
 final class StreamError
   final int attempt
+  final String? detail
   final bool isFinal
+  final String? mediaSessionId
   final String message
-  const StreamError({required StreamErrorReason reason, required String message, required int attempt, required bool isFinal})
+  const StreamError({required StreamErrorReason reason, required String message, required int attempt, required bool isFinal, String? operation, String? mediaSessionId, String? detail, String? serverReason})
+  final String? operation
   final StreamErrorReason reason
+  final String? serverReason
   String toString()
 
 typedef StreamErrorCallback = void Function(StreamError)
@@ -128,6 +189,13 @@ enum StreamErrorReason
   static const StreamErrorReason deviceUnavailable
   static const StreamErrorReason disconnected
   const StreamErrorReason(String code)
+  static const StreamErrorReason permissionDenied
+  static const StreamErrorReason publishBusy
+  static const StreamErrorReason publishCancelled
+  static const StreamErrorReason publishFailed
+  static const StreamErrorReason publishNotAllowed
+  static const StreamErrorReason publishTimeout
+  static const StreamErrorReason publishUnsupported
   static const StreamErrorReason tokenRejected
   static const StreamErrorReason unknown
   static const List<StreamErrorReason> values
@@ -139,16 +207,24 @@ sealed class StreamException implements Exception
 final class StreamLabels
   bool ==(Object other)
   final String back
+  final String camera
   final String connecting
-  StreamLabels copyWith({String? connecting, String? reconnecting, String? disconnected, String? reconnectingAttempt, String? unavailable, String? retry, String? back, String? home, String? recent})
+  StreamLabels copyWith({String? connecting, String? reconnecting, String? disconnected, String? reconnectingAttempt, String? unavailable, String? retry, String? back, String? home, String? recent, String? microphone, String? camera, String? stopMicrophone, String? stopCamera, String? publishStarting, String? publishPermissionDenied, String? publishNotAllowed, String? publishFailed})
   final String disconnected
   int get hashCode
   final String home
-  const StreamLabels({String connecting = 'connecting', String reconnecting = 'reconnecting', String disconnected = 'disconnected', String reconnectingAttempt = 'reconnecting ({attempt}/{max})', String unavailable = 'device stream unavailable', String retry = 'Retry', String back = 'Back', String home = 'Home', String recent = 'Recent'})
+  final String microphone
+  const StreamLabels({String connecting = 'connecting', String reconnecting = 'reconnecting', String disconnected = 'disconnected', String reconnectingAttempt = 'reconnecting ({attempt}/{max})', String unavailable = 'device stream unavailable', String retry = 'Retry', String back = 'Back', String home = 'Home', String recent = 'Recent', String microphone = 'Microphone', String camera = 'Camera', String stopMicrophone = 'Stop microphone', String stopCamera = 'Stop camera', String publishStarting = 'Starting inputs', String publishPermissionDenied = 'Microphone or camera permission denied', String publishNotAllowed = 'Publishing is not allowed', String publishFailed = 'Could not publish inputs'})
+  final String publishFailed
+  final String publishNotAllowed
+  final String publishPermissionDenied
+  final String publishStarting
   final String recent
   final String reconnecting
   final String reconnectingAttempt
   final String retry
+  final String stopCamera
+  final String stopMicrophone
   final String unavailable
 
 final class StreamLifecycle

@@ -142,6 +142,29 @@ hard cut. It is an explicit exception: a reconnect **reuses the same static toke
 token, but a single-use stream token is rejected on the second connect, so single-use
 stream tokens need `tokenProvider`.
 
+## Microphone and camera publish
+
+Supply `StreamConfig(publishCapabilities: ...)` from your backend's per-device
+capabilities response before connecting. `DeviceStream` then shows a floating
+microphone/camera pill over the video; hide it with `showPublishControls: false`.
+The snapshot describes device support; the server still decides each request.
+
+```dart
+// After the viewer connects, from an explicit user action:
+try {
+  await session.startPublish(const PublishOptions(audio: true, video: true));
+} on PublishException catch (error) {
+  debugPrint(error.failure.reason.code);
+}
+// Observe session.publishState (ValueListenable<PublishState>).
+await session.stopPublish(); // Viewing and output mute are independent.
+```
+
+Audio is required. Stop before changing input kinds; reconnect never resumes
+capture. Publish errors use the existing `onError` with `operation == 'publish'`.
+See [publish setup and lifecycle](doc/publish.md) for permissions, labels,
+capability delivery, supported codecs and failure details.
+
 ## Guides
 
 | Guide | Covers |

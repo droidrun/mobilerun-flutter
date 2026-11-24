@@ -66,3 +66,13 @@ export 'src/ui/device_stream.dart'
         defaultStreamNavigation;
 
 export 'src/core/stream_stats.dart' show StreamStats;
+
+export 'src/core/publish.dart'
+    show
+        DevicePublishCapabilities,
+        PublishOptions,
+        PublishKind,
+        PublishPhase,
+        PublishFailure,
+        PublishException,
+        PublishState;
