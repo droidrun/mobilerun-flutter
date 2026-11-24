@@ -14,48 +14,37 @@ Android or iOS. Read [stream keys](../../doc/stream-keys.md) and
 ## Backend: mint one token per connect
 
 Authenticate the app user and authorize access to the requested device on your
-backend before minting. Call `POST https://api.mobilerun.ai/v1/identity/stream-keys`
-with `Authorization: Bearer <MOBILERUN_API_KEY>` and JSON
-`{deviceId, ttlSeconds, allowedOrigins?}`. Keep `MOBILERUN_API_KEY` in the server
-environment only. The response is `{key, keyId, expiresAt}`; return only `key` to
-the app, without caching it. Tokens start with `dr_st_`, are single-use, and
-expire after 120 seconds by default. Optional `allowedOrigins` binds browser use
-to listed site origins; it does not replace user/device authorization.
+Node backend before minting. Install `@mobilerun/sdk@6.3.0` and keep
+`MOBILERUN_API_KEY` in the server environment only. The SDK response is
+`{key, keyId, expiresAt}`; return only `key` to the app without caching it.
+Tokens start with `dr_st_`, are single-use, and expire after 120 seconds by default.
+Optional `allowedOrigins` binds browser use to listed site origins; omit it for
+native-only apps. It does not replace user/device authorization.
 
-Dart server example (never include this server code in the Flutter app):
+Node server example (never include this server code or the API key in the Flutter app):
 
-```dart
-import 'dart:convert';
-import 'dart:io';
+```js
+import { MobilerunSDK } from '@mobilerun/sdk';
 
-Future<String> mintStreamKey(String authorizedDeviceId) async {
-  final client = HttpClient();
-  try {
-    final request = await client.postUrl(
-      Uri.parse('https://api.mobilerun.ai/v1/identity/stream-keys'),
-    );
-    request.headers.set(
-      HttpHeaders.authorizationHeader,
-      'Bearer ${Platform.environment['MOBILERUN_API_KEY']!}',
-    );
-    request.headers.contentType = ContentType.json;
-    request.write(jsonEncode({
-      'deviceId': authorizedDeviceId,
-      'ttlSeconds': 120,
-      // For browser consumers: 'allowedOrigins': ['https://partner.example'],
-    }));
-    final response = await request.close();
-    final body = await response.transform(utf8.decoder).join();
-    if (response.statusCode != 200 && response.statusCode != 201) {
-      // On 422, inspect the response's `issues` for invalid request fields.
-      throw HttpException('Stream key mint failed: ${response.statusCode}');
-    }
-    return (jsonDecode(body) as Map<String, dynamic>)['key'] as String;
-  } finally {
-    client.close();
-  }
+const client = new MobilerunSDK({
+  apiKey: process.env.MOBILERUN_API_KEY,
+});
+
+// Authenticate your user and authorize this device before calling.
+async function mintStreamToken(authorizedDeviceId, allowedOrigins) {
+  const { key, keyId, expiresAt } = await client.streamTokens.create({
+    deviceId: authorizedDeviceId,
+    ttlSeconds: 120,
+    allowedOrigins, // Optional server-owned policy for browser embeds.
+  }, { maxRetries: 0 });
+  // Keep keyId/expiry on the server if needed; return only the fresh key.
+  return key;
 }
 ```
+
+Revoke a token by its returned ID with `await client.streamTokens.delete(keyId)`
+on the server.
+REST fallback: `POST https://api.mobilerun.ai/v1/identity/stream-keys` with the same request fields.
 
 ## Client: provide a fresh token for every socket
 
