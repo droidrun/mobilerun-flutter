@@ -160,6 +160,7 @@ try {
 await session.stopPublish(); // Viewing and output mute are independent.
 ```
 
+Inputs open only after server acceptance; refused or silent requests never prompt.
 Audio is required. Stop before changing input kinds; reconnect never resumes
 capture. Publish errors use the existing `onError` with `operation == 'publish'`.
 See [publish setup and lifecycle](doc/publish.md) for permissions, labels,

@@ -171,12 +171,7 @@ final class _FlutterWebRtcPeer implements PeerTransport, PublishPeerTransport {
           final supported = codecs.where((codec) {
             final fmtp = codec.sdpFmtpLine ?? '';
             return codec.mimeType.toLowerCase() == 'video/h264' &&
-                RegExp(r'(?:^|;)\s*packetization-mode=1(?:;|$)')
-                    .hasMatch(fmtp) &&
-                RegExp(
-                  r'(?:^|;)\s*profile-level-id=(42e01f|42c01f|4d001f|640c1f)(?:;|$)',
-                  caseSensitive: false,
-                ).hasMatch(fmtp);
+                supportsPublishH264(fmtp);
           }).toList();
           supported.sort(
             (a, b) => (a.sdpFmtpLine!.contains('42') ? 0 : 1).compareTo(
@@ -436,12 +431,7 @@ final class _FlutterWebRtcPeer implements PeerTransport, PublishPeerTransport {
             multiLine: true,
           ).firstMatch(section)?.group(1) ??
           '';
-      return RegExp(r'(?:^|;)\s*packetization-mode=1(?:;|\s*$)')
-              .hasMatch(fmtp) &&
-          RegExp(
-            r'(?:^|;)\s*profile-level-id=(42e01f|42c01f|4d001f|640c1f)(?:;|\s*$)',
-            caseSensitive: false,
-          ).hasMatch(fmtp);
+      return supportsPublishH264(fmtp);
     });
   }
 

@@ -154,7 +154,7 @@ final class DeviceStreamSession {
   /// Publication lifecycle, independent of the viewer connection status.
   ValueListenable<PublishState> get publishState => _publish.state;
 
-  /// Captures local inputs on explicit user action, then requests admission.
+  /// Requests admission on explicit user action, then captures accepted inputs.
   /// Resolves only after the server reports active and all tracks attach.
   /// Throws [PublishException] with a structured failure.
   Future<PublishState> startPublish(PublishOptions options) =>
@@ -162,6 +162,11 @@ final class DeviceStreamSession {
 
   /// Releases local inputs and reserved senders without stopping the viewer.
   Future<void> stopPublish() => _publish.stop();
+
+  /// Ends publication when its viewer is removed or replaced.
+  @internal
+  Future<void> endPublishForViewerReplacement() =>
+      _publish.endForViewerReplacement();
 
   /// The connection status. Starts as [StreamConnecting].
   ValueListenable<StreamStatus> get status => _status;
@@ -279,6 +284,7 @@ final class DeviceStreamSession {
   void setVisible(bool visible) {
     if (_closed || _visible == visible) return;
     _visible = visible;
+    if (!visible) unawaited(stopPublish());
     _attempt?.setVisible(visible);
     _updateSampling();
     if (visible) handleWake();

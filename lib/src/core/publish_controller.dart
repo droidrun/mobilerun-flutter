@@ -107,6 +107,27 @@ final class PublishController {
     _closed = true;
     await stop();
     _binding = null;
+    final previous = state.value;
+    state.value = PublishState(
+      phase: PublishPhase.stopped,
+      mediaSessionId: previous.mediaSessionId,
+      kinds: previous.kinds,
+      reason: 'stopped_by_client',
+    );
+  }
+
+  /// A removed/replaced viewer ends publication without granting an auto-resume.
+  Future<void> endForViewerReplacement() {
+    final op = _operation;
+    return op == null
+        ? Future.value()
+        : _finish(
+            op,
+            failure: _failure(
+              StreamErrorReason.disconnected,
+              'Viewer replaced',
+            ),
+          );
   }
 
   PublishFailure _failure(
@@ -189,9 +210,9 @@ final class PublishController {
       if (!_closed) onFailure(failure, null);
       return Future.error(PublishException(failure));
     }
-    final operation = _Operation(binding!, kinds, ++_generation);
+    final operation = _Operation(binding!, kinds, ++_generation, options);
     _operation = operation;
-    unawaited(_capture(operation, options));
+    unawaited(_startSignal(operation));
     return operation.result.future;
   }
 
@@ -213,15 +234,55 @@ final class PublishController {
     );
   }
 
-  Future<void> _capture(_Operation op, PublishOptions options) async {
+  Future<void> _startSignal(_Operation op) async {
     await _teardown;
     if (!_current(op)) return;
+    op.id = uuid();
+    _snapshot(op, PublishPhase.starting);
+    if (!_current(op)) return;
+    op.timer = scheduler.schedule(const Duration(seconds: 5), () {
+      if (_current(op)) {
+        unawaited(
+          _finish(
+            op,
+            failure: _failure(
+              StreamErrorReason.publishUnsupported,
+              'Publish response timed out',
+              'response_timeout',
+            ),
+          ),
+        );
+      }
+    });
+    op.sent = true;
+    try {
+      op.binding.socket.send(
+        jsonEncode({
+          'type': 'publishStart',
+          'mediaSessionId': op.id,
+          'kinds': op.kinds.map((kind) => kind.name).toList(),
+        }),
+      );
+    } on Object {
+      if (_current(op)) {
+        await _finish(
+          op,
+          failure: _failure(
+            StreamErrorReason.disconnected,
+            'Signaling unavailable',
+          ),
+        );
+      }
+    }
+  }
+
+  Future<void> _capture(_Operation op) async {
+    if (!_current(op)) return;
     _snapshot(op, PublishPhase.capturing);
-    // State listeners may synchronously cancel or close the session.
     if (!_current(op)) return;
     try {
       final media = await capture!.capture(
-        options,
+        op.options,
         isCancelled: () => !_current(op),
         onAcquired: (media) {
           if (_current(op)) {
@@ -265,31 +326,7 @@ final class PublishController {
         );
         return;
       }
-      op.id = uuid();
-      _snapshot(op, PublishPhase.starting);
-      if (!_current(op)) return;
-      op.timer = scheduler.schedule(const Duration(seconds: 5), () {
-        if (_current(op)) {
-          unawaited(
-            _finish(
-              op,
-              failure: _failure(
-                StreamErrorReason.publishUnsupported,
-                'Publish response timed out',
-                'response_timeout',
-              ),
-            ),
-          );
-        }
-      });
-      op.sent = true;
-      op.binding.socket.send(
-        jsonEncode({
-          'type': 'publishStart',
-          'mediaSessionId': op.id,
-          'kinds': op.kinds.map((kind) => kind.name).toList(),
-        }),
-      );
+      if (_current(op)) op.mutations = _attach(op);
     } on Object catch (error) {
       if (!_current(op)) return;
       await _finish(
@@ -297,11 +334,9 @@ final class PublishController {
         failure: error is PublishException
             ? error.failure
             : _failure(
-                op.sent
-                    ? StreamErrorReason.disconnected
-                    : StreamErrorReason.publishFailed,
-                op.sent ? 'Signaling unavailable' : 'Local input unavailable',
-                op.sent ? null : 'capture_unavailable',
+                StreamErrorReason.publishFailed,
+                'Local input unavailable',
+                'capture_unavailable',
               ),
       );
     }
@@ -341,27 +376,24 @@ final class PublishController {
       if (!op.accepted) {
         op.accepted = true;
         op.timer?.cancel();
-        if (!op.active) {
-          op.timer = scheduler.schedule(const Duration(seconds: 15), () {
-            if (_current(op)) {
-              unawaited(
-                _finish(
-                  op,
-                  failure: _failure(
-                    StreamErrorReason.publishTimeout,
-                    'Publish activation timed out',
-                    'active_timeout',
-                  ),
+        op.timer = scheduler.schedule(const Duration(seconds: 30), () {
+          if (_current(op)) {
+            unawaited(
+              _finish(
+                op,
+                failure: _failure(
+                  StreamErrorReason.publishTimeout,
+                  'Publish activation timed out',
+                  'active_timeout',
                 ),
-              );
-            }
-          });
-        }
+              ),
+            );
+          }
+        });
         _snapshot(op, PublishPhase.accepted);
         if (!_current(op)) return;
-        op.mutations = _attach(op);
+        unawaited(_capture(op));
       }
-      if (op.active) op.timer?.cancel();
       _activate(op);
       return;
     }
@@ -439,6 +471,7 @@ final class PublishController {
     if (!_current(op) || !op.active || !op.attached || op.result.isCompleted) {
       return;
     }
+    op.timer?.cancel();
     _snapshot(op, PublishPhase.active);
     if (_current(op)) op.result.complete(state.value);
   }
@@ -462,7 +495,10 @@ final class PublishController {
           jsonEncode({'type': 'stopPublish', 'mediaSessionId': op.id}),
         );
       } on Object {
-        /* Best effort, original socket only. */
+        failure = _failure(
+          StreamErrorReason.disconnected,
+          'Signaling unavailable',
+        );
       }
     }
     // Stop capture immediately, independently of a slow sender or closed peer.
@@ -541,7 +577,8 @@ final class _Binding {
 }
 
 final class _Operation {
-  _Operation(this.binding, this.kinds, this.generation);
+  _Operation(this.binding, this.kinds, this.generation, this.options);
+  final PublishOptions options;
   final int generation;
   final _Binding binding;
   final List<PublishKind> kinds;

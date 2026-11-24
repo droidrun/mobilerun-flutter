@@ -63,6 +63,7 @@ void main() {
   const channel = MethodChannel('FlutterWebRTC.Method');
   late List<MethodCall> calls;
   late List<Map<String, Object?>> transceivers;
+  String profile = '42e01f';
   bool ssrc = true;
   bool senderQueryFails = false;
   String? captureError;
@@ -71,6 +72,7 @@ void main() {
   setUp(() {
     calls = [];
     transceivers = [];
+    profile = '42e01f';
     ssrc = true;
     senderQueryFails = false;
     captureError = null;
@@ -105,7 +107,15 @@ void main() {
         case 'getRtpSenderCapabilities':
           if (senderQueryFails) throw PlatformException(code: 'unsupported');
           return {
-            'codecs': [args['kind'] == 'audio' ? audioCodec : videoCodec],
+            'codecs': [
+              args['kind'] == 'audio'
+                  ? audioCodec
+                  : {
+                      ...videoCodec,
+                      'sdpFmtpLine':
+                          'packetization-mode=1;profile-level-id=$profile',
+                    },
+            ],
             'headerExtensions': [],
             'fecMechanisms': [],
           };
@@ -127,7 +137,7 @@ void main() {
                 'v=0\r\n'
                 'm=audio 9 UDP/TLS/RTP/SAVPF 111\r\na=mid:0\r\na=recvonly\r\n'
                 'm=video 9 UDP/TLS/RTP/SAVPF 96\r\na=mid:1\r\na=recvonly\r\n'
-                'm=video 9 UDP/TLS/RTP/SAVPF 96\r\na=mid:2\r\na=sendonly\r\na=rtpmap:96 H264/90000\r\na=fmtp:96 packetization-mode=1;profile-level-id=42e01f\r\n${ssrc ? "a=ssrc:22 cname:upstream\r\n" : ""}'
+                'm=video 9 UDP/TLS/RTP/SAVPF 96\r\na=mid:2\r\na=sendonly\r\na=rtpmap:96 H264/90000\r\na=fmtp:96 packetization-mode=1;profile-level-id=$profile\r\n${ssrc ? "a=ssrc:22 cname:upstream\r\n" : ""}'
                 'm=audio 9 UDP/TLS/RTP/SAVPF 111\r\na=mid:3\r\na=sendonly\r\na=rtpmap:111 opus/48000/2\r\n${ssrc ? "a=ssrc:33 cname:upstream\r\n" : ""}',
           };
         case 'getTransceivers':
@@ -200,6 +210,58 @@ void main() {
       isTrue,
     );
   });
+
+  for (final row in [
+    ('42e01f', true),
+    ('42e028', true),
+    ('42c02a', true),
+    ('4d0033', true),
+    ('640c33', true),
+    ('42E02A', true),
+    ('42e01e', false),
+    ('42c00a', false),
+    ('4d001e', false),
+    ('640c1e', false),
+    ('428028', false),
+    ('640028', false),
+  ]) {
+    test('upstream H264 profile ${row.$1} preserves platform level', () async {
+      profile = row.$1;
+      final peer = await FlutterWebRtcPeerFactory().create(
+        {},
+        config: const StreamConfig(publishCapabilities: publishCapabilities),
+        muted: true,
+      );
+      addTearDown(peer.close);
+      await peer.createLocalOffer();
+      expect(
+        (peer as PublishPeerTransport).publishKinds.contains(PublishKind.video),
+        row.$2,
+      );
+      final preferences = calls
+          .where((call) => call.method == 'setCodecPreferences')
+          .map((call) => call.arguments as Map)
+          .where(
+            (args) =>
+                args['transceiverId'] == 't2' &&
+                (args['codecs'] as List).any(
+                  (codec) =>
+                      codec['mimeType'].toString().toLowerCase() ==
+                      'video/h264',
+                ),
+          )
+          .toList();
+      expect(preferences.length, row.$2 ? 1 : 0);
+      expect(
+        preferences
+            .map((args) => (args['codecs'] as List).single['sdpFmtpLine'])
+            .toList(),
+        row.$2
+            ? ['packetization-mode=1;profile-level-id=${row.$1}']
+            : <String>[],
+      );
+    });
+  }
 
   test(
     'missing trackless SSRC disables publish while preserving viewer offer',

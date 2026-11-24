@@ -254,9 +254,6 @@ class _DeviceStreamState extends State<DeviceStream> {
   @override
   void didUpdateWidget(DeviceStream oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (oldWidget.session != widget.session) {
-      unawaited(oldWidget.session.stopPublish());
-    }
     if (oldWidget.session != widget.session ||
         oldWidget.observeLifecycle != widget.observeLifecycle) {
       _lifecycle?.dispose();
@@ -270,7 +267,6 @@ class _DeviceStreamState extends State<DeviceStream> {
   @override
   void dispose() {
     _lifecycle?.dispose();
-    unawaited(widget.session.stopPublish());
     super.dispose();
   }
 

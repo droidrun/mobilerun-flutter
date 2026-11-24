@@ -5,6 +5,8 @@ import 'dart:io';
 import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
+import 'package:flutter/gestures.dart';
+import 'package:mobilerun_flutter/src/ui/stream_publish_pill.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -13,7 +15,7 @@ import 'package:mobilerun_flutter/src/webrtc/webrtc_initializer.dart';
 
 import 'support/fake_transports.dart';
 import 'support/harness.dart';
-import 'publish_test.dart' show publishCapabilities, respond;
+import 'publish_test.dart' show publishCapabilities, respond, microphone;
 import 'device_stream_test.dart' show closeSession;
 
 const labels = StreamLabels(
@@ -276,6 +278,12 @@ void main() {
       );
       await tester.tap(find.byTooltip('Mic on'));
       await flush(tester);
+      expect(h.session.publishState.value.phase, PublishPhase.starting);
+      await tester.runAsync(() async {
+        respond(h, 'accepted');
+        await pump();
+      });
+      await flush(tester);
       expect(h.session.publishState.value.phase, PublishPhase.error);
       await tester.pump();
       expect(find.text('Allow local inputs'), findsOneWidget);
@@ -285,6 +293,219 @@ void main() {
       await closeSession(tester, h.session);
     },
   );
+
+  testWidgets(
+    'only publish buttons consume taps; background passes through and fades',
+    (tester) async {
+      final h = Harness(
+        config: const StreamConfig(publishCapabilities: publishCapabilities),
+        publishCapture: FakePublishCapture(),
+      );
+      await tester.runAsync(h.connect);
+      var deviceTaps = 0;
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: Stack(
+              fit: StackFit.expand,
+              children: [
+                Listener(
+                  behavior: HitTestBehavior.opaque,
+                  onPointerDown: (_) => deviceTaps++,
+                  child: const ColoredBox(color: Colors.black),
+                ),
+                Align(
+                  alignment: Alignment.bottomCenter,
+                  child: StreamPublishPill(session: h.session, labels: labels),
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+      final background = find.byKey(const ValueKey('publish-background'));
+      final bounds = tester.getRect(background);
+      await tester.tapAt(bounds.centerLeft + const Offset(2, 0));
+      await flush(tester);
+      expect(deviceTaps, 1);
+      expect(h.ws.ofType('publishStart'), isEmpty);
+      await tester.pump(const Duration(milliseconds: 2999));
+      expect(
+        tester
+            .widget<AnimatedOpacity>(
+              find.byKey(const ValueKey('publish-opacity')),
+            )
+            .opacity,
+        1,
+      );
+      await tester.pump(const Duration(milliseconds: 1));
+      expect(
+        tester
+            .widget<AnimatedOpacity>(
+              find.byKey(const ValueKey('publish-opacity')),
+            )
+            .opacity,
+        .5,
+      );
+      expect(tester.getRect(background), bounds);
+      final mouse = await tester.createGesture(kind: PointerDeviceKind.mouse);
+      await mouse.addPointer(location: const Offset(1, 1));
+      await mouse.moveTo(bounds.centerLeft - const Offset(4, 0));
+      await tester.pump();
+      expect(
+        tester
+            .widget<AnimatedOpacity>(
+              find.byKey(const ValueKey('publish-opacity')),
+            )
+            .opacity,
+        1,
+      );
+      await mouse.removePointer();
+      await tester.pump(const Duration(seconds: 3));
+      await tester.tapAt(bounds.centerLeft + const Offset(2, 0));
+      await flush(tester);
+      expect(
+        tester
+            .widget<AnimatedOpacity>(
+              find.byKey(const ValueKey('publish-opacity')),
+            )
+            .opacity,
+        1,
+      );
+      expect(deviceTaps, 2);
+      await tester.tap(find.byTooltip('Mic on'));
+      await flush(tester);
+      expect(deviceTaps, 2);
+      expect(h.ws.ofType('publishStart'), hasLength(1));
+      expect(
+        tester.getRect(find.byKey(const ValueKey('publish-status'))).bottom,
+        lessThan(bounds.top),
+      );
+      await tester.runAsync(() async {
+        respond(h, 'rejected', reason: 'unsupported');
+        await pump();
+      });
+      await flush(tester);
+      expect(find.byTooltip('Mic on'), findsNothing);
+      await tester.pumpWidget(const SizedBox());
+      await closeSession(tester, h.session);
+    },
+  );
+
+  testWidgets('viewer replacement and remount emit disconnected once', (
+    tester,
+  ) async {
+    final capture = FakePublishCapture();
+    final h = Harness(
+      config: const StreamConfig(publishCapabilities: publishCapabilities),
+      publishCapture: capture,
+    );
+    final replacement = Harness();
+    await tester.runAsync(h.connect);
+    await mount(tester, h);
+    final start = h.session.startPublish(microphone);
+    await flush(tester);
+    await tester.runAsync(() async {
+      respond(h, 'active');
+      await pump();
+    });
+    await flush(tester);
+    await start;
+    await mount(tester, replacement);
+    await flush(tester);
+    expect(h.session.publishState.value.reason, 'disconnected');
+    expect(
+      h.errors.where((error) => error.operation == 'publish'),
+      hasLength(1),
+    );
+    expect(capture.media.single.tracks.single.stopped, isTrue);
+    await mount(tester, h);
+    await flush(tester);
+    expect(h.ws.ofType('publishStart'), hasLength(1));
+    final next = h.session.startPublish(microphone);
+    await flush(tester);
+    await tester.runAsync(() async {
+      respond(h, 'active');
+      await pump();
+    });
+    await flush(tester);
+    await next;
+    await tester.pumpWidget(const SizedBox());
+    await flush(tester);
+    expect(h.session.publishState.value.reason, 'disconnected');
+    expect(
+      h.errors.where((error) => error.operation == 'publish'),
+      hasLength(2),
+    );
+    await closeSession(tester, h.session);
+    await closeSession(tester, replacement.session);
+  });
+
+  testWidgets(
+    'host background lifecycle stops capture without automatic resume',
+    (tester) async {
+      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+      final capture = FakePublishCapture();
+      final h = Harness(
+        config: const StreamConfig(publishCapabilities: publishCapabilities),
+        publishCapture: capture,
+      );
+      await tester.runAsync(h.connect);
+      final lifecycle = StreamLifecycle(
+        session: h.session,
+        connectivity: const Stream<bool>.empty(),
+      );
+      await mount(tester, h);
+      final start = h.session.startPublish(microphone);
+      await flush(tester);
+      await tester.runAsync(() async {
+        respond(h, 'active');
+        await pump();
+      });
+      await flush(tester);
+      await start;
+      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.inactive);
+      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.hidden);
+      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.paused);
+      await flush(tester);
+      expect(h.session.publishState.value.phase, PublishPhase.stopped);
+      expect(capture.media.single.tracks.single.stopped, isTrue);
+      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.hidden);
+      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.inactive);
+      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+      await flush(tester);
+      expect(h.ws.ofType('publishStart'), hasLength(1));
+      lifecycle.dispose();
+      await tester.pumpWidget(const SizedBox());
+      await closeSession(tester, h.session);
+    },
+  );
+
+  test('publish label defaults match the shared SDK key set exactly', () {
+    const defaults = StreamLabels();
+    expect(
+      [
+        defaults.microphone,
+        defaults.camera,
+        defaults.stopMicrophone,
+        defaults.stopCamera,
+        defaults.publishStarting,
+        defaults.publishPermissionDenied,
+        defaults.publishFailed,
+        defaults.publishNotAllowed,
+      ],
+      [
+        'Microphone',
+        'Camera',
+        'Stop microphone',
+        'Stop camera',
+        'Starting inputs',
+        'Microphone or camera permission denied',
+        'Could not publish inputs',
+        'Publishing is not allowed',
+      ],
+    );
+  });
 
   test('new labels copy and equality include every publish string', () {
     expect(labels.copyWith(), labels);

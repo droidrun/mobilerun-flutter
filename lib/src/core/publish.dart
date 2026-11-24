@@ -57,7 +57,7 @@ enum PublishPhase {
   /// No publication has been requested.
   idle,
 
-  /// Waiting for local permissions and inputs, still detached.
+  /// Admitted; waiting for local permissions and inputs, still detached.
   capturing,
 
   /// Start sent; awaiting server admission.

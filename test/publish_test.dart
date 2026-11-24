@@ -55,7 +55,7 @@ void main() {
       );
       final start = h.session.startPublish(camera);
       await pump();
-      expect(capture.calls, 1);
+      expect(capture.calls, 0);
       expect(h.peer.publishCalls, isEmpty);
       final frame = h.ws.ofType('publishStart').single.json;
       final id = frame['mediaSessionId'];
@@ -76,13 +76,13 @@ void main() {
       respond(h, 'accepted');
       await pump();
       expect(h.peer.publishCalls, ['audio:attach', 'video:attach']);
-      expect(h.session.publishState.value.phase, PublishPhase.accepted);
+      expect(h.session.publishState.value.phase, PublishPhase.capturing);
       respond(h, 'active');
       expect((await start).phase, PublishPhase.active);
       expect(phases, [
-        PublishPhase.capturing,
         PublishPhase.starting,
         PublishPhase.accepted,
+        PublishPhase.capturing,
         PublishPhase.active,
       ]);
       expect(h.session.status.value, isA<StreamConnected>());
@@ -102,7 +102,7 @@ void main() {
       respond(h, 'active');
       await pump();
       expect(resolved, isFalse);
-      expect(h.session.publishState.value.phase, PublishPhase.accepted);
+      expect(h.session.publishState.value.phase, PublishPhase.capturing);
       gate.complete();
       expect((await start).phase, PublishPhase.active);
       expect(h.peer.publishCalls, ['audio:attach', 'video:attach']);
@@ -124,10 +124,8 @@ void main() {
       await pump();
       respond(h, 'rejected', reason: row.$1);
       await result;
-      expect(
-        capture.media.single.tracks.every((track) => track.stopped),
-        isTrue,
-      );
+      expect(capture.calls, 0);
+      expect(capture.media, isEmpty);
       expect(
         h.peer.publishCalls.where((call) => call.endsWith('attach')),
         isEmpty,
@@ -165,7 +163,8 @@ void main() {
     await pump();
     expect(h.errors, hasLength(1));
     expect(h.peer.publishCalls, ['audio:detach']);
-    expect(capture.media.single.tracks.single.stopped, isTrue);
+    expect(capture.calls, 0);
+    expect(capture.media, isEmpty);
   });
 
   test('accepted replaces response timer; duplicate does not extend active deadline', () async {
@@ -178,8 +177,8 @@ void main() {
     await h.advance(4999);
     respond(h, 'accepted');
     await pump();
-    await h.advance(14999);
-    expect(h.session.publishState.value.phase, PublishPhase.accepted);
+    await h.advance(29999);
+    expect(h.session.publishState.value.phase, PublishPhase.capturing);
     respond(h, 'accepted');
     await pump();
     await h.advance(1);
@@ -198,7 +197,7 @@ void main() {
       fails('publish_failed', detail: 'publish_in_progress'),
     );
     expect(h.session.publishState.value, same(previous));
-    expect(capture.calls, 1);
+    expect(capture.calls, 0);
     respond(h, 'active');
     await first;
     await expectLater(
@@ -210,7 +209,7 @@ void main() {
   });
 
   test(
-    'permission denial uses structured failure without wire or viewer failure',
+    'permission denied after acceptance stops the original server session',
     () async {
       await h.connect();
       capture.error = const PublishException(
@@ -220,19 +219,28 @@ void main() {
           detail: 'capture_permission',
         ),
       );
-      await expectLater(
+      final result = expectLater(
         h.session.startPublish(camera),
         fails('permission_denied', detail: 'capture_permission'),
       );
-      expect(h.ws.ofType('publishStart'), isEmpty);
+      await pump();
+      expect(capture.calls, 0);
+      final id = h.session.publishState.value.mediaSessionId;
+      respond(h, 'accepted');
+      await result;
+      expect(h.ws.ofType('publishStart'), hasLength(1));
+      expect(h.ws.ofType('stopPublish').single.json, {
+        'type': 'stopPublish',
+        'mediaSessionId': id,
+      });
       expect(h.errors.single.operation, 'publish');
-      expect(h.errors.single.mediaSessionId, isNull);
+      expect(h.errors.single.mediaSessionId, id);
       expect(h.session.status.value, isA<StreamConnected>());
     },
   );
 
   test(
-    'stop during capture cancels start and stops late inputs without signaling',
+    'stop during capture cancels start and stops late inputs with a stop frame',
     () async {
       await h.connect();
       final gate = capture.gate = Completer<void>();
@@ -240,6 +248,8 @@ void main() {
         h.session.startPublish(camera),
         fails('publish_cancelled'),
       );
+      await pump();
+      respond(h, 'accepted');
       await pump();
       await h.session.stopPublish();
       await result;
@@ -251,7 +261,8 @@ void main() {
         capture.media.single.tracks.every((track) => track.stopped),
         isTrue,
       );
-      expect(h.ws.ofType('publishStart'), isEmpty);
+      expect(h.ws.ofType('publishStart'), hasLength(1));
+      expect(h.ws.ofType('stopPublish'), hasLength(1));
       expect(
         h.peer.publishCalls.where((call) => call.endsWith('attach')),
         isEmpty,
@@ -323,7 +334,7 @@ void main() {
       await first;
       await second;
       await pump();
-      expect(capture.calls, 2);
+      expect(capture.calls, 1);
       respond(h, 'active');
       await third;
       expect(
@@ -367,10 +378,7 @@ void main() {
       await h.connect();
       h.ws.closedByServer = true;
       await expectLater(h.session.startPublish(camera), fails('disconnected'));
-      expect(
-        capture.media.single.tracks.every((track) => track.stopped),
-        isTrue,
-      );
+      expect(capture.calls, 0);
       expect(h.peer.publishCalls, ['audio:detach', 'video:detach']);
       expect(h.errors.single.reason.code, 'disconnected');
       expect(h.errors.single.operation, 'publish');
@@ -541,6 +549,8 @@ void main() {
         fails('publish_cancelled'),
       );
       await pump();
+      respond(h, 'accepted');
+      await pump();
       var callbacks = 0;
       h.session.publishState.addListener(() => callbacks++);
       await h.session.close();
@@ -551,12 +561,86 @@ void main() {
         capture.media.single.tracks.every((track) => track.stopped),
         isTrue,
       );
-      expect(callbacks, 0);
+      expect(callbacks, 1);
+      expect(h.session.publishState.value.phase, PublishPhase.stopped);
+      expect(h.session.publishState.value.reason, 'stopped_by_client');
       await expectLater(
         h.session.startPublish(microphone),
         fails('disconnected', detail: 'session_closed'),
       );
       expect(h.errors, isEmpty);
+    },
+  );
+
+  test(
+    '30 second active deadline includes a pending permission prompt',
+    () async {
+      await h.connect();
+      final gate = capture.gate = Completer<void>();
+      final result = expectLater(
+        h.session.startPublish(camera),
+        fails('publish_timeout', detail: 'active_timeout'),
+      );
+      await pump();
+      respond(h, 'accepted');
+      await pump();
+      await h.advance(29999);
+      expect(h.session.publishState.value.phase, PublishPhase.capturing);
+      await h.advance(1);
+      await result;
+      expect(h.ws.ofType('stopPublish'), hasLength(1));
+      gate.complete();
+      await pump();
+      expect(
+        capture.media.single.tracks.every((track) => track.stopped),
+        isTrue,
+      );
+      expect(
+        h.peer.publishCalls.where((call) => call.endsWith('attach')),
+        isEmpty,
+      );
+    },
+  );
+
+  test(
+    'background releases publication and foreground never resumes capture',
+    () async {
+      await h.connect();
+      final start = h.session.startPublish(camera);
+      await pump();
+      respond(h, 'active');
+      await start;
+      h.session.setVisible(false);
+      await pump();
+      expect(h.session.publishState.value.phase, PublishPhase.stopped);
+      expect(
+        capture.media.single.tracks.every((track) => track.stopped),
+        isTrue,
+      );
+      h.session.setVisible(true);
+      await pump();
+      expect(capture.calls, 1);
+      expect(h.ws.ofType('publishStart'), hasLength(1));
+      expect(h.errors.where((error) => error.operation == 'publish'), isEmpty);
+    },
+  );
+
+  test(
+    'throwing stop send maps to disconnected after releasing capture',
+    () async {
+      await h.connect();
+      final start = h.session.startPublish(camera);
+      await pump();
+      respond(h, 'active');
+      await start;
+      h.ws.closedByServer = true;
+      await h.session.stopPublish();
+      expect(h.session.publishState.value.reason, 'disconnected');
+      expect(h.errors.single.reason.code, 'disconnected');
+      expect(
+        capture.media.single.tracks.every((track) => track.stopped),
+        isTrue,
+      );
     },
   );
 
