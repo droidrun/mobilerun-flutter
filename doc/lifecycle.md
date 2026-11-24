@@ -3,8 +3,8 @@
 # Session and app lifecycle
 
 The package connects to a Mobilerun cloud device and recovers from failures,
-exactly like `@mobilerun/react`. The package is not published yet and its
-API may still change.
+exactly like `@mobilerun/react`. Install `mobilerun_flutter: ^0.1.0` from pub.dev
+as shown in the [installation instructions](../README.md#install).
 
 The default connectivity snapshot arrives asynchronously. Attaching the adapter
 before `start()` begins observation, but does not synchronously seed availability.

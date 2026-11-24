@@ -1,7 +1,7 @@
 # Releasing to pub.dev
 
-Nothing has been published yet. Pull requests only validate the package. A `v*`
-tag runs the reusable CI workflow without publishing permissions, then requests
+`mobilerun_flutter` is distributed through pub.dev. Pull requests only validate
+the package. The `v0.1.0` tag releases version 0.1.0; a `v*` tag runs the reusable CI workflow without publishing permissions, then requests
 approval through the `pub-dev` environment before publishing. The upload job
 checks that the commit belongs to `main` and the tag matches the stable package
 version. These workflow checks prevent mistakes, not misuse: environment
@@ -16,7 +16,8 @@ The repository owner must complete all of these steps before automated publishin
    by Google Search Console and add the intended maintainers.
 2. Decide repository visibility and confirm the public repository and issue
    tracker links. Uploaded package source is public regardless of repository
-   visibility. Confirm the Apache-2.0 license and example are ready to distribute.
+   visibility. Confirm the Apache-2.0 license, [third-party notices](THIRD_PARTY_NOTICES.md)
+   and example are ready to distribute.
 3. Prepare a release PR for `0.1.0`: update the changelog and follow
    [Each release](#each-release) step 1 for the first-tag documentation changes.
    Merge after CI passes.
@@ -48,20 +49,11 @@ change is part of preparing this pipeline.
 
 ## Each release
 
-1. At the first tag, update every pre-release sentence:
-   - README Installation: replace “Install from source until the first release”
-     and “After the first release” with the released installation command.
-   - README Quickstart: remove “The package is not published yet and its
-     API may still change.”
-   - TESTING has no pre-release sentences that need changing.
-   - RELEASING introduction: remove “Nothing has been published yet.”
-   - RELEASING Required one-time setup: mark completed setup as historical,
-     including the manual first upload and historical-tag instructions.
-   - CHANGELOG: change “0.1.0 (unreleased)” to the release version and date.
-
-   Set a stable `X.Y.Z` version in `pubspec.yaml`, update `CHANGELOG.md` and the
-   README installation example. For public API changes, run
-   `dart run tool/api_dump.dart`, inspect and commit the signature diff.
+1. Set a stable `X.Y.Z` version in `pubspec.yaml`, date the matching changelog
+   entry and update the README registry dependency. For 0.1.0, use
+   `mobilerun_flutter: ^0.1.0` and `## 0.1.0 (2026-11-24)`.
+   For public API changes, run `dart run tool/api_dump.dart`, inspect and commit
+   the signature diff.
    The contract covers exports of `lib/mobilerun_flutter.dart`, excluding
    `@internal` declarations. Imports from `lib/src/` are implementation details.
 2. Run the checks in [README Development](README.md#development). Resolve every
@@ -69,15 +61,15 @@ change is part of preparing this pipeline.
    `CHANGELOG.md`, `README.md`, `lib/` and `example/`. CI performs the same checks
    without requesting publishing credentials.
 3. Merge only after CI is green. From the merged release commit on `main`,
-   create and push the matching tag, for example:
+   create and push the matching tag. For 0.1.0:
 
    ```sh
-   git tag v0.1.1
-   git push origin v0.1.1
+   git tag v0.1.0 <release-commit>
+   git push origin v0.1.0
    ```
 
 4. After verification succeeds, review the tag and commit before approving the
    `pub-dev` environment deployment. Inspect the publishing Actions run and
-   verify the version, publisher, documentation and installation on pub.dev
+   verify the version, publisher, documentation and [registry installation](README.md#install)
    before announcing it. Published versions are immutable; diagnose failures
    before retrying.
