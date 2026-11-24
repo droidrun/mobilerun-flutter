@@ -78,29 +78,36 @@ in `android/app/src/main/AndroidManifest.xml`, including release builds. Set
 ## Quick start
 
 1. Your server mints a short-lived stream token for one device with your API key
-   (`POST /v1/identity/stream-keys`). Follow the [Partner guide](https://docs.mobilerun.ai/partners).
+   with `client.streamTokens.create(...)`. Follow the [Partner guide](https://docs.mobilerun.ai/partners).
 2. Your app's `tokenProvider` asks your server for a stream token before each connection.
 3. The SDK opens the stream with that stream token, one token per connection, and reconnects with a fresh one.
 
-On your server, mint with `MOBILERUN_API_KEY` (never ship it in the app).
+On your Node server, install `@mobilerun/sdk@6.3.0` and mint with
+`MOBILERUN_API_KEY` from the server environment (never ship it in the app).
 Authenticate your user and check they own the device first:
 
 ```js
-// POST https://api.mobilerun.ai/v1/identity/stream-keys
-const res = await fetch('https://api.mobilerun.ai/v1/identity/stream-keys', {
-  method: 'POST',
-  headers: {
-    Authorization: `Bearer ${process.env.MOBILERUN_API_KEY}`,
-    'Content-Type': 'application/json',
-  },
-  body: JSON.stringify({ deviceId, ttlSeconds: 120 }),
+import { MobilerunSDK } from '@mobilerun/sdk';
+
+const client = new MobilerunSDK({
+  apiKey: process.env.MOBILERUN_API_KEY,
 });
-const { key, keyId, expiresAt } = await res.json();
-// Return only `key` to your app.
+
+// Authenticate your user and authorize this device before calling.
+async function mintStreamToken(authorizedDeviceId, allowedOrigins) {
+  const { key, keyId, expiresAt } = await client.streamTokens.create({
+    deviceId: authorizedDeviceId,
+    ttlSeconds: 120,
+    allowedOrigins, // Optional server-owned policy for browser embeds.
+  }, { maxRetries: 0 });
+  // Keep keyId/expiry on the server if needed; return only the fresh key.
+  return key;
+}
 ```
 
-The stream-token mint route and DTO currently retain their transitional names
-`/identity/stream-keys` and `{key,keyId,expiresAt}`.
+The SDK returns `{key, keyId, expiresAt}`. Omit `allowedOrigins` for native-only
+apps; set it to your permitted site origins for browser embeds.
+REST fallback: `POST https://api.mobilerun.ai/v1/identity/stream-keys` with the same request fields.
 
 In your app, using your backend client and the device's stream URL:
 The default connectivity seed is asynchronous. Attach the lifecycle before `start()`;
@@ -143,6 +150,8 @@ token, but a single-use stream token is rejected on the second connect, so singl
 stream tokens need `tokenProvider`.
 
 ## Guides
+
+Coding agents: use the [device stream integration skill](skills/mobilerun-device-stream/SKILL.md).
 
 | Guide | Covers |
 | --- | --- |

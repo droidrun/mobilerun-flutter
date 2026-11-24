@@ -21,11 +21,11 @@ npm ci
 npm start
 ```
 
-The pinned official `@mobilerun/sdk@6.2.1` serves just two routes:
+The checked-in local helper serves just two routes:
 
 - `GET /api/v1/devices/:deviceId`: `{id,state,streamUrl}`, absent values null.
 - `POST /api/v1/devices/:deviceId/stream-key`: `{key,keyId,expiresAt}`, 201/no-store.
-  Calls `sdk.api.post('/identity/stream-keys', {body:{deviceId,ttlSeconds:120},maxRetries:0})`.
+  Mints one fresh token for the requested device without automatic retries.
 
 Errors have generic bodies and no-store; safe upstream refusal statuses are preserved.
 There is no automatic mint retry, credential logging or permissive CORS.
@@ -53,3 +53,32 @@ mode and reconnects with a fresh provider stream token (static mode reuses its t
 keep this SDK's existing rebuild behaviour.
 
 Test the helper with `npm test` in `backend`; test the sample with `flutter test` here.
+
+## Node backend mint API
+
+For your authenticated production backend, use `@mobilerun/sdk@6.3.0` with
+`MOBILERUN_API_KEY` in the server environment. The local helper's app-facing
+routes above remain the same.
+
+```js
+import { MobilerunSDK } from '@mobilerun/sdk';
+
+const client = new MobilerunSDK({
+  apiKey: process.env.MOBILERUN_API_KEY,
+});
+
+// Authenticate your user and authorize this device before calling.
+async function mintStreamToken(authorizedDeviceId, allowedOrigins) {
+  const { key, keyId, expiresAt } = await client.streamTokens.create({
+    deviceId: authorizedDeviceId,
+    ttlSeconds: 120,
+    allowedOrigins, // Optional server-owned policy for browser embeds.
+  }, { maxRetries: 0 });
+  // Keep keyId/expiry on the server if needed; return only the fresh key.
+  return key;
+}
+```
+
+The response is `{key, keyId, expiresAt}`. Return only `key` to your app;
+use `client.streamTokens.delete(keyId)` on the server to revoke by ID.
+REST fallback: `POST https://api.mobilerun.ai/v1/identity/stream-keys` with the same request fields.
