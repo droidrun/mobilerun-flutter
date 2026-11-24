@@ -26,7 +26,28 @@ enum StreamErrorReason {
   deviceUnavailable('device_unavailable'),
 
   /// Anything else, such as a watchdog timeout or a negotiation failure.
-  unknown('unknown');
+  unknown('unknown'),
+
+  /// The server refused this viewer's publication.
+  publishNotAllowed('publish_not_allowed'),
+
+  /// The device or local implementation cannot publish the requested inputs.
+  publishUnsupported('publish_unsupported'),
+
+  /// Local microphone/camera permission was denied or restricted.
+  permissionDenied('permission_denied'),
+
+  /// Another viewer already owns the device's publication lease.
+  publishBusy('publish_busy'),
+
+  /// Capture, attachment or injection failed.
+  publishFailed('publish_failed'),
+
+  /// Admission succeeded but injection did not become active in time.
+  publishTimeout('publish_timeout'),
+
+  /// Explicit local cancellation, used by the pending method only.
+  publishCancelled('publish_cancelled');
 
   const StreamErrorReason(this.code);
 
@@ -42,6 +63,10 @@ final class StreamError {
     required this.message,
     required this.attempt,
     required this.isFinal,
+    this.operation,
+    this.mediaSessionId,
+    this.detail,
+    this.serverReason,
   });
 
   /// Why the attempt failed.
@@ -56,6 +81,18 @@ final class StreamError {
   /// True when the SDK stopped retrying. Retry, foreground wake or network
   /// return can start a new cycle from unavailable.
   final bool isFinal;
+
+  /// `publish` for a publication failure; null for connection errors.
+  final String? operation;
+
+  /// Publication UUID, only after a start reached signaling.
+  final String? mediaSessionId;
+
+  /// Machine-readable publication diagnostic.
+  final String? detail;
+
+  /// Original server publication reason.
+  final String? serverReason;
 
   @override
   String toString() =>

@@ -5,11 +5,14 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:typed_data';
 
-import 'package:flutter_webrtc/flutter_webrtc.dart' show MediaStream;
+import 'package:flutter_webrtc/flutter_webrtc.dart'
+    show MediaStream, MediaStreamTrack;
 import 'package:mobilerun_flutter/mobilerun_flutter.dart';
 import 'package:mobilerun_flutter/src/core/stream_transports.dart';
 
 import 'fake_scheduler.dart';
+
+import 'package:mobilerun_flutter/src/core/publish_transport.dart';
 
 /// A frame the session sent, with the fake time it went out.
 final class SentFrame {
@@ -128,10 +131,35 @@ final class FakeMediaStream implements MediaStream {
   dynamic noSuchMethod(Invocation invocation) => null;
 }
 
-final class FakePeer implements PeerTransport {
+final class FakePeer implements PeerTransport, PublishPeerTransport {
   FakePeer(this.offerSdp, {required this.muted});
 
   final String offerSdp;
+  @override
+  Set<PublishKind> publishKinds = {PublishKind.audio, PublishKind.video};
+  bool usablePublishSenders = true;
+  Completer<void>? attachGate;
+  PublishKind? failAttach;
+  final attached = <PublishKind, MediaStreamTrack?>{};
+  final publishCalls = <String>[];
+
+  @override
+  Future<bool> canAttachPublish(List<PublishKind> kinds) async =>
+      usablePublishSenders;
+
+  @override
+  Future<void> replacePublishTrack(
+    PublishKind kind,
+    MediaStreamTrack? track,
+  ) async {
+    publishCalls.add('${kind.name}:${track == null ? "detach" : "attach"}');
+    if (track != null) {
+      await attachGate?.future;
+      if (failAttach == kind) throw StateError('attach failed');
+    }
+    attached[kind] = track;
+  }
+
   bool muted;
 
   final StreamController<PeerState> _states =
@@ -245,6 +273,7 @@ final class FakePeerFactory implements PeerTransportFactory {
 
   final String offerSdp;
   final List<FakePeer> peers = [];
+  Set<PublishKind> publishKinds = {PublishKind.audio, PublishKind.video};
   final List<Map<String, Object?>> configurations = [];
 
   @override
@@ -254,10 +283,65 @@ final class FakePeerFactory implements PeerTransportFactory {
     required bool muted,
   }) async {
     configurations.add(rtcConfiguration);
-    final peer = FakePeer(offerSdp, muted: muted);
+    final peer = FakePeer(offerSdp, muted: muted)
+      ..publishKinds = Set.of(publishKinds);
     peers.add(peer);
     return peer;
   }
 
   FakePeer get last => peers.last;
+}
+
+final class FakeCaptureTrack extends MediaStreamTrack {
+  FakeCaptureTrack(this.kind);
+  @override
+  final String kind;
+  bool stopped = false;
+  @override
+  bool enabled = true;
+  @override
+  Future<void> stop() async {
+    stopped = true;
+  }
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) => null;
+}
+
+final class FakePublishMedia implements PublishMedia {
+  FakePublishMedia(bool video)
+    : tracks = [
+        FakeCaptureTrack('audio'),
+        if (video) FakeCaptureTrack('video'),
+      ];
+  @override
+  final List<FakeCaptureTrack> tracks;
+  @override
+  Future<void> stop() async {
+    for (final track in tracks) {
+      track.onEnded = null;
+      await track.stop();
+    }
+  }
+}
+
+final class FakePublishCapture implements PublishCapture {
+  int calls = 0;
+  Object? error;
+  Completer<void>? gate;
+  final media = <FakePublishMedia>[];
+  @override
+  Future<PublishMedia> capture(
+    PublishOptions options, {
+    required bool Function() isCancelled,
+    required void Function(PublishMedia media) onAcquired,
+  }) async {
+    calls++;
+    await gate?.future;
+    if (error != null) throw error!;
+    final result = FakePublishMedia(options.video);
+    media.add(result);
+    onAcquired(result);
+    return result;
+  }
 }

@@ -24,9 +24,10 @@ tool/run-sample.sh /path/to/sample.json
 tool/run-sample.sh /path/to/sample.json --ios
 ```
 
-The helper uses `@mobilerun/sdk@6.2.1`: metadata via `sdk.devices.get(id)`, then
-`POST /v1/identity/stream-keys` with `{deviceId,ttlSeconds:120}`, no automatic mint
-retry. Only metadata and the single-use mint DTO cross the local helper boundary.
+The helper uses `@mobilerun/sdk@6.3.0`: metadata via `sdk.devices.get(id)`, then
+`sdk.streamTokens.create({deviceId,ttlSeconds:120},{maxRetries:0})` for minting,
+with no automatic mint retry. The upstream wire endpoint remains
+`POST /v1/identity/stream-keys`. Only metadata and the single-use mint DTO cross the local helper boundary.
 The mint route and DTO retain their transitional wire names.
 The app keeps an immutable helper/device binding and mints once per new socket.
 It stores no minted stream tokens in app state, launch JSON, UI or logs. Never put an API key,

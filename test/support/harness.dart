@@ -7,6 +7,9 @@ import 'package:mobilerun_flutter/mobilerun_flutter.dart';
 import 'package:mobilerun_flutter/src/core/stream_transports.dart';
 
 import 'fake_scheduler.dart';
+
+import 'package:mobilerun_flutter/src/core/publish_transport.dart';
+
 import 'fake_transports.dart';
 import 'fixtures.dart';
 
@@ -31,6 +34,7 @@ final class Harness {
     SignallingConnector? signalling,
     FutureOr<StreamCredentials?> Function(int call)? credentials,
     StreamErrorCallback? onError,
+    PublishCapture? publishCapture,
   }) {
     connector = FakeConnector(scheduler);
     final offer = example('client-offer.json')['sdp']! as String;
@@ -48,6 +52,7 @@ final class Harness {
       transports: StreamTransports(
         signalling: signalling ?? connector,
         peers: peers,
+        publishCapture: publishCapture,
       ),
       config: config,
       onError: (error) {

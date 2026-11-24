@@ -3,7 +3,7 @@
 # Session and app lifecycle
 
 The package connects to a Mobilerun cloud device and recovers from failures,
-exactly like `@mobilerun/react`. Install version 0.1.0 from the `v0.1.0` git tag
+exactly like `@mobilerun/react`. Install `mobilerun_flutter: ^0.1.0` from pub.dev
 as shown in the [installation instructions](../README.md#install).
 
 The default connectivity snapshot arrives asynchronously. Attaching the adapter

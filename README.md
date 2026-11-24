@@ -63,21 +63,17 @@
 
 ## Install
 
-Install the git release by adding this dependency to your `pubspec.yaml`:
+Add the [pub.dev package](https://pub.dev/packages/mobilerun_flutter) to your
+Flutter app's `pubspec.yaml`:
 
 ```yaml
 dependencies:
   flutter:
     sdk: flutter
-  mobilerun_flutter:
-    git:
-      url: https://github.com/droidrun/mobilerun-flutter.git
-      ref: v0.1.0
+  mobilerun_flutter: ^0.1.0
 ```
 
 Run `flutter pub get`, then import `package:mobilerun_flutter/mobilerun_flutter.dart`.
-The package is at the repository root, so no `path:` is needed. Version 0.1.0 is
-distributed through the git tag; a pub.dev upload is not required.
 
 The host Android app needs `<uses-permission android:name="android.permission.INTERNET" />`
 in `android/app/src/main/AndroidManifest.xml`, including release builds. Set
@@ -86,29 +82,36 @@ in `android/app/src/main/AndroidManifest.xml`, including release builds. Set
 ## Quick start
 
 1. Your server mints a short-lived stream token for one device with your API key
-   (`POST /v1/identity/stream-keys`). Follow the [Partner guide](https://docs.mobilerun.ai/partners).
+   with `client.streamTokens.create(...)`. Follow the [Partner guide](https://docs.mobilerun.ai/partners).
 2. Your app's `tokenProvider` asks your server for a stream token before each connection.
 3. The SDK opens the stream with that stream token, one token per connection, and reconnects with a fresh one.
 
-On your server, mint with `MOBILERUN_API_KEY` (never ship it in the app).
+On your Node server, install `@mobilerun/sdk@6.3.0` and mint with
+`MOBILERUN_API_KEY` from the server environment (never ship it in the app).
 Authenticate your user and check they own the device first:
 
 ```js
-// POST https://api.mobilerun.ai/v1/identity/stream-keys
-const res = await fetch('https://api.mobilerun.ai/v1/identity/stream-keys', {
-  method: 'POST',
-  headers: {
-    Authorization: `Bearer ${process.env.MOBILERUN_API_KEY}`,
-    'Content-Type': 'application/json',
-  },
-  body: JSON.stringify({ deviceId, ttlSeconds: 120 }),
+import { MobilerunSDK } from '@mobilerun/sdk';
+
+const client = new MobilerunSDK({
+  apiKey: process.env.MOBILERUN_API_KEY,
 });
-const { key, keyId, expiresAt } = await res.json();
-// Return only `key` to your app.
+
+// Authenticate your user and authorize this device before calling.
+async function mintStreamToken(authorizedDeviceId, allowedOrigins) {
+  const { key, keyId, expiresAt } = await client.streamTokens.create({
+    deviceId: authorizedDeviceId,
+    ttlSeconds: 120,
+    allowedOrigins, // Optional server-owned policy for browser embeds.
+  }, { maxRetries: 0 });
+  // Keep keyId/expiry on the server if needed; return only the fresh key.
+  return key;
+}
 ```
 
-The stream-token mint route and DTO currently retain their transitional names
-`/identity/stream-keys` and `{key,keyId,expiresAt}`.
+The SDK returns `{key, keyId, expiresAt}`. Omit `allowedOrigins` for native-only
+apps; set it to your permitted site origins for browser embeds.
+REST fallback: `POST https://api.mobilerun.ai/v1/identity/stream-keys` with the same request fields.
 
 In your app, using your backend client and the device's stream URL:
 The default connectivity seed is asynchronous. Attach the lifecycle before `start()`;
@@ -150,7 +153,33 @@ hard cut. It is an explicit exception: a reconnect **reuses the same static toke
 token, but a single-use stream token is rejected on the second connect, so single-use
 stream tokens need `tokenProvider`.
 
+## Microphone and camera publish
+
+Supply `StreamConfig(publishCapabilities: ...)` from your backend's per-device
+capabilities response before connecting. `DeviceStream` then shows a floating
+microphone/camera pill over the video; hide it with `showPublishControls: false`.
+The snapshot describes device support; the server still decides each request.
+
+```dart
+// After the viewer connects, from an explicit user action:
+try {
+  await session.startPublish(const PublishOptions(audio: true, video: true));
+} on PublishException catch (error) {
+  debugPrint(error.failure.reason.code);
+}
+// Observe session.publishState (ValueListenable<PublishState>).
+await session.stopPublish(); // Viewing and output mute are independent.
+```
+
+Inputs open only after server acceptance; refused or silent requests never prompt.
+Audio is required. Stop before changing input kinds; reconnect never resumes
+capture. Publish errors use the existing `onError` with `operation == 'publish'`.
+See [publish setup and lifecycle](doc/publish.md) for permissions, labels,
+capability delivery, supported codecs and failure details.
+
 ## Guides
+
+Coding agents: use the [device stream integration skill](skills/mobilerun-device-stream/SKILL.md).
 
 | Guide | Covers |
 | --- | --- |

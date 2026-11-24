@@ -9,6 +9,8 @@ import 'package:flutter_webrtc/flutter_webrtc.dart' show MediaStream;
 
 import '../webrtc/default_transports.dart';
 import 'reconnect_controller.dart';
+import 'publish.dart';
+import 'publish_controller.dart';
 import 'reconnect_policy.dart';
 import 'scheduler.dart';
 import 'stream_attempt.dart';
@@ -63,6 +65,29 @@ final class DeviceStreamSession {
        _scheduler = scheduler,
        _sessionId = (sessionId ?? _randomUuid)(),
        _muted = config.muted {
+    _publish = PublishController(
+      capabilities: config.publishCapabilities,
+      capture: _transports.publishCapture,
+      scheduler: scheduler,
+      uuid: _randomUuid,
+      onFailure: (failure, id) {
+        final error = StreamError(
+          reason: failure.reason,
+          message: failure.message,
+          attempt: _controller.snapshot.attempt,
+          isFinal: true,
+          operation: 'publish',
+          mediaSessionId: id,
+          detail: failure.detail,
+          serverReason: failure.serverReason,
+        );
+        try {
+          _onError?.call(error);
+        } on Object {
+          debugPrint('[mobilerun.stream] onError threw');
+        }
+      },
+    );
     _stats = _ObservedStats(_updateSampling);
     _controller = ReconnectController(
       onRemount: _beginAttempt,
@@ -81,6 +106,7 @@ final class DeviceStreamSession {
   final Scheduler _scheduler;
   final String _sessionId;
   late final ReconnectController _controller;
+  late final PublishController _publish;
 
   final ValueNotifier<StreamStatus> _status = ValueNotifier(
     const StreamConnecting(),
@@ -116,6 +142,31 @@ final class DeviceStreamSession {
   /// Whether this session has been closed, for the SDK views.
   @internal
   ValueListenable<bool> get closed => _closedState;
+
+  /// Publication support supplied at session creation. It grants no permission.
+  DevicePublishCapabilities? get publishCapabilities =>
+      _config.publishCapabilities;
+
+  /// Whether the local connection reserved a supported camera sender.
+  @internal
+  ValueListenable<bool> get publishCameraAvailable => _publish.cameraAvailable;
+
+  /// Publication lifecycle, independent of the viewer connection status.
+  ValueListenable<PublishState> get publishState => _publish.state;
+
+  /// Requests admission on explicit user action, then captures accepted inputs.
+  /// Resolves only after the server reports active and all tracks attach.
+  /// Throws [PublishException] with a structured failure.
+  Future<PublishState> startPublish(PublishOptions options) =>
+      _publish.start(options);
+
+  /// Releases local inputs and reserved senders without stopping the viewer.
+  Future<void> stopPublish() => _publish.stop();
+
+  /// Ends publication when its viewer is removed or replaced.
+  @internal
+  Future<void> endPublishForViewerReplacement() =>
+      _publish.endForViewerReplacement();
 
   /// The connection status. Starts as [StreamConnecting].
   ValueListenable<StreamStatus> get status => _status;
@@ -233,6 +284,7 @@ final class DeviceStreamSession {
   void setVisible(bool visible) {
     if (_closed || _visible == visible) return;
     _visible = visible;
+    if (!visible) unawaited(stopPublish());
     _attempt?.setVisible(visible);
     _updateSampling();
     if (visible) handleWake();
@@ -243,6 +295,7 @@ final class DeviceStreamSession {
   Future<void> close() async {
     if (_closed) return;
     _closedState.value = true;
+    final publishClose = _publish.close();
     _credentialsEpoch++;
     _pendingUrl = null;
     _credentialsTimeout?.cancel();
@@ -252,6 +305,7 @@ final class DeviceStreamSession {
     _attempt = null;
     _forcedAttempt = null;
     _clearVideo();
+    await publishClose;
     await attempt?.dispose();
     await Future.wait(_retiredDisposals.toList());
   }
@@ -478,6 +532,7 @@ final class DeviceStreamSession {
     _controller.attemptMounted(startWatchdog: false);
     final attempt = StreamAttempt(
       sessionId: _sessionId,
+      publisher: _publish,
       transports: _transports,
       scheduler: _scheduler,
       config: _config,
