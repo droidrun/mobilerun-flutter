@@ -362,6 +362,23 @@ void main() {
   });
 
   test(
+    'start write failure releases capture and reports disconnected',
+    () async {
+      await h.connect();
+      h.ws.closedByServer = true;
+      await expectLater(h.session.startPublish(camera), fails('disconnected'));
+      expect(
+        capture.media.single.tracks.every((track) => track.stopped),
+        isTrue,
+      );
+      expect(h.peer.publishCalls, ['audio:detach', 'video:detach']);
+      expect(h.errors.single.reason.code, 'disconnected');
+      expect(h.errors.single.operation, 'publish');
+      expect(h.ws.ofType('publishStart'), isEmpty);
+    },
+  );
+
+  test(
     'socket loss cleans active capture and reconnect never resumes it',
     () async {
       await h.connect();

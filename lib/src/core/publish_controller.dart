@@ -297,9 +297,11 @@ final class PublishController {
         failure: error is PublishException
             ? error.failure
             : _failure(
-                StreamErrorReason.publishFailed,
-                'Local input unavailable',
-                'capture_unavailable',
+                op.sent
+                    ? StreamErrorReason.disconnected
+                    : StreamErrorReason.publishFailed,
+                op.sent ? 'Signaling unavailable' : 'Local input unavailable',
+                op.sent ? null : 'capture_unavailable',
               ),
       );
     }
