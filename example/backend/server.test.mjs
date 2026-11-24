@@ -97,9 +97,9 @@ test('absent metadata values are null', async t => {
     { id: null, state: null, streamUrl: null });
 });
 
-test('mint uses the exact official SDK path, body, retry option and DTO', async t => {
+test('mint uses the exact SDK helper arguments, retry option and DTO', async t => {
   const calls = [];
-  const base = await start(t, { api: { post: async (...args) => {
+  const base = await start(t, { streamTokens: { create: async (...args) => {
     calls.push(args);
     return { key: 'key-a', keyId: 'id-a', expiresAt: '2026-11-20T12:00:00Z', apiKey: 'parent-key' };
   } } });
@@ -108,15 +108,13 @@ test('mint uses the exact official SDK path, body, retry option and DTO', async 
   assert.equal(response.headers.get('cache-control'), 'no-store');
   assert.deepEqual(await response.json(), { key: 'key-a', keyId: 'id-a',
     expiresAt: '2026-11-20T12:00:00Z' });
-  assert.deepEqual(calls, [['/identity/stream-keys', {
-    body: { deviceId: 'device-a', ttlSeconds: 120 }, maxRetries: 0,
-  }]]);
+  assert.deepEqual(calls, [[{ deviceId: 'device-a', ttlSeconds: 120 }, { maxRetries: 0 }]]);
 });
 
 for (const status of [401, 403, 404, 429, 503, undefined]) {
   test(`upstream refusal ${status} is generic, no-store and never retried`, async t => {
     let calls = 0;
-    const base = await start(t, { api: { post: async () => {
+    const base = await start(t, { streamTokens: { create: async () => {
       calls++;
       throw Object.assign(new Error('parent-key private-token private-url'), { status });
     } } });
