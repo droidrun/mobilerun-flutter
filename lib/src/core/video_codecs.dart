@@ -62,3 +62,23 @@ List<int> videoCodecOrder(
         if (_priority(mimeTypes[i]) == priority) i,
   ];
 }
+
+/// Shared upstream H.264 profile families and minimum level (3.1).
+const publishH264Profiles = {'42e0', '42c0', '4d00', '640c'};
+
+/// Whether an offered H.264 fmtp is supported, without rewriting its level.
+bool supportsPublishH264(String fmtp) {
+  final fields = <String, String>{};
+  for (final field in fmtp.split(';')) {
+    final parts = field.trim().split('=');
+    if (parts.length == 2) {
+      fields[parts[0].toLowerCase()] = parts[1].toLowerCase();
+    }
+  }
+  final profile = fields['profile-level-id'];
+  return fields['packetization-mode'] == '1' &&
+      profile != null &&
+      RegExp(r'^[0-9a-f]{6}$').hasMatch(profile) &&
+      publishH264Profiles.contains(profile.substring(0, 4)) &&
+      int.parse(profile.substring(4), radix: 16) >= 0x1f;
+}

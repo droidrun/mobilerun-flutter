@@ -11,6 +11,7 @@ import '../core/stream_error.dart';
 import '../core/stream_status.dart';
 import '../widgets/device_stream_view.dart';
 import 'stream_button.dart';
+import 'stream_publish_pill.dart';
 import 'stream_labels.dart';
 import 'stream_lifecycle.dart';
 import 'stream_status_pill.dart';
@@ -185,6 +186,7 @@ class DeviceStream extends StatefulWidget {
     super.key,
     required this.session,
     this.hasControl = true,
+    this.showPublishControls = true,
     this.autofocus = false,
     this.labels = const StreamLabels(),
     this.controller,
@@ -197,6 +199,9 @@ class DeviceStream extends StatefulWidget {
 
   /// Session supplying video and state.
   final DeviceStreamSession session;
+
+  /// Shows capability-backed microphone/camera controls over the video.
+  final bool showPublishControls;
 
   /// Local input switch, never a backend permission decision.
   final bool hasControl;
@@ -306,6 +311,22 @@ class _DeviceStreamState extends State<DeviceStream> {
                         widget.unavailableBuilder(context, scope)
                       else if (status is! StreamConnected)
                         widget.placeholderBuilder(context, scope),
+                      if (widget.showPublishControls &&
+                          (widget
+                                  .session
+                                  .publishCapabilities
+                                  ?.supportsMicrophone ??
+                              false))
+                        Align(
+                          alignment: Alignment.bottomCenter,
+                          child: Padding(
+                            padding: const EdgeInsets.all(16),
+                            child: StreamPublishPill(
+                              session: widget.session,
+                              labels: widget.labels,
+                            ),
+                          ),
+                        ),
                     ],
                   ),
                 ),

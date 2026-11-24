@@ -54,6 +54,15 @@ keep this SDK's existing rebuild behaviour.
 
 Test the helper with `npm test` in `backend`; test the sample with `flutter test` here.
 
+## Publishing local microphone/camera
+
+The host manifest and Info.plist include microphone/camera permission metadata.
+Set `StreamConfig.publishCapabilities` from your backend's actual device
+capability response to enable the default floating pill. The existing example
+keeps receive-only defaults until supplied that snapshot. Do not infer support
+from a device type or hard-code capability values. See [publish](../doc/publish.md)
+for the headless API, permission handling, labels and cleanup policy.
+
 ## Node backend mint API
 
 For your authenticated production backend, use `@mobilerun/sdk@6.3.0` with

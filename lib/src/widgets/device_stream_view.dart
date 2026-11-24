@@ -176,6 +176,7 @@ class _DeviceStreamViewState extends State<DeviceStreamView> {
       _panAnchor = null;
     }
     if (sessionChanged) {
+      unawaited(oldWidget.session.endPublishForViewerReplacement());
       oldWidget.session.closed.removeListener(_syncClosed);
       widget.session.closed.addListener(_syncClosed);
       oldWidget.session.videoStream.removeListener(_syncStream);
@@ -355,6 +356,7 @@ class _DeviceStreamViewState extends State<DeviceStreamView> {
 
   @override
   void dispose() {
+    unawaited(widget.session.endPublishForViewerReplacement());
     if (widget.controller?._state == this) widget.controller?._state = null;
     widget.session.closed.removeListener(_syncClosed);
     widget.session.videoStream.removeListener(_syncStream);

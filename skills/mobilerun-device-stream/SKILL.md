@@ -102,10 +102,57 @@ when switching devices. The SDK appends and encodes the `token` query parameter;
 supply a token-free `wss` URL. Provider mode permits insecure `ws` only on exact
 loopback hosts for local development.
 
+## Publish microphone and camera (v1.1)
+
+Supply the device's backend-provided `DevicePublishCapabilities` snapshot in
+`StreamConfig.publishCapabilities` before connecting. Microphone injection and
+`mediaInjectionTransport: 'direct'` are required; camera also needs device support
+and a valid local H.264 sender reservation. The snapshot describes support and
+does not grant publication permission. Keep capability discovery on your backend;
+stream tokens cannot call the general device capabilities endpoint.
+
+```dart
+final session = DeviceStreamSession(
+  credentials: () async => StreamCredentials(
+    url: streamUrl,
+    tokenProvider: () => mintFromBackend(deviceId),
+  ),
+  config: StreamConfig(publishCapabilities: publishCapabilities),
+);
+// After viewing connects, from an explicit user action:
+await session.startPublish(const PublishOptions(audio: true, video: true));
+// Observe session.publishState (ValueListenable<PublishState>).
+await session.stopPublish();
+```
+
+`audio: true` is required; omit `video` for microphone only. `startPublish` sends
+its request first and captures only after server acceptance, so refused or silent
+requests never prompt for local media. No acceptance within 5 seconds gives
+`publish_unsupported`; the 30-second activation window after acceptance includes
+OS permission prompts. The Future resolves only after all inputs attach and the
+server reports active. Failures throw `PublishException` and notify `onError`
+with `operation == 'publish'`; explicit forbidden maps to `publish_not_allowed`
+and permission refusal to `permission_denied`, independently of viewer status.
+
+Stop before changing input kinds. Background, viewer replacement and disconnect
+release capture; reconnect and foreground never resume it automatically. Default
+`DeviceStream` observes lifecycle; headless apps use `StreamLifecycle` or report
+visibility through `session.setVisible`. Session close ends with `stopped`.
+
+The default floating pill has microphone/camera toggles, red live icons, status
+above it, button-only hit areas and a fade after three seconds. Hide it with
+`showPublishControls: false`; unsupported publication hides it automatically.
+All publish text uses `StreamLabels`, and styling follows `StreamTheme`.
+
+Declare Android microphone/camera permissions and required iOS usage descriptions
+before using capture. Native interruption notifications remain the documented
+v1.1 `onEnded` limitation of the pinned plugin. See [publish setup and
+lifecycle](../../doc/publish.md) for the full permissions, labels and failure rules.
+
 ## Errors and recovery
 
-`onError` receives `StreamError` with `reason`, `message`, `attempt` (1-based) and
-`isFinal`. Use `error.reason.code` for the shared wire-style names below.
+For connection failures (`operation == null`), `onError` receives `StreamError`
+with `reason`, `message`, `attempt` (1-based) and `isFinal`. Use `error.reason.code` for the shared wire-style names below.
 `isFinal` is Flutter's name for the contract's `final`: retries have stopped,
 status is `StreamUnavailable`, and the default Retry UI calls `session.retry()`.
 Allow bounded SDK backoff; avoid adding an automatic retry loop around it.

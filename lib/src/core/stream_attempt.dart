@@ -11,6 +11,7 @@ import 'package:flutter_webrtc/flutter_webrtc.dart' show MediaStream;
 import '../protocol/signalling.dart';
 import '../protocol/stream_timing.dart';
 import 'scheduler.dart';
+import 'publish_controller.dart';
 import 'reconnect_policy.dart';
 import 'stream_config.dart';
 import 'stream_credentials.dart';
@@ -71,6 +72,7 @@ final class StreamAttempt {
   /// Creates an attempt. Nothing happens before [start].
   StreamAttempt({
     required this.sessionId,
+    this.publisher,
     required this.transports,
     required this.scheduler,
     required this.config,
@@ -79,6 +81,9 @@ final class StreamAttempt {
     required this.events,
     this._visible = true,
   }) : _startedAt = scheduler.now;
+
+  /// Session-owned publication lifecycle, retained across viewer attempts.
+  final PublishController? publisher;
 
   /// The streaming session id sent with every message.
   final String sessionId;
@@ -366,9 +371,11 @@ final class StreamAttempt {
         return;
       }
       _peer = peer;
+      publisher?.bind(peer, connection);
       _wirePeer(peer);
 
       final sdp = await peer.createLocalOffer();
+      if (live) publisher?.reservationsReady();
       if (!live) return;
       _send(OfferMessage(sdp: sdp, sessionId: sessionId));
     } on Object catch (error) {
@@ -502,6 +509,9 @@ final class StreamAttempt {
   void _onPeerState(PeerState state) {
     if (!live) return;
     _peerState = state;
+    if (!_inGrace || state == PeerState.connected) {
+      publisher?.setConnected(_connection, state == PeerState.connected);
+    }
     if (state == PeerState.failed || state == PeerState.closed) {
       // Terminal: this peer connection will not come back on its own.
       _fail(StreamErrorReason.disconnected, 'Peer connection ended');
@@ -529,6 +539,7 @@ final class StreamAttempt {
       _graceTimer = null;
       if (!live) return;
       if (_suppressedDip && _peerState != PeerState.connected) {
+        publisher?.setConnected(_connection, false);
         events.stats(null);
         events.disconnected();
       }
@@ -546,6 +557,8 @@ final class StreamAttempt {
 
   void _onMessage(String text) {
     if (!live) return;
+    final connection = _connection;
+    if (connection != null) publisher?.receive(connection, text);
     final ServerMessage? message;
     try {
       message = decodeServerMessage(text, phase: _phase);
@@ -673,6 +686,7 @@ final class StreamAttempt {
   Future<void> _dispose() async {
     if (!live) return;
     live = false;
+    publisher?.unbind();
     _keepAlive?.cancel();
     _sizePoll?.cancel();
     _graceTimer?.cancel();

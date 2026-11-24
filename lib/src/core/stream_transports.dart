@@ -6,6 +6,7 @@ import 'dart:typed_data';
 import 'package:flutter_webrtc/flutter_webrtc.dart' show MediaStream;
 
 import 'stream_config.dart';
+import 'publish_transport.dart';
 import 'stream_stats.dart';
 
 /// The connection state of a peer connection, as defined by W3C WebRTC.
@@ -206,7 +207,14 @@ abstract interface class PeerTransportFactory {
 /// The two transports a session needs.
 final class StreamTransports {
   /// Creates the pair.
-  const StreamTransports({required this.signalling, required this.peers});
+  const StreamTransports({
+    required this.signalling,
+    required this.peers,
+    this.publishCapture,
+  });
+
+  /// Local media adapter; null means publishing is unsupported.
+  final PublishCapture? publishCapture;
 
   /// Opens the signalling WebSocket.
   final SignallingConnector signalling;
